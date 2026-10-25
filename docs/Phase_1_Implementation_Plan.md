@@ -60,13 +60,23 @@ Use this checklist to track execution. Every step must be implemented, tested, a
     * `PRAGMA synchronous = NORMAL;`
     * `PRAGMA foreign_keys = ON;`
     * `PRAGMA busy_timeout = 5000;`
-  * Core Schemas created on startup:
+  * Core Schemas created in `app/db/schemas.sql`:
     1. `notes`: `id`, `user_id`, `group_name`, `title`, `content_markdown`, `priority_score`, `sync_rev`, `created_at`, `updated_at`.
-    2. `sync_changelog`: `id`, `user_id`, `sync_rev`, `entity_type`, `entity_id`, `change_type`, `delta_payload`, `created_at`.
-    3. `entity_edges`: `id`, `user_id`, `source_id`, `relation_type`, `target_id`, `created_at`.
-    4. `identity_timeline`: `id`, `user_id`, `attribute`, `old_value`, `new_value`, `change_reason`, `git_commit_sha`, `valid_from`, `valid_to`.
-    5. `learned_preferences`: `id`, `user_id`, `category`, `preference_rule`, `confidence_score`, `source_diff_sha`, `created_at`.
-  * Helper functions for atomic note transactions and incrementing `sync_rev`.
+    2. `user_sync_meta`: `user_id`, `current_sync_rev`, `updated_at`.
+    3. `sync_changelog`: `id`, `user_id`, `sync_rev`, `entity_type`, `entity_id`, `change_type`, `delta_payload` (JSON), `created_at`.
+    4. `entity_edges`: `id`, `user_id`, `source_id`, `relation_type`, `target_id`, `created_at`.
+    5. `identity_timeline`: `id`, `user_id`, `attribute`, `old_value`, `new_value`, `change_reason`, `git_commit_sha`, `valid_from`, `valid_to`.
+    6. `learned_preferences`: `id`, `user_id`, `category`, `preference_rule`, `confidence_score`, `source_diff_sha`, `created_at`.
+    7. `staging_intake`: `id`, `user_id`, `raw_input`, `clarity_score`, `clarifying_questions` (JSON), `proposed_action`, `status`, `created_at`.
+    8. `notes_fts`: FTS5 full-text search virtual table synchronized via automated SQLite database triggers.
+  * Helper functions for atomic note transactions, delta sync changelogs, staging resolution, and incrementing `sync_rev`.
+
+> [!NOTE]
+> **Schema Evolution & Flexibility Architecture:**
+> SQLite serves strictly as a high-speed operational index and query cache; the **Git-Backed Markdown Vault** remains the ultimate source of truth. Because of this:
+> 1. Fields and tables can be added, removed, or altered at any time in `schemas.sql` and `sqlite_db.py`.
+> 2. The operational SQLite database can be wiped and completely reconstructed from the physical Markdown `.md` vault files without losing a single character of notes or identity history.
+> 3. `sync_changelog` stores deltas in flexible JSON (`delta_payload`), allowing new custom fields to sync without requiring changelog table migrations.
 * **Verification Criteria:**
   * SQLite WAL files (`-wal`, `-shm`) initialize properly on startup.
   * Note insert/update atomic transaction increments `sync_rev` monotonically.
