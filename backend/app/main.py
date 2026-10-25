@@ -73,9 +73,11 @@ async def root() -> dict[str, str]:
 
 
 # Register API Routers
-from app.api import intake, onboarding
+from app.api import intake, onboarding, sync_http, sync_ws
 
 app.include_router(intake.router)
 app.include_router(onboarding.router)
+app.include_router(sync_http.router)
+app.include_router(sync_ws.router)
 
 

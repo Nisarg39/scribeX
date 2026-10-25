@@ -26,6 +26,7 @@ from app.storage.sqlite_db import (
 from app.storage.sync_projector import save_and_project_note
 from app.storage.lancedb_store import index_note_chunks
 from app.storage.file_parser import parse_uploaded_file
+from app.api.sync_ws import ws_manager
 
 router = APIRouter(prefix="/api/v1/intake", tags=["Intake"])
 
@@ -120,6 +121,14 @@ async def _execute_intake_write(
     # 4. If this resolved a staged intake, update status
     if staging_id:
         await update_staging_status(user_id=user_id, staging_id=staging_id, status="RESOLVED")
+
+    # 5. Broadcast instant WebSocket doorbell ping to all active devices
+    latest_rev = note_result.get("sync_rev")
+    if latest_rev:
+        try:
+            await ws_manager.broadcast_ping(user_id=user_id, latest_sync_rev=latest_rev)
+        except Exception:
+            pass
 
     return note_result
 
