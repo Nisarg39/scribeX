@@ -34,9 +34,8 @@ function deriveWebSocketUrl(apiUrl: string): string {
 export const syncConfig = {
   apiUrl: rawApiUrl.replace(/\/+$/, ''),
   wsUrl: deriveWebSocketUrl(rawApiUrl),
-  defaultUserId:
-    process.env.EXPO_PUBLIC_USER_ID ||
-    'default_user',
+  // Default fallback until dynamic central AuthContext is active
+  defaultUserId: 'default_user',
   reconnectBaseDelayMs: 1000,
   reconnectMaxDelayMs: 10000,
   heartbeatIntervalMs: 25000,

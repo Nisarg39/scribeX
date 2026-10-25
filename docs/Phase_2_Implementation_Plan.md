@@ -18,11 +18,12 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 | **2** | [Backend Delta Sync Endpoints (WebSocket Doorbell + REST Catch-up)](#step-2-backend-delta-sync-endpoints-websocket-doorbell--rest-catch-up) | `backend/app/api/sync_ws.py`, `backend/app/api/sync_http.py`, `backend/tests/test_sync.py` | `[x] COMPLETED` |
 | **3** | [Client Offline-First SQLite Engine (`expo-sqlite`)](#step-3-client-offline-first-sqlite-engine-expo-sqlite) | `frontend/src/db/sqliteClient.ts`, `frontend/src/db/schema.ts`, `frontend/src/db/notesRepo.ts` | `[x] COMPLETED` |
 | **4** | [Real-Time Delta Sync Engine & Client State Machine](#step-4-real-time-delta-sync-engine--client-state-machine) | `frontend/src/sync/syncEngine.ts`, `frontend/src/sync/useSync.ts` | `[x] COMPLETED` |
-| **5** | [Pastel Tile Notes Grid & Shell Architecture](#step-5-pastel-tile-notes-grid--shell-architecture) | `frontend/src/components/shell/AppShell.tsx`, `Sidebar.tsx`, `NoteTile.tsx`, `NoteGrid.tsx` | `[ ] PENDING` |
-| **6** | [Focused Note Editor & Reading Surface](#step-6-focused-note-editor--reading-surface) | `frontend/src/components/editor/NoteEditor.tsx`, `ColorPicker.tsx` | `[ ] PENDING` |
-| **7** | [Universal Intake Bar & Ask-Before-Write Ambiguity Gate Modal](#step-7-universal-intake-bar--ask-before-write-ambiguity-gate-modal) | `frontend/src/components/intake/IntakeBar.tsx`, `ClarificationModal.tsx` | `[ ] PENDING` |
-| **8** | [Conversational Onboarding Flow & Layer 1 Profile Screen](#step-8-conversational-onboarding-flow--layer-1-profile-screen) | `frontend/src/screens/OnboardingScreen.tsx`, `ProfileScreen.tsx` | `[ ] PENDING` |
-| **9** | [Phase 2 Cross-Platform Verification & E2E Sync Testing](#step-9-phase-2-cross-platform-verification--e2e-sync-testing) | `frontend/__tests__/`, `backend/tests/test_sync.py` | `[ ] PENDING` |
+| **5** | [Scalable Architecture & Folder Structure + Central User & Auth State Management](#step-5-scalable-architecture--folder-structure--central-user--auth-state-management) | `frontend/src/auth/`, `frontend/src/navigation/`, `frontend/src/core/`, `frontend/src/services/` | `[ ] PENDING` |
+| **6** | [Pastel Tile Notes Grid & Shell Architecture](#step-6-pastel-tile-notes-grid--shell-architecture) | `frontend/src/components/shell/AppShell.tsx`, `Sidebar.tsx`, `NoteTile.tsx`, `NoteGrid.tsx` | `[ ] PENDING` |
+| **7** | [Focused Note Editor & Reading Surface](#step-7-focused-note-editor--reading-surface) | `frontend/src/components/editor/NoteEditor.tsx`, `ColorPicker.tsx` | `[ ] PENDING` |
+| **8** | [Universal Intake Bar & Ask-Before-Write Ambiguity Gate Modal](#step-8-universal-intake-bar--ask-before-write-ambiguity-gate-modal) | `frontend/src/components/intake/IntakeBar.tsx`, `ClarificationModal.tsx` | `[ ] PENDING` |
+| **9** | [Conversational Onboarding Flow & Layer 1 Profile Screen](#step-9-conversational-onboarding-flow--layer-1-profile-screen) | `frontend/src/screens/OnboardingScreen.tsx`, `ProfileScreen.tsx` | `[ ] PENDING` |
+| **10** | [Phase 2 Cross-Platform Verification & E2E Sync Testing](#step-10-phase-2-cross-platform-verification--e2e-sync-testing) | `frontend/__tests__/`, `backend/tests/test_sync.py` | `[ ] PENDING` |
 
 ---
 
@@ -132,7 +133,54 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 
 ---
 
-### Step 5: Pastel Tile Notes Grid & Shell Architecture
+### Step 5: Scalable Architecture & Folder Structure + Central User & Auth State Management
+* **Objective:** Establish the modular, production-grade directory architecture for the frontend application, implement central authentication/user state management (`AuthContext`), and integrate dynamic multi-tenant session binding for the sync engine and local database.
+* **Deliverables:**
+  * **Scalable Directory Architecture (`frontend/src/`):**
+    * `src/core/`: Application constants, configuration, TypeScript interfaces, and platform utilities.
+    * `src/theme/`: Pastel Tile design system tokens, themes, typography, and `ThemeProvider`.
+    * `src/db/`: Offline-first SQLite client, relational schema, and repository data access objects.
+    * `src/sync/`: Real-time WebSocket doorbell, client state machine, and `useSync` hook.
+    * `src/auth/`: Central authentication state context, secure credential persistence, and session management.
+    * `src/navigation/`: Root routing logic with dynamic authentication gating.
+    * `src/components/`: Reusable design system primitives adhering to Pastel Tile tokens:
+      * `components/common/`: Buttons, input fields, avatar badges, modals.
+      * `components/shell/`: Sidebar rail, mobile header, workspace wrappers.
+      * `components/notes/`: `NoteTile`, `NoteGrid`, `SearchField`, `PageHeading`.
+      * `components/editor/`: `NoteEditor`, `ColorPicker` swatches.
+      * `components/intake/`: `IntakeBar`, `ClarificationModal`.
+    * `src/screens/`:
+      * `screens/auth/`: SaaS-ready Sign-In & Sign-Up screens designed with Pastel Tile aesthetics (clean typography, charcoal/light canvas, no generic card containers).
+      * `screens/notes/`: Main notes workspace.
+      * `screens/editor/`: Focused reading & editing surface.
+      * `screens/onboarding/`: Conversational 6-pillar interview.
+      * `screens/profile/`: Layer 1 Living Cognitive Identity viewer.
+    * `src/services/`: HTTP client with authorization headers, audio recorder, and file parsers.
+  * **Central User & Auth State Management (`frontend/src/auth/`):**
+    * `AuthContext.tsx` & `useAuth.ts`:
+      * Tracks reactive state: `isLoading`, `isAuthenticated`, `user: UserProfile | null`, `token: string | null`, `authMode: 'authenticated' | 'guest' | 'unauthenticated'`.
+      * Exposes session actions: `signIn(credentials)`, `signUp(payload)`, `signOut()`, `continueAsGuest()`, and `upgradeGuestAccount()`.
+    * `sessionStorage.ts`:
+      * Platform-resilient secure session storage (`expo-secure-store` on iOS/Android, `AsyncStorage` on Web).
+      * Persists user identity and session token across app restarts.
+  * **Dynamic Multi-Tenant Sync & Database Binding:**
+    * Updates `syncEngine.setAuthContext(userId, token)`:
+      * Automatically passes user ID and JWT bearer token to WebSocket URL query parameters (`/ws/sync?user_id=...`) and HTTP headers (`Authorization: Bearer <token>`, `X-User-ID`).
+      * Disconnects and purges memory state upon `signOut()`.
+    * Namespaces local SQLite database storage per user tenant.
+  * **Root Navigation & Dynamic Auth Gating (`frontend/src/navigation/RootNavigator.tsx`):**
+    * Inspects `isAuthenticated` / `authMode`.
+    * **If Unauthenticated:** Displays `AuthScreen` offering Sign-In, Sign-Up, and "Try as Guest (Instant Offline)" paths without generic cards.
+    * **If Authenticated / Guest:** Mounts the primary `AppShell` with the active user's notes grid.
+* **Verification Criteria:**
+  * Clean build with modular folder structure and zero circular dependencies (`npx tsc --noEmit` exits with 0).
+  * Sign-In / Sign-Out transitions immediately switch between the Auth Screen and the main Notes workspace.
+  * Session persists across browser refresh (Web) and app reloads (Native).
+  * Sync engine dynamically initiates connections using the active user's authenticated ID and disconnects upon sign-out.
+
+---
+
+### Step 6: Pastel Tile Notes Grid & Shell Architecture
 * **Objective:** Implement the signature visual experience defined in the Pastel Tile UI Design System: clean navigation rail, large bold "Notes" heading, minimal top search row, and high-contrast pastel note tiles.
 * **Deliverables:**
   * `frontend/src/components/shell/AppShell.tsx`:
@@ -142,6 +190,7 @@ Use this checklist to track execution. Every step must be implemented, tested, a
     * Brand header at top-left.
     * Signature **Add-note button**: Circular dark button (**42–48 px** diameter, `#111111` in light mode, `#383838` in dark mode) with centered white plus icon.
     * Theme toggle button (sun/moon icon).
+    * User avatar & profile menu button with sign-out trigger.
   * `frontend/src/components/notes/SearchField.tsx`:
     * Minimal top search input with small search icon and muted placeholder (`#929292` / `#858585`).
   * `frontend/src/components/notes/PageHeading.tsx`:
@@ -163,7 +212,7 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 
 ---
 
-### Step 6: Focused Note Editor & Reading Surface
+### Step 7: Focused Note Editor & Reading Surface
 * **Objective:** Implement the distraction-free reading surface and Markdown note editor that preserves the note's pastel color identity while providing maximum reading comfort.
 * **Deliverables:**
   * `frontend/src/components/editor/NoteEditor.tsx`:
@@ -180,7 +229,7 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 
 ---
 
-### Step 7: Universal Intake Bar & Ask-Before-Write Ambiguity Gate Modal
+### Step 8: Universal Intake Bar & Ask-Before-Write Ambiguity Gate Modal
 * **Objective:** Build the universal entry point widget for quick thoughts, voice memos, and document uploads, equipped with an interactive modal that presents Friday's clarifying questions when ambiguity is detected.
 * **Deliverables:**
   * `frontend/src/components/intake/IntakeBar.tsx`:
@@ -200,7 +249,7 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 
 ---
 
-### Step 8: Conversational Onboarding Flow & Layer 1 Profile Screen
+### Step 9: Conversational Onboarding Flow & Layer 1 Profile Screen
 * **Objective:** Build the interactive onboarding interview interface that guides new users through the 6 profile pillars on first launch and exposes the living cognitive profile viewer.
 * **Deliverables:**
   * `frontend/src/screens/OnboardingScreen.tsx`:
@@ -217,13 +266,14 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 
 ---
 
-### Step 9: Phase 2 Cross-Platform Verification & E2E Sync Testing
+### Step 10: Phase 2 Cross-Platform Verification & E2E Sync Testing
 * **Objective:** Execute automated and manual end-to-end verification across Web, iOS, and Android to guarantee performance, design system fidelity, and sync resilience.
 * **Deliverables:**
   * `frontend/__tests__/`:
     * Component tests for `NoteTile`, `NoteGrid`, `NoteEditor`, `ClarificationModal`.
     * Theme switching test verifying high-contrast dark text on pastel tiles in both themes.
     * Offline sync engine unit tests simulating network loss and recovery.
+    * Auth state unit tests verifying token lifecycle and login/logout transitions.
   * `backend/tests/test_sync.py`:
     * Backend integration tests verifying multi-device delta sync transactions and WebSocket push.
   * Cross-platform build checks:
@@ -240,5 +290,5 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 1. We work on **one step at a time**.
 2. Before starting a step, we mark its status as `[ ] IN_PROGRESS` in this document and in [Master_Tasks_Tracker.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Master_Tasks_Tracker.md).
 3. Once the step's code is written and verified against its test criteria, we mark it as `[x] COMPLETED` and move to the next step.
-4. Git commits will reference the specific step (e.g., `feat(phase2): step 1 - expo scaffolding and pastel tile design system tokens`).
+4. Git commits will reference the specific step (e.g., `feat(phase2): step 5 - scalable architecture and central auth state management`).
 5. **No code will be pushed to GitHub until the user explicitly says so.**
