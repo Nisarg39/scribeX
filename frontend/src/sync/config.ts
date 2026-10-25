@@ -18,13 +18,22 @@ function resolveDefaultHost(): string {
 const DEFAULT_HOST = resolveDefaultHost();
 const DEFAULT_PORT = '8000';
 
+const rawApiUrl =
+  process.env.EXPO_PUBLIC_API_URL || `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
+
+function deriveWebSocketUrl(apiUrl: string): string {
+  if (process.env.EXPO_PUBLIC_WS_URL) {
+    return process.env.EXPO_PUBLIC_WS_URL;
+  }
+  // Convert http:// -> ws:// and https:// -> wss://
+  const wsProtocol = apiUrl.startsWith('https://') ? 'wss://' : 'ws://';
+  const hostAndPort = apiUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '');
+  return `${wsProtocol}${hostAndPort}/ws/sync`;
+}
+
 export const syncConfig = {
-  apiUrl:
-    process.env.EXPO_PUBLIC_API_URL ||
-    `http://${DEFAULT_HOST}:${DEFAULT_PORT}`,
-  wsUrl:
-    process.env.EXPO_PUBLIC_WS_URL ||
-    `ws://${DEFAULT_HOST}:${DEFAULT_PORT}/ws/sync`,
+  apiUrl: rawApiUrl.replace(/\/+$/, ''),
+  wsUrl: deriveWebSocketUrl(rawApiUrl),
   defaultUserId:
     process.env.EXPO_PUBLIC_USER_ID ||
     'default_user',
