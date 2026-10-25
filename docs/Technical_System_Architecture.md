@@ -279,54 +279,33 @@ scribex/
 │       │   └── syncEngine.ts           # Real-time WebSocket Delta Sync client
 │       └── package.json
 │
-├── backend/                            # 24/7 Cloud VPS FastAPI Backend (Phase 1 Implemented)
+├── backend/                            # 24/7 Cloud VPS FastAPI Backend
 │   ├── app/
-│   │   ├── main.py                     # FastAPI entry point & lifespan directory setup
-│   │   ├── core/
-│   │   │   └── config.py               # Pydantic Settings (.env, models, CORS, data dirs)
+│   │   ├── main.py                     # FastAPI entry point & lifespan events
 │   │   ├── api/
-│   │   │   ├── deps.py                 # get_current_user_id() SaaS dependency
-│   │   │   ├── intake.py               # Universal intake endpoint & Ask-Before-Write gate
-│   │   │   ├── onboarding.py           # 6-pillar multi-turn onboarding interview API
-│   │   │   ├── sync_ws.py              # (Phase 2) Real-time delta sync WebSocket (Doorbell)
-│   │   │   ├── sync_http.py            # (Phase 2) HTTP REST delta sync fallback (Push/Pull)
-│   │   │   └── pc_bridge_ws.py         # (Phase 4) Remote PC daemon WebSocket controller
+│   │   │   ├── intake.py               # Universal note/file ingestion & clarification
+│   │   │   ├── sync_ws.py              # Multi-device real-time delta sync WebSocket (Doorbell)
+│   │   │   ├── sync_http.py            # HTTP REST delta sync fallback (Push/Pull)
+│   │   │   └── pc_bridge_ws.py         # Remote PC daemon WebSocket controller
 │   │   ├── memory/
-│   │   │   ├── layer1_identity.py      # Core Identity RAM Cache & System Prompt Builder
-│   │   │   ├── layer2_vault.py         # Triple Hybrid Context Retriever (FTS5 + LanceDB + Graph)
-│   │   │   ├── layer3_temporal.py      # (Phase 3) Bi-temporal "Versions of Me" & Task Logs
-│   │   │   └── layer4_learner.py       # (Phase 3) Behavioral Ledger & Manual Git Diff Learner
+│   │   │   ├── layer1_identity.py      # Core Identity & Always-Active Index
+│   │   │   ├── layer2_vault.py         # Git Markdown Vault + LanceDB + Graph
+│   │   │   ├── layer3_temporal.py      # Bi-temporal "Versions of Me" & Task Logs
+│   │   │   └── layer4_learner.py       # Behavioral Ledger & Manual Git Diff Learner
 │   │   ├── agents/
-│   │   │   ├── intake_agent.py         # Ambiguity Evaluator (LiteLLM + deterministic fallback)
-│   │   │   ├── onboarding_agent.py     # 6-pillar interview state machine & synthesis
-│   │   │   ├── orchestrator.py         # (Phase 4) Main ScribeX Brain (Friday Assistant)
-│   │   │   ├── verifier.py             # (Phase 4) Independent Remote PC Work Reviewer
-│   │   │   └── scheduler.py            # (Phase 4) Proactive briefings & sleep consolidation
-│   │   ├── storage/
-│   │   │   ├── paths.py                # Tenant-isolated & flat path resolver
-│   │   │   ├── sqlite_db.py            # Embedded SQLite WAL + FTS5 manager + staging
-│   │   │   ├── git_vault.py            # GitPython commit, merge & diff engine
-│   │   │   ├── sync_projector.py       # Unified write pipeline (SQLite commit -> Git projection)
-│   │   │   ├── lancedb_store.py        # Embedded LanceDB vector table & cosine search
-│   │   │   └── file_parser.py          # PyMuPDF, CSV, JSON, Markdown document ingestion
-│   │   └── db/
-│   │       └── schemas.sql             # Complete WAL schemas & FTS5 triggers
-│   ├── tests/                          # Automated Pytest Suite (33 tests, 100% green)
-│   │   ├── test_scaffolding.py         # Path resolution, config & health check tests
-│   │   ├── test_storage.py             # SQLite WAL operations, concurrent writes & sync_rev
-│   │   ├── test_vault.py               # Git projection, commit logs, author tagging & diffs
-│   │   ├── test_vector_and_parser.py   # LanceDB vector search & multi-format parser tests
-│   │   ├── test_memory.py              # Layer 1 prompt generation & Layer 2 hybrid search
-│   │   ├── test_intake.py              # Ambiguity gate triggers & clarification resolution
-│   │   ├── test_onboarding.py          # 6-pillar onboarding interview flow synthesis
-│   │   └── test_e2e_integration.py     # Master end-to-end user lifecycle test
+│   │   │   ├── orchestrator.py         # Main ScribeX Brain (Friday Assistant - Context + Routing)
+│   │   │   ├── verifier.py             # Independent Remote PC Work Reviewer
+│   │   │   └── scheduler.py            # Proactive briefings & sleep consolidation
+│   │   └── storage/
+│   │       ├── sqlite_db.py            # Embedded SQLite WAL + FTS5 manager
+│   │       ├── git_vault.py            # GitPython commit, merge & diff engine
+│   │       └── backup_sync.py          # Encrypted off-site Git/S3 backup worker
 │   ├── data/                           # Mounted persistent NVMe volume on VPS
 │   │   ├── vault/                      # Git-backed Markdown Context Files
-│   │   ├── sqlite/                     # scribex.db (WAL mode operational core)
-│   │   ├── lancedb/                    # Embedded vector index tables
-│   │   └── tenants/                    # (Phase 5) Isolated multi-tenant storage
-│   ├── pyproject.toml                  # Modern Python 3.11 packaging
-│   └── .env.example
+│   │   ├── sqlite/                     # scribex_core.db
+│   │   └── lancedb/                    # Embedded vector index
+│   ├── Dockerfile
+│   └── pyproject.toml
 │
 ├── pc-agent-bridge/                    # Lightweight Daemon installed on Personal PC
 │   ├── bridge/
@@ -342,91 +321,12 @@ scribex/
 
 ---
 
-## 9. Implementation Phases & Detailed Build History
+## 9. Recommended Implementation Phases for Your Coding Assistant
 
-To build and test ScribeX systematically without getting overwhelmed, development follows these six phases.
+To build and test this systematically without getting overwhelmed, instruct your AI coding assistant to follow these four phases:
 
-### Phase 1: VPS Core Backend, Operational SQLite & 4-Layer Memory Engine — `[x] COMPLETED & VERIFIED`
-*Full step-by-step implementation logs and test criteria in [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md).*
-
-Phase 1 established the operational, version-controlled, and vector-indexed core on the VPS. All 8 planned milestones have been implemented and verified with a 100% green automated test suite (**33 passing tests**):
-
-1. **Step 1: Backend Scaffolding, Environment & SaaS Path Resolver (`[x] COMPLETED`)**
-   - Configured modern Python 3.11 project packaging in `backend/pyproject.toml`.
-   - Built central settings management in `backend/app/core/config.py` handling CORS, API keys, and environment variables.
-   - Built `backend/app/storage/paths.py` supporting both clean flat default storage paths (`data/vault`, `data/sqlite/scribex.db`, `data/lancedb`) and isolated multi-tenant directories (`data/tenants/{user_id}/`).
-   - Implemented FastAPI application entry point in `backend/app/main.py` with automatic storage bootstrapping and `/health`.
-
-2. **Step 2: Operational SQLite Engine in WAL Mode (`[x] COMPLETED`)**
-   - Designed complete database schema in `backend/app/db/schemas.sql`: `notes`, `user_sync_meta`, `sync_changelog` (event-sourced deltas), `entity_edges` (graph relations), `identity_timeline` (Layer 3), `learned_preferences` (Layer 4), `staging_intake` (Ambiguity Gate), and `notes_fts` (FTS5 BM25 search).
-   - Built async repository in `backend/app/storage/sqlite_db.py` enforcing `PRAGMA journal_mode = WAL` and monotonically increasing `sync_rev` revision counters.
-
-3. **Step 3: Git-Backed Markdown Vault Projector (`[x] COMPLETED`)**
-   - Created Git repository manager and Markdown frontmatter parser/serializer in `backend/app/storage/git_vault.py`.
-   - Built unified write pipeline in `backend/app/storage/sync_projector.py` coordinating atomic SQLite transactions followed by Git vault projections with author tagging (`ScribeX-AI` vs. `User`).
-
-4. **Step 4: Embedded LanceDB Vector Engine & Multi-Format Document Parser (`[x] COMPLETED`)**
-   - Integrated serverless local LanceDB vector store in `backend/app/storage/lancedb_store.py` (`note_chunks` table, cosine similarity, and deterministic fallback embeddings).
-   - Built document ingestion parser in `backend/app/storage/file_parser.py` converting PDF (`PyMuPDF`), Markdown, CSV (Markdown tables), JSON, and plain text into structured Markdown.
-
-5. **Step 5: Cognitive Memory Layers 1 & 2 (`[x] COMPLETED`)**
-   - Built Layer 1 always-active RAM memory in `backend/app/memory/layer1_identity.py` (`_core/identity.md` management, core profile, active goals, note group map, and top priorities compiled into a $\sim 1,500$-token prompt with instant cache invalidation).
-   - Built Layer 2 Triple Hybrid Context Retriever in `backend/app/memory/layer2_vault.py` merging SQLite FTS5 (BM25 keyword search), LanceDB vector similarity, and SQLite `entity_edges` graph traversal.
-
-6. **Step 6: Universal Intake Router & Ask-Before-Write Ambiguity Gate (`[x] COMPLETED`)**
-   - Implemented `IntakeAnalysis` schema and LiteLLM ambiguity evaluator in `backend/app/agents/intake_agent.py` with deterministic fallback.
-   - Built Universal Intake API in `backend/app/api/intake.py` (`POST /api/v1/intake`):
-     - If `clarity_score < 0.85` or `ambiguity_detected == True`: stores raw input in `staging_intake` and returns clarifying questions without touching the vault.
-     - If clear (`clarity_score >= 0.85`): atomically writes to SQLite, projects to Git vault, and indexes into LanceDB.
-     - Added multi-turn clarification resolution (`POST /api/v1/intake/{staging_id}/clarify`), staging listing, and multipart document uploads (`POST /api/v1/intake/upload`).
-
-7. **Step 7: Interactive Onboarding Interview Flow API (`[x] COMPLETED`)**
-   - Implemented 6-pillar conversational interview state machine in `backend/app/agents/onboarding_agent.py` covering Personal Identity, Career Journey, Life Vision, Active Goals, Current Projects, and Daily Routines.
-   - Built onboarding router in `backend/app/api/onboarding.py` (`/start`, `/message`, `/finalize`) synthesizing conversation history into `_core/identity.md`, seeding initial project/goal notes in SQLite and Git, and linking graph edges (`SERVES_GOAL`).
-
-8. **Step 8: Master End-to-End Integration Test Suite & Verification (`[x] COMPLETED`)**
-   - Created comprehensive end-to-end user lifecycle test in `backend/tests/test_e2e_integration.py` verifying onboarding, ambiguity gate triggers, clarification resolution, direct note commits, document uploads, hybrid retrieval, delta sync changelog, and Git commit logs.
-   - All 33 automated tests across 8 test suites pass with 100% green status.
-
----
-
-### Phase 2: Universal Expo App + Resilient Delta Sync — `[ ] UPCOMING (NEXT FOCUS)`
-* **Objective:** Build the cross-platform Expo application (`iOS`, `Android`, `Web`) with local offline-first SQLite caching (`expo-sqlite`) and the resilient delta sync engine (WebSocket doorbell push + revision catch-up handshake + HTTP fallback) so notes, checklists, and manual edits sync concurrently in real time across devices.
-* **Deliverables:**
-  - Expo TypeScript frontend targeting mobile and web from a single codebase.
-  - Local `expo-sqlite` replica for sub-5ms local reads and zero-spinner UI.
-  - WebSocket delta sync client listening for `SYNC_PING` and pulling deltas via `GET /api/v1/sync/deltas?since_rev=X`.
-  - Fast Markdown note editor and vault group tree navigator.
-  - Interactive "Ask-Before-Write" modal UI for clarifying questions.
-  - Conversational onboarding interview screens and Layer 1 personal profile view.
-
----
-
-### Phase 3: Manual Edit Diff Learner + Temporal "Versions of Me" — `[ ] PLANNED`
-* **Objective:** Enable the background Git diff analyzer that compares user manual commits against AI assistant commits to populate Layer 4 (Behavioral Ledger) and Layer 3 (Identity Evolution Timeline).
-* **Deliverables:**
-  - Background Git commit monitor extracting unified diffs between `[User]` and `[AI]` edits.
-  - Layer 4 Behavioral Ledger engine (`learned_preferences` table) extracting formatting, tone, and filing rules.
-  - Layer 3 Episodic Memory engine (`identity_timeline` table) tracking historical evolution of goals and vision.
-  - Automated background reconciliation between SQLite/LanceDB and raw Markdown files.
-
----
-
-### Phase 4: Remote PC Bridge Daemon + Pluggable CLI Verification Loop — `[ ] PLANNED`
-* **Objective:** Deploy the `pc-agent-bridge` daemon on your personal PC, connect it via WebSocket to FastAPI, configure `cli_agents.yaml`, and activate the 3-stage verification pipeline.
-* **Deliverables:**
-  - Standalone `pc-agent-bridge` daemon connecting outward to VPS via persistent WebSocket.
-  - Dynamic `cli_agents.yaml` registry supporting Claude Code CLI, Gemini CLI, and custom shell scripts.
-  - 3-stage verification pipeline (pre-check safety blocklist, live stdout streaming, post-check git diff verification).
-  - Autonomous task dispatcher projecting execution summaries and logs back into structured notes.
-
----
-
-### Phase 5 & 6: Commercial SaaS Scaling, Multi-Tenancy & Billing — `[ ] PLANNED`
-* **Objective:** When transitioning to commercial SaaS, attach the authentication provider (Clerk / Supabase Auth), machine pairing protocol, Stripe billing webhooks, and LiteLLM token spend quotas as specified in [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md).
-* **Deliverables:**
-  - Injected `user_id` authentication replacing `"default_user"`.
-  - Remote machine pairing protocol (`scribex pair` OTP challenge + Ed25519 tokens).
-  - Stripe subscription checkout and webhook management.
-  - LiteLLM monthly token budget metering, usage quotas, and encrypted BYO-Key support.
-  - Automated encrypted nightly backup snapshots to S3 / Cloudflare R2.
+* **Phase 1: FastAPI Core + Operational SQLite + Git Vault Projection (VPS Backend) — `[x] COMPLETED`:** Set up the FastAPI server, embedded SQLite WAL operational tables (`sync_changelog`, `entity_edges`, `identity_timeline`, `staging_intake`), the Git-backed Markdown Vault projector (`GitPython`), LanceDB vector store, interactive onboarding flow, and Universal Intake endpoint with Ask-Before-Write clarification. *See detailed step-by-step implementation milestones, code deliverables, and verification criteria in [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md). Fully verified with 100% green automated test suite (33 passing tests) and Day-1 SaaS-ready parameterization defined in [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md).*
+* **Phase 2: Universal Expo App + Resilient Delta Sync:** Build the Expo app (`iOS`, `Android`, `Web`) with `expo-sqlite` local caching and the resilient delta sync engine (WebSocket doorbell push + revision catch-up handshake + HTTP fallback) so notes, checklists, and manual edits sync concurrently in real time across devices.
+* **Phase 3: Manual Edit Diff Learner + Temporal "Versions of Me":** Enable the background Git diff analyzer that compares `user_manual` commits against `ai_assistant` commits to populate Layer 4 (Behavioral Ledger) and Layer 3 (Identity Evolution Timeline).
+* **Phase 4: Remote PC Bridge Daemon + Pluggable CLI Verification Loop:** Deploy the `pc-agent-bridge` script on your personal PC, connect it via WebSocket to FastAPI, configure `cli_agents.yaml`, and activate the 3-stage verification pipeline.
+* **Phase 5 & 6 (Commercial SaaS Scaling):** When transitioning to commercial SaaS, attach the authentication provider (Clerk / Supabase Auth), Stripe billing webhooks, and LiteLLM token spend quotas as specified in `docs/SaaS_Architecture_and_Integration_Plan.md`.
