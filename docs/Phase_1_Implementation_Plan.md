@@ -19,7 +19,7 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 | **4** | [Embedded LanceDB Vector Engine & Document Parser](#step-4-embedded-lancedb-vector-engine--file-parser) | `app/storage/lancedb_store.py`, `app/storage/file_parser.py` | `[x] COMPLETED` |
 | **5** | [Cognitive Memory Layers (Layer 1 Identity & Layer 2 Graph)](#step-5-cognitive-memory-engine-layers-1--2) | `app/memory/layer1_identity.py`, `app/memory/layer2_vault.py` | `[x] COMPLETED` |
 | **6** | [Universal Intake Router & Ask-Before-Write Ambiguity Gate](#step-6-universal-intake--ask-before-write-gate) | `app/api/intake.py`, `app/agents/intake_agent.py` | `[x] COMPLETED` |
-| **7** | [Interactive Onboarding Interview Flow API](#step-7-interactive-onboarding-interview-flow-api) | `app/api/onboarding.py`, `app/agents/onboarding_agent.py` | `[ ] PENDING` |
+| **7** | [Interactive Onboarding Interview Flow API](#step-7-interactive-onboarding-interview-flow-api) | `app/api/onboarding.py`, `app/agents/onboarding_agent.py` | `[x] COMPLETED` |
 | **8** | [Phase 1 Integration Test Suite & Verification](#step-8-phase-1-integration-test-suite--verification) | `tests/test_storage.py`, `tests/test_vault.py`, `tests/test_intake.py` | `[ ] PENDING` |
 
 ---
