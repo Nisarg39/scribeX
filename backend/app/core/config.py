@@ -17,16 +17,30 @@ class Settings(BaseSettings):
     default_user_id: str = "default_user"
 
     # LLM Settings
-    default_model: str = "gemini/gemini-1.5-flash"
+    default_model: str = "openai/gpt-4o-mini"
 
     # API Keys (handled dynamically by LiteLLM if present in env)
     gemini_api_key: str | None = None
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
 
-    # Security
-    allowed_origins: list[str] = ["*"]
+    # Security & CORS (string in env, exposed as list via cors_origins property)
+    allowed_origins: str = "*"
     secret_key: str = "dev-insecure-secret-key-change-in-production"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """Return allowed origins as a parsed list of string domains for CORS middleware."""
+        raw = self.allowed_origins.strip()
+        if raw == "*":
+            return ["*"]
+        if raw.startswith("[") and raw.endswith("]"):
+            import json
+            try:
+                return json.loads(raw)
+            except Exception:
+                pass
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
     model_config = SettingsConfigDict(
         env_file=".env",

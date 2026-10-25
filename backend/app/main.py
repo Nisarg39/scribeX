@@ -23,6 +23,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     paths = ensure_tenant_directories(settings.default_user_id)
     logger.info(f"Initialized storage paths for default user at: {paths['tenant_root']}")
 
+    # Initialize SQLite database schema
+    from app.storage.sqlite_db import init_db
+    await init_db(settings.default_user_id)
+    logger.info("Operational SQLite database initialized in WAL mode.")
+
     yield
 
     logger.info("Shutting down ScribeX Core Backend...")
@@ -38,7 +43,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
