@@ -16,7 +16,7 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 | **1** | [Backend Scaffolding, Config & SaaS Path Resolver](#step-1-backend-scaffolding-environment--saas-path-resolver) | `pyproject.toml`, `app/core/config.py`, `app/storage/paths.py`, `app/main.py` | `[x] COMPLETED` |
 | **2** | [Operational SQLite Engine (WAL Mode + Core Schemas)](#step-2-operational-sqlite-engine-wal-mode--core-schemas) | `app/storage/sqlite_db.py`, `app/db/schemas.sql` | `[x] COMPLETED` |
 | **3** | [Git-Backed Markdown Vault Projector (`GitPython`)](#step-3-git-backed-markdown-vault-projector-gitpython) | `app/storage/git_vault.py` | `[x] COMPLETED` |
-| **4** | [Embedded LanceDB Vector Engine & Document Parser](#step-4-embedded-lancedb-vector-engine--file-parser) | `app/storage/lancedb_store.py`, `app/storage/file_parser.py` | `[ ] PENDING` |
+| **4** | [Embedded LanceDB Vector Engine & Document Parser](#step-4-embedded-lancedb-vector-engine--file-parser) | `app/storage/lancedb_store.py`, `app/storage/file_parser.py` | `[x] COMPLETED` |
 | **5** | [Cognitive Memory Layers (Layer 1 Identity & Layer 2 Graph)](#step-5-cognitive-memory-engine-layers-1--2) | `app/memory/layer1_identity.py`, `app/memory/layer2_vault.py` | `[ ] PENDING` |
 | **6** | [Universal Intake Router & Ask-Before-Write Ambiguity Gate](#step-6-universal-intake--ask-before-write-gate) | `app/api/intake.py`, `app/agents/intake_agent.py` | `[ ] PENDING` |
 | **7** | [Interactive Onboarding Interview Flow API](#step-7-interactive-onboarding-interview-flow-api) | `app/api/onboarding.py`, `app/agents/onboarding_agent.py` | `[ ] PENDING` |
