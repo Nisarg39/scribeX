@@ -5,6 +5,7 @@
  * - Direct surface integration (no generic floating cards or drop shadows)
  * - Clean high-contrast typography
  * - Dark circular action buttons & pastel accent badges
+ * - Native outline suppression with smooth container focus rings
  * - Instant "Continue as Guest" offline onboarding path
  */
 
@@ -32,6 +33,7 @@ import {
 } from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { useAuth } from '../../auth';
+import { webInputReset } from '../../core/webStyles';
 
 export const AuthScreen: React.FC = () => {
   const { colors, isDark, toggleTheme, pastelColors } = useTheme();
@@ -44,6 +46,11 @@ export const AuthScreen: React.FC = () => {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [focusedField, setFocusedField] = useState<'name' | 'email' | 'password' | null>(null);
+
+  const nameRef = React.useRef<any>(null);
+  const emailRef = React.useRef<any>(null);
+  const passwordRef = React.useRef<any>(null);
 
   const isWide = width >= 768;
 
@@ -105,7 +112,13 @@ export const AuthScreen: React.FC = () => {
 
         <Pressable
           onPress={toggleTheme}
-          style={[styles.themeToggle, { backgroundColor: colors.iconBg }]}
+          style={({ pressed }) => [
+            styles.themeToggle,
+            {
+              backgroundColor: colors.iconBg,
+              opacity: pressed ? 0.8 : 1,
+            },
+          ]}
           accessibilityLabel="Toggle Theme"
         >
           {isDark ? (
@@ -123,8 +136,8 @@ export const AuthScreen: React.FC = () => {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.formSurface, { maxWidth: isWide ? 460 : '100%' }]}>
-          {/* Header Typography */}
+        <View style={[styles.formSurface, { maxWidth: isWide ? 440 : '100%' }]}>
+          {/* Header Block */}
           <View style={styles.headerBlock}>
             <View
               style={[
@@ -132,9 +145,7 @@ export const AuthScreen: React.FC = () => {
                 { backgroundColor: pastelColors.lavender },
               ]}
             >
-              <Text style={[styles.categoryPillText, { color: '#191919' }]}>
-                Cognitive Vault
-              </Text>
+              <Text style={styles.categoryPillText}>Cognitive Vault</Text>
             </View>
 
             <Text style={[styles.mainHeading, { color: colors.textPrimary }]}>
@@ -158,38 +169,51 @@ export const AuthScreen: React.FC = () => {
                 { backgroundColor: pastelColors.coral },
               ]}
             >
-              <Text style={[styles.errorText, { color: '#191919' }]}>
-                {activeError}
-              </Text>
+              <Text style={styles.errorText}>{activeError}</Text>
             </View>
           )}
 
-          {/* Form Fields */}
+          {/* Form Fields Stack */}
           <View style={styles.fieldsStack}>
             {mode === 'signup' && (
               <View style={styles.inputGroup}>
                 <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
                   Full Name
                 </Text>
-                <View
+                <Pressable
+                  onPress={() => nameRef.current?.focus()}
                   style={[
                     styles.inputWrapper,
                     {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.borderSubtle,
+                      backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                      borderColor:
+                        focusedField === 'name'
+                          ? isDark
+                            ? '#F7F7F7'
+                            : '#171717'
+                          : colors.borderSubtle,
+                      borderWidth: focusedField === 'name' ? 1.5 : 1,
                     },
                   ]}
                 >
-                  <UserIcon size={18} color={colors.textMuted} style={styles.inputIcon} />
+                  <UserIcon size={16} color={colors.textMuted} style={styles.inputIcon} />
                   <TextInput
-                    style={[styles.input, { color: colors.textPrimary }]}
+                    ref={nameRef}
+                    style={[
+                      styles.input,
+                      { color: colors.textPrimary },
+                      webInputReset,
+                    ]}
                     placeholder="e.g. Alex Turing"
                     placeholderTextColor={colors.textMuted}
                     value={name}
                     onChangeText={setName}
+                    onFocus={() => setFocusedField('name')}
+                    onBlur={() => setFocusedField(null)}
                     autoCapitalize="words"
+                    selectionColor={isDark ? '#F7F7F7' : '#171717'}
                   />
-                </View>
+                </Pressable>
               </View>
             )}
 
@@ -197,51 +221,81 @@ export const AuthScreen: React.FC = () => {
               <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
                 Email Address
               </Text>
-              <View
+              <Pressable
+                onPress={() => emailRef.current?.focus()}
                 style={[
                   styles.inputWrapper,
                   {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.borderSubtle,
+                    backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                    borderColor:
+                      focusedField === 'email'
+                        ? isDark
+                          ? '#F7F7F7'
+                          : '#171717'
+                        : colors.borderSubtle,
+                    borderWidth: focusedField === 'email' ? 1.5 : 1,
                   },
                 ]}
               >
-                <Mail size={18} color={colors.textMuted} style={styles.inputIcon} />
+                <Mail size={16} color={colors.textMuted} style={styles.inputIcon} />
                 <TextInput
-                  style={[styles.input, { color: colors.textPrimary }]}
+                  ref={emailRef}
+                  style={[
+                    styles.input,
+                    { color: colors.textPrimary },
+                    webInputReset,
+                  ]}
                   placeholder="you@domain.com"
                   placeholderTextColor={colors.textMuted}
                   value={email}
                   onChangeText={setEmail}
+                  onFocus={() => setFocusedField('email')}
+                  onBlur={() => setFocusedField(null)}
                   autoCapitalize="none"
                   keyboardType="email-address"
+                  selectionColor={isDark ? '#F7F7F7' : '#171717'}
                 />
-              </View>
+              </Pressable>
             </View>
 
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
                 Password (Optional in dev)
               </Text>
-              <View
+              <Pressable
+                onPress={() => passwordRef.current?.focus()}
                 style={[
                   styles.inputWrapper,
                   {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.borderSubtle,
+                    backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                    borderColor:
+                      focusedField === 'password'
+                        ? isDark
+                          ? '#F7F7F7'
+                          : '#171717'
+                        : colors.borderSubtle,
+                    borderWidth: focusedField === 'password' ? 1.5 : 1,
                   },
                 ]}
               >
-                <Lock size={18} color={colors.textMuted} style={styles.inputIcon} />
+                <Lock size={16} color={colors.textMuted} style={styles.inputIcon} />
                 <TextInput
-                  style={[styles.input, { color: colors.textPrimary }]}
+                  ref={passwordRef}
+                  style={[
+                    styles.input,
+                    { color: colors.textPrimary },
+                    webInputReset,
+                  ]}
                   placeholder="••••••••"
                   placeholderTextColor={colors.textMuted}
                   value={password}
                   onChangeText={setPassword}
+                  onFocus={() => setFocusedField('password')}
+                  onBlur={() => setFocusedField(null)}
                   secureTextEntry
+                  selectionColor={isDark ? '#F7F7F7' : '#171717'}
                 />
-              </View>
+              </Pressable>
             </View>
           </View>
 
@@ -264,12 +318,12 @@ export const AuthScreen: React.FC = () => {
                 <Text style={[styles.primaryButtonText, { color: colors.iconFg }]}>
                   {mode === 'signin' ? 'Sign In' : 'Create Vault'}
                 </Text>
-                <ArrowRight size={18} color={colors.iconFg} />
+                <ArrowRight size={17} color={colors.iconFg} />
               </>
             )}
           </Pressable>
 
-          {/* Secondary Divider / Actions */}
+          {/* Divider */}
           <View style={styles.dividerRow}>
             <View
               style={[styles.dividerLine, { backgroundColor: colors.borderSubtle }]}
@@ -282,7 +336,7 @@ export const AuthScreen: React.FC = () => {
             />
           </View>
 
-          {/* Guest Mode Trigger */}
+          {/* Guest Mode Button */}
           <Pressable
             onPress={handleGuest}
             disabled={isSubmitting}
@@ -290,8 +344,8 @@ export const AuthScreen: React.FC = () => {
               styles.guestButton,
               {
                 borderColor: colors.borderSubtle,
-                backgroundColor: isDark ? '#2D2D2D' : '#F6F8FC',
-                opacity: pressed ? 0.8 : 1,
+                backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                opacity: pressed ? 0.85 : 1,
               },
             ]}
           >
@@ -301,7 +355,7 @@ export const AuthScreen: React.FC = () => {
                 { backgroundColor: pastelColors.lime },
               ]}
             >
-              <Zap size={13} color="#191919" />
+              <Zap size={12} color="#191919" />
             </View>
             <Text style={[styles.guestButtonText, { color: colors.textPrimary }]}>
               Try as Guest (Instant Offline)
@@ -346,7 +400,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 28,
+    paddingHorizontal: 32,
     paddingTop: Platform.OS === 'web' ? 24 : 54,
     paddingBottom: 16,
   },
@@ -356,21 +410,21 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   brandBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
   },
   brandTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: -0.3,
   },
   themeToggle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -379,91 +433,92 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingBottom: 40,
+    paddingBottom: 48,
   },
   contentContainerWide: {
-    paddingVertical: 40,
+    paddingVertical: 48,
   },
   formSurface: {
     width: '100%',
   },
   headerBlock: {
-    marginBottom: 32,
+    marginBottom: 28,
   },
   categoryPill: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-    marginBottom: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginBottom: 14,
   },
   categoryPillText: {
-    fontSize: 12,
+    color: '#191919',
+    fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
   },
   mainHeading: {
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: '700',
-    lineHeight: 40,
-    letterSpacing: -0.8,
-    marginBottom: 12,
+    lineHeight: 38,
+    letterSpacing: -0.6,
+    marginBottom: 10,
   },
   subHeading: {
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 14,
+    lineHeight: 21,
   },
   errorBanner: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 14,
-    marginBottom: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginBottom: 18,
   },
   errorText: {
-    fontSize: 14,
+    color: '#191919',
+    fontSize: 13,
     fontWeight: '600',
     lineHeight: 18,
   },
   fieldsStack: {
-    gap: 16,
-    marginBottom: 24,
+    gap: 14,
+    marginBottom: 22,
   },
   inputGroup: {
-    gap: 6,
+    gap: 5,
   },
   inputLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     letterSpacing: -0.1,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 50,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
   },
   inputIcon: {
-    marginRight: 10,
+    marginRight: 8,
   },
   input: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 14,
     height: '100%',
   },
   primaryButton: {
-    height: 52,
-    borderRadius: 26,
+    height: 46,
+    borderRadius: 23,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   primaryButtonText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
     letterSpacing: -0.2,
   },
@@ -471,35 +526,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginBottom: 20,
+    marginBottom: 18,
   },
   dividerLine: {
     flex: 1,
     height: 1,
   },
   dividerText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
   },
   guestButton: {
-    height: 48,
-    borderRadius: 24,
+    height: 44,
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 24,
+    gap: 9,
+    marginBottom: 22,
   },
   guestDot: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
   guestButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
   },
   switchRow: {
@@ -509,10 +564,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   switchText: {
-    fontSize: 14,
+    fontSize: 13,
   },
   switchLink: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
 });

@@ -1,14 +1,17 @@
 /**
  * Notes Home Screen - Primary Workspace.
+ * Source of Truth: docs/ScribeX-Pastel-Tile-UI-Design-System.md
  *
- * Implements the Pastel Tile UI Design System:
- * - Clean top search row
- * - Prominent "Notes" heading with offline status indicators
- * - Multi-column responsive grid with signature pastel note tiles
- * - Integrated user account banner & sign-out trigger
+ * Implements:
+ * - Desktop navigation rail (Sidebar, 104px, thin 1px divider)
+ * - Clean top search row before the page title with zero native browser blue outline
+ * - Large, iconic, bold "Notes" page heading
+ * - Multi-column responsive grid with signature vivid pastel note tiles
+ * - Focused note reader & editor surface
+ * - High-contrast dark text (#191919) on all pastel tiles across light and dark modes
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -22,35 +25,32 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import {
-  Sun,
-  Moon,
   Search,
   Plus,
-  Pencil,
-  Star,
-  Sparkles,
-  Database,
-  Cloud,
-  CloudOff,
-  RefreshCw,
+  Sun,
+  Moon,
   LogOut,
-  User as UserIcon,
+  Sparkles,
 } from 'lucide-react-native';
 import {
   useTheme,
   PastelColorKey,
   pastelColors,
-  noteTileTokens,
 } from '../../theme';
 import {
   ClientNote,
   getLocalNotes,
   saveLocalNote,
+  deleteLocalNote,
   toggleLocalFavorite,
   seedInitialNotesIfEmpty,
 } from '../../db';
 import { useSync } from '../../sync';
 import { useAuth } from '../../auth';
+import { Sidebar } from '../../components/shell/Sidebar';
+import { NoteGrid } from '../../components/notes/NoteGrid';
+import { NoteEditor } from '../../components/editor/NoteEditor';
+import { webInputReset } from '../../core/webStyles';
 
 const INITIAL_SAMPLES: Array<{
   title: string;
@@ -61,39 +61,45 @@ const INITIAL_SAMPLES: Array<{
 }> = [
   {
     title: 'Cognitive Architecture',
-    content: 'Layer 1 captures raw user intentions and mental models. Layer 2 maintains continuous timeline graph.',
+    content:
+      'Layer 1 captures raw user intentions and mental models. Layer 2 maintains continuous timeline graph.',
     group: 'Architecture',
     color: 'apricot',
     isFavorite: true,
   },
   {
     title: 'Pastel Tile Design Rule',
-    content: 'Keep note backgrounds colorful in both themes. Use dark text (#191919) across both light & dark modes.',
+    content:
+      'Keep note backgrounds colorful in both themes. Use dark text (#191919) across both light & dark modes.',
     group: 'Design',
     color: 'coral',
   },
   {
     title: 'Offline-First SQLite',
-    content: 'Direct sub-5ms local reads with zero network spinners across iOS, Android, and Web.',
+    content:
+      'Direct sub-5ms local reads with zero network spinners across iOS, Android, and Web.',
     group: 'Sync',
     color: 'lime',
     isFavorite: true,
   },
   {
     title: 'Git Markdown Projection',
-    content: 'Atomic commits per entity to local Git vault. Full human-readable markdown with YAML frontmatter.',
+    content:
+      'Atomic commits per entity to local Git vault. Full human-readable markdown with YAML frontmatter.',
     group: 'Vault',
     color: 'lavender',
   },
   {
     title: 'Ask-Before-Write Gate',
-    content: 'Ambiguity classification pauses automatic writes and triggers conversational clarification.',
+    content:
+      'Ambiguity classification pauses automatic writes and triggers conversational clarification.',
     group: 'Intake',
     color: 'cyan',
   },
   {
     title: 'Voice & Document Intake',
-    content: 'Multi-modal entry point supporting audio dictation, PDFs, markdown notes, and quick thought captures.',
+    content:
+      'Multi-modal entry point supporting audio dictation, PDFs, markdown notes, and quick thought captures.',
     group: 'Multi-Modal',
     color: 'pink',
     isFavorite: true,
@@ -101,17 +107,20 @@ const INITIAL_SAMPLES: Array<{
 ];
 
 export const NotesHomeScreen: React.FC = () => {
-  const { theme, isDark, colors, toggleTheme } = useTheme();
-  const { user, isGuest, signOut } = useAuth();
+  const { colors, isDark, toggleTheme } = useTheme();
+  const { signOut } = useAuth();
   const { width } = useWindowDimensions();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [activeEditingNote, setActiveEditingNote] = useState<ClientNote | null>(
+    null
+  );
 
-  const isWide = width >= 1024;
-  const isTablet = width >= 640 && width < 1024;
-  const numColumns = isWide ? 3 : isTablet ? 2 : 1;
+  const searchInputRef = useRef<any>(null);
+  const isDesktop = width >= 768;
 
   // Load notes directly from local offline-first SQLite database
   const loadNotes = useCallback(async () => {
@@ -132,13 +141,7 @@ export const NotesHomeScreen: React.FC = () => {
   }, [loadNotes]);
 
   // Connect Real-Time Delta Sync Engine
-  const {
-    status: syncStatus,
-    isSyncing,
-    pendingCount,
-    currentRev,
-    syncNow,
-  } = useSync({
+  const { syncNow } = useSync({
     onDeltasApplied: handleDeltasApplied,
   });
 
@@ -152,6 +155,11 @@ export const NotesHomeScreen: React.FC = () => {
       setNotes((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_favorite: nextFav } : n))
       );
+      if (activeEditingNote && activeEditingNote.id === id) {
+        setActiveEditingNote((prev) =>
+          prev ? { ...prev, is_favorite: nextFav } : null
+        );
+      }
       syncNow();
     } catch (err) {
       console.error('Failed to toggle favorite in SQLite:', err);
@@ -178,9 +186,35 @@ export const NotesHomeScreen: React.FC = () => {
       });
 
       setNotes((prev) => [newNote, ...prev]);
+      setActiveEditingNote(newNote);
       syncNow();
     } catch (err) {
       console.error('Failed to save note to local SQLite:', err);
+    }
+  };
+
+  const handleSaveNote = async (
+    updated: Partial<ClientNote> & { id: string; title: string }
+  ) => {
+    try {
+      await saveLocalNote(updated);
+      setNotes((prev) =>
+        prev.map((n) => (n.id === updated.id ? ({ ...n, ...updated } as ClientNote) : n))
+      );
+      syncNow();
+    } catch (err) {
+      console.error('Failed to update note in local SQLite:', err);
+    }
+  };
+
+  const handleDeleteNote = async (id: string) => {
+    try {
+      await deleteLocalNote(id);
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+      setActiveEditingNote(null);
+      syncNow();
+    } catch (err) {
+      console.error('Failed to delete note from local SQLite:', err);
     }
   };
 
@@ -195,302 +229,185 @@ export const NotesHomeScreen: React.FC = () => {
     <View style={[styles.container, { backgroundColor: colors.appBg }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View
-          style={[
-            styles.workspaceWrapper,
-            {
-              paddingHorizontal: isWide ? 64 : isTablet ? 32 : 20,
-              paddingTop: Platform.OS === 'web' ? 36 : 56,
-            },
-          ]}
-        >
-          {/* Top Search & Actions Bar */}
-          <View style={styles.topRow}>
-            <View
-              style={[
-                styles.searchBox,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.borderSubtle,
-                },
-              ]}
-            >
-              <Search
-                size={18}
-                color={colors.textMuted}
-                style={styles.searchIcon}
-              />
-              <TextInput
-                style={[styles.searchInput, { color: colors.textPrimary }]}
-                placeholder="Search notes in local SQLite..."
-                placeholderTextColor={colors.textMuted}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-            </View>
+      {/* Desktop Navigation Rail (approx 104px wide) */}
+      {isDesktop && <Sidebar onAddNote={handleCreateNote} />}
 
-            <View style={styles.headerRightActions}>
-              {/* User Identity / Guest Badge */}
-              <View
-                style={[
-                  styles.userBadge,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.borderSubtle,
-                  },
-                ]}
-              >
-                <UserIcon size={14} color={colors.textSecondary} />
-                <Text
-                  style={[styles.userNameText, { color: colors.textPrimary }]}
-                  numberOfLines={1}
-                >
-                  {user?.name || (isGuest ? 'Guest' : 'User')}
-                </Text>
-                {isGuest && (
+      {/* Main Workspace Surface */}
+      <View
+        style={[
+          styles.mainSurface,
+          {
+            backgroundColor: colors.surface,
+          },
+        ]}
+      >
+        {activeEditingNote ? (
+          /* Focused Note Editor Surface */
+          <NoteEditor
+            note={activeEditingNote}
+            onBack={() => setActiveEditingNote(null)}
+            onSave={handleSaveNote}
+            onDelete={handleDeleteNote}
+            onToggleFavorite={handleToggleFavorite}
+          />
+        ) : (
+          /* Primary Notes Grid View */
+          <ScrollView
+            contentContainerStyle={[
+              styles.scrollContent,
+              {
+                paddingHorizontal: isDesktop ? 64 : 20,
+                paddingTop: isDesktop ? 40 : 20,
+              },
+            ]}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Mobile-Only Top Navigation Bar */}
+            {!isDesktop && (
+              <View style={styles.mobileTopBar}>
+                <View style={styles.mobileBrandRow}>
                   <View
                     style={[
-                      styles.guestTag,
-                      { backgroundColor: pastelColors.lime },
+                      styles.mobileBrandBadge,
+                      { backgroundColor: pastelColors.apricot },
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.guestTagText,
-                        { color: noteTileTokens.textPrimary },
-                      ]}
-                    >
-                      OFFLINE
-                    </Text>
+                    <Sparkles size={16} color="#111111" />
                   </View>
-                )}
-              </View>
-
-              {/* Theme Toggle Button */}
-              <Pressable
-                onPress={toggleTheme}
-                style={({ pressed }) => [
-                  styles.circularButton,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.borderSubtle,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-                accessibilityLabel="Toggle Theme"
-              >
-                {isDark ? (
-                  <Sun size={19} color={colors.textPrimary} />
-                ) : (
-                  <Moon size={19} color={colors.textPrimary} />
-                )}
-              </Pressable>
-
-              {/* Sign Out Button */}
-              <Pressable
-                onPress={signOut}
-                style={({ pressed }) => [
-                  styles.circularButton,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.borderSubtle,
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-                accessibilityLabel="Sign Out"
-              >
-                <LogOut size={18} color={colors.textSecondary} />
-              </Pressable>
-
-              {/* Quick Add Note Button */}
-              <Pressable
-                onPress={handleCreateNote}
-                style={({ pressed }) => [
-                  styles.circularButtonPrimary,
-                  {
-                    backgroundColor: colors.iconBg,
-                    opacity: pressed ? 0.85 : 1,
-                  },
-                ]}
-                accessibilityLabel="Create Note"
-              >
-                <Plus size={20} color={colors.iconFg} />
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Heading Section */}
-          <View style={styles.headingSection}>
-            <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>
-              Notes
-            </Text>
-
-            {/* Offline-First SQLite & Sync Doorbell Indicator Badges */}
-            <View style={styles.badgesRow}>
-              <View
-                style={[
-                  styles.statusBadge,
-                  {
-                    backgroundColor: isDark ? '#2D2D2D' : '#F0F2F5',
-                    borderColor: colors.borderSubtle,
-                  },
-                ]}
-              >
-                <Database size={13} color={colors.textSecondary} />
-                <Text
-                  style={[styles.statusBadgeText, { color: colors.textSecondary }]}
-                >
-                  Offline SQLite Active · {notes.length} notes
-                </Text>
-              </View>
-
-              <Pressable
-                onPress={syncNow}
-                style={({ pressed }) => [
-                  styles.statusBadge,
-                  {
-                    backgroundColor:
-                      syncStatus === 'synced'
-                        ? isDark
-                          ? '#1A3324'
-                          : '#EAF7EE'
-                        : isDark
-                        ? '#332E1A'
-                        : '#FCF7E6',
-                    borderColor:
-                      syncStatus === 'synced' ? '#34C759' : '#FF9500',
-                    opacity: pressed ? 0.7 : 1,
-                  },
-                ]}
-              >
-                {isSyncing ? (
-                  <RefreshCw
-                    size={13}
-                    color={syncStatus === 'synced' ? '#34C759' : '#FF9500'}
-                    style={styles.spinning}
-                  />
-                ) : syncStatus === 'synced' ? (
-                  <Cloud size={13} color="#34C759" />
-                ) : (
-                  <CloudOff size={13} color="#FF9500" />
-                )}
-                <Text
-                  style={[
-                    styles.statusBadgeText,
-                    {
-                      color:
-                        syncStatus === 'synced' ? '#34C759' : '#FF9500',
-                      fontWeight: '600',
-                    },
-                  ]}
-                >
-                  {syncStatus === 'synced'
-                    ? `Live Sync (rev: ${currentRev})`
-                    : `Sync: ${syncStatus} ${pendingCount > 0 ? `(${pendingCount} pending)` : ''}`}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {/* Loading Indicator */}
-          {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.textPrimary} />
-            </View>
-          ) : (
-            /* Multi-Column Pastel Note Tiles Grid */
-            <View
-              style={[
-                styles.notesGrid,
-                {
-                  gap: isWide ? 24 : 16,
-                },
-              ]}
-            >
-              {filteredNotes.map((note) => {
-                const colorHex =
-                  pastelColors[note.color_token as PastelColorKey] ||
-                  pastelColors.apricot;
-
-                const columnFlex =
-                  numColumns === 3 ? '31.3%' : numColumns === 2 ? '48%' : '100%';
-
-                return (
-                  <View
-                    key={note.id}
+                  <Text
                     style={[
-                      styles.noteTile,
+                      styles.mobileBrandText,
+                      { color: colors.textPrimary },
+                    ]}
+                  >
+                    ScribeX
+                  </Text>
+                </View>
+
+                <View style={styles.mobileActionsRow}>
+                  <Pressable
+                    onPress={toggleTheme}
+                    hitSlop={8}
+                    style={[
+                      styles.mobileCircleBtn,
                       {
-                        backgroundColor: colorHex,
-                        width: columnFlex as any,
+                        backgroundColor: isDark
+                          ? colors.surfaceRaised
+                          : '#F0F2F5',
                       },
                     ]}
+                    accessibilityLabel="Toggle Theme"
                   >
-                    {/* Top Row: Title + Favorite Star */}
-                    <View style={styles.noteTopRow}>
-                      <Text
-                        style={[styles.noteTitle, { color: noteTileTokens.textPrimary }]}
-                        numberOfLines={1}
-                      >
-                        {note.title}
-                      </Text>
+                    {isDark ? (
+                      <Sun size={17} color={colors.textPrimary} />
+                    ) : (
+                      <Moon size={17} color={colors.textPrimary} />
+                    )}
+                  </Pressable>
 
-                      <Pressable
-                        onPress={() => handleToggleFavorite(note.id)}
-                        hitSlop={8}
-                        style={styles.favoriteButton}
-                        accessibilityLabel="Toggle Favorite"
-                      >
-                        <Star
-                          size={18}
-                          color={note.is_favorite ? '#000000' : 'rgba(0,0,0,0.28)'}
-                          fill={note.is_favorite ? '#000000' : 'none'}
-                        />
-                      </Pressable>
-                    </View>
+                  <Pressable
+                    onPress={signOut}
+                    hitSlop={8}
+                    style={[
+                      styles.mobileCircleBtn,
+                      {
+                        backgroundColor: isDark
+                          ? colors.surfaceRaised
+                          : '#F0F2F5',
+                      },
+                    ]}
+                    accessibilityLabel="Sign Out"
+                  >
+                    <LogOut size={16} color={colors.textSecondary} />
+                  </Pressable>
 
-                    {/* Content Preview */}
-                    <Text
-                      style={[styles.noteContent, { color: noteTileTokens.textPrimary }]}
-                      numberOfLines={4}
-                    >
-                      {note.content_markdown}
-                    </Text>
+                  <Pressable
+                    onPress={handleCreateNote}
+                    style={[
+                      styles.mobileCircleBtnPrimary,
+                      { backgroundColor: colors.iconBg },
+                    ]}
+                    accessibilityLabel="Add Note"
+                  >
+                    <Plus size={20} color={colors.iconFg} strokeWidth={2.2} />
+                  </Pressable>
+                </View>
+              </View>
+            )}
 
-                    {/* Bottom Row: Metadata & Edit Action */}
-                    <View style={styles.noteBottomRow}>
-                      <Text
-                        style={[
-                          styles.noteDate,
-                          { color: noteTileTokens.textSecondary },
-                        ]}
-                      >
-                        {new Date(note.updated_at).toLocaleDateString(
-                          undefined,
-                          {
-                            month: 'short',
-                            day: 'numeric',
-                          }
-                        )}{' '}
-                        · local
-                      </Text>
-
-                      {/* Circular Edit Action Button */}
-                      <View style={styles.editActionCircle}>
-                        <Pencil size={14} color="#FFFFFF" />
-                      </View>
-                    </View>
-                  </View>
-                );
-              })}
+            {/* Top Search Field (Restrained, placed before page title) */}
+            <View style={styles.searchRow}>
+              <Pressable
+                onPress={() => searchInputRef.current?.focus()}
+                style={[
+                  styles.searchBox,
+                  {
+                    backgroundColor: isDark
+                      ? colors.surfaceRaised
+                      : colors.surface,
+                    borderColor: isSearchFocused
+                      ? isDark
+                        ? '#F7F7F7'
+                        : '#171717'
+                      : colors.borderSubtle,
+                    borderWidth: isSearchFocused ? 1.5 : 1,
+                  },
+                ]}
+              >
+                <Search
+                  size={16}
+                  color={colors.textMuted}
+                  style={styles.searchIcon}
+                />
+                <TextInput
+                  ref={searchInputRef}
+                  style={[
+                    styles.searchInput,
+                    { color: colors.textPrimary },
+                    webInputReset,
+                  ]}
+                  placeholder="Search notes in local SQLite..."
+                  placeholderTextColor={colors.textMuted}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                  selectionColor={isDark ? '#F7F7F7' : '#171717'}
+                />
+              </Pressable>
             </View>
-          )}
-        </View>
-      </ScrollView>
+
+            {/* Large Bold Left-Aligned Page Heading */}
+            <View style={styles.headingSection}>
+              <Text
+                style={[
+                  styles.pageTitle,
+                  {
+                    color: colors.textPrimary,
+                    fontSize: isDesktop ? 48 : 36,
+                    lineHeight: isDesktop ? 52 : 40,
+                  },
+                ]}
+              >
+                Notes
+              </Text>
+            </View>
+
+            {/* Loading Indicator or Responsive Note Grid */}
+            {isLoading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.textPrimary} />
+              </View>
+            ) : (
+              <NoteGrid
+                notes={filteredNotes}
+                onSelectNote={(note) => setActiveEditingNote(note)}
+                onToggleFavorite={handleToggleFavorite}
+              />
+            )}
+          </ScrollView>
+        )}
+      </View>
     </View>
   );
 };
@@ -498,32 +415,70 @@ export const NotesHomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    flexDirection: 'row',
+    height: '100%',
+    width: '100%',
+  },
+  mainSurface: {
+    flex: 1,
+    height: '100%',
   },
   scrollContent: {
-    flexGrow: 1,
     paddingBottom: 64,
   },
-  workspaceWrapper: {
-    maxWidth: 1280,
-    width: '100%',
-    alignSelf: 'center',
+  mobileTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingTop: Platform.OS === 'web' ? 12 : 36,
   },
-  topRow: {
+  mobileBrandRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 16,
-    marginBottom: 40,
+    gap: 10,
+  },
+  mobileBrandBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mobileBrandText: {
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+  },
+  mobileActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  mobileCircleBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mobileCircleBtnPrimary: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  searchRow: {
+    marginBottom: 24,
   },
   searchBox: {
-    flex: 1,
     maxWidth: 420,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
+    height: 42,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
   },
   searchIcon: {
     marginRight: 10,
@@ -532,134 +487,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     height: '100%',
-  },
-  headerRightActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  userBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    height: 38,
-    paddingHorizontal: 12,
-    borderRadius: 19,
-    borderWidth: 1,
-    maxWidth: 160,
-  },
-  userNameText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  guestTag: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-    marginLeft: 2,
-  },
-  guestTagText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 0.3,
-  },
-  circularButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  circularButtonPrimary: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    justifyContent: 'center',
-    alignItems: 'center',
+    padding: 0,
   },
   headingSection: {
-    marginBottom: 28,
+    marginBottom: 32,
   },
   pageTitle: {
-    fontSize: 48,
     fontWeight: '700',
-    letterSpacing: -1.2,
-    marginBottom: 12,
-  },
-  badgesRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  statusBadgeText: {
-    fontSize: 12,
-  },
-  spinning: {
-    transform: [{ rotate: '45deg' }],
+    letterSpacing: -0.6,
   },
   loadingContainer: {
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  notesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-start',
-  },
-  noteTile: {
-    minHeight: 220,
-    borderRadius: 20,
-    padding: 24,
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  noteTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 12,
-  },
-  noteTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-    flex: 1,
-  },
-  favoriteButton: {
-    padding: 2,
-  },
-  noteContent: {
-    fontSize: 14,
-    lineHeight: 21,
-    marginBottom: 20,
-  },
-  noteBottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  noteDate: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  editActionCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#191919',
+    paddingVertical: 64,
     justifyContent: 'center',
     alignItems: 'center',
   },
