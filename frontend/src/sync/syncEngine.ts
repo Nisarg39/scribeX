@@ -50,6 +50,8 @@ class SyncEngine {
   private reconnectDelay = syncConfig.reconnectBaseDelayMs;
   private appStateSubscription: any = null;
   private isStarted = false;
+  private currentRev = 0;
+  private pendingCount = 0;
 
   constructor() {
     this.handleAppStateChange = this.handleAppStateChange.bind(this);
@@ -57,6 +59,14 @@ class SyncEngine {
 
   public getStatus(): SyncStatus {
     return this.status;
+  }
+
+  public getCurrentRev(): number {
+    return this.currentRev;
+  }
+
+  public getPendingCount(): number {
+    return this.pendingCount;
   }
 
   public getLastSyncedAt(): Date | null {
@@ -67,8 +77,8 @@ class SyncEngine {
     this.listeners.add(listener);
     listener({
       status: this.status,
-      currentRev: 0,
-      pendingCount: 0,
+      currentRev: this.currentRev,
+      pendingCount: this.pendingCount,
       lastSyncedAt: this.lastSyncedAt,
     });
     this.emitEvent();
@@ -82,6 +92,8 @@ class SyncEngine {
       try {
         const currentRev = await getCurrentSyncRev();
         const pending = await getPendingMutations();
+        this.currentRev = currentRev;
+        this.pendingCount = pending.length;
         const event: SyncEvent = {
           status: this.status,
           currentRev,
@@ -101,8 +113,8 @@ class SyncEngine {
         // Fallback emit if db not ready
         const event: SyncEvent = {
           status: this.status,
-          currentRev: 0,
-          pendingCount: 0,
+          currentRev: this.currentRev,
+          pendingCount: this.pendingCount,
           lastSyncedAt: this.lastSyncedAt,
           deltasApplied,
           errorMessage,

@@ -118,6 +118,12 @@ function NotesWorkspace() {
     }
   }, []);
 
+  // Memoize sync callback to maintain stable function reference
+  const handleDeltasApplied = useCallback(() => {
+    // Re-query local SQLite when real-time delta arrives via WebSocket Doorbell
+    loadNotes();
+  }, [loadNotes]);
+
   // Connect Real-Time Delta Sync Engine
   const {
     status: syncStatus,
@@ -126,10 +132,7 @@ function NotesWorkspace() {
     currentRev,
     syncNow,
   } = useSync({
-    onDeltasApplied: () => {
-      // Re-query local SQLite when real-time delta arrives via WebSocket Doorbell
-      loadNotes();
-    },
+    onDeltasApplied: handleDeltasApplied,
   });
 
   useEffect(() => {
