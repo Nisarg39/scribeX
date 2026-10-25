@@ -1,0 +1,1 @@
+"""ScribeX Core Application Package."""
