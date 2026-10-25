@@ -242,13 +242,12 @@ class SyncEngine {
       };
 
       this.ws.onclose = () => {
-        console.log('WebSocket Doorbell disconnected');
         if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
         this.scheduleReconnect();
       };
 
-      this.ws.onerror = (err) => {
-        console.warn('WebSocket error:', err);
+      this.ws.onerror = () => {
+        // Suppress noisy browser {"isTrusted": true} event dump when offline or server unreachable
         if (this.ws) {
           try {
             this.ws.close();
@@ -256,7 +255,6 @@ class SyncEngine {
         }
       };
     } catch (err) {
-      console.warn('Failed to initialize WebSocket:', err);
       this.scheduleReconnect();
     }
   }
@@ -354,7 +352,6 @@ class SyncEngine {
         throw new Error(`Server returned HTTP ${deltasResponse.status}`);
       }
     } catch (err: any) {
-      console.warn('Sync reconciliation offline or failed:', err?.message || err);
       this.status = 'offline';
       this.emitEvent(0, err?.message || 'Network request failed');
     } finally {
