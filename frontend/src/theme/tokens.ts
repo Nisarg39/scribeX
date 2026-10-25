@@ -90,8 +90,10 @@ export const noteTileTokens = {
   textSecondary: 'rgba(25, 25, 25, 0.70)',
   actionBg: '#111111',
   actionFg: '#FFFFFF',
-  favoriteActive: '#E5A500',
-  favoriteInactive: 'rgba(25, 25, 25, 0.35)',
+  favoriteSurfaceActive: '#111111',
+  favoriteSurfaceInactive: 'rgba(25, 25, 25, 0.08)',
+  favoriteIconActive: '#FFD43B',
+  favoriteIconInactive: 'rgba(25, 25, 25, 0.40)',
 };
 
 export const spacing = {

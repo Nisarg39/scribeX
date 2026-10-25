@@ -283,18 +283,29 @@ function NotesWorkspace() {
                       accessibilityLabel={
                         note.isFavorite ? 'Unmark favorite' : 'Mark favorite'
                       }
-                      hitSlop={8}
+                      hitSlop={6}
+                      style={({ pressed }) => [
+                        styles.tileFavoriteButton,
+                        {
+                          backgroundColor: note.isFavorite
+                            ? noteTileTokens.favoriteSurfaceActive
+                            : noteTileTokens.favoriteSurfaceInactive,
+                          opacity: pressed ? 0.75 : 1,
+                        },
+                      ]}
                       onPress={() => toggleFavorite(note.id)}
                     >
                       <Star
-                        size={20}
+                        size={16}
                         color={
                           note.isFavorite
-                            ? colors.favorite
-                            : noteTileTokens.favoriteInactive
+                            ? noteTileTokens.favoriteIconActive
+                            : noteTileTokens.favoriteIconInactive
                         }
                         fill={
-                          note.isFavorite ? colors.favorite : 'transparent'
+                          note.isFavorite
+                            ? noteTileTokens.favoriteIconActive
+                            : 'transparent'
                         }
                       />
                     </Pressable>
@@ -463,6 +474,13 @@ const styles = StyleSheet.create({
   tileActionButton: {
     width: 36,
     height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileFavoriteButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
