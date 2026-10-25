@@ -20,7 +20,9 @@ import {
   Star,
   Sparkles,
   Database,
-  CloudCheck,
+  Cloud,
+  CloudOff,
+  RefreshCw,
 } from 'lucide-react-native';
 import {
   ThemeProvider,
@@ -34,8 +36,8 @@ import {
   saveLocalNote,
   toggleLocalFavorite,
   seedInitialNotesIfEmpty,
-  getPendingMutations,
 } from './src/db';
+import { useSync } from './src/sync';
 
 const INITIAL_SAMPLES: Array<{
   title: string;
@@ -98,7 +100,6 @@ function NotesWorkspace() {
   const [searchQuery, setSearchQuery] = useState('');
   const [notes, setNotes] = useState<ClientNote[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [pendingCount, setPendingCount] = useState(0);
 
   const isWide = width >= 1024;
   const isTablet = width >= 640 && width < 1024;
@@ -110,14 +111,26 @@ function NotesWorkspace() {
       await seedInitialNotesIfEmpty(INITIAL_SAMPLES);
       const loaded = await getLocalNotes();
       setNotes(loaded);
-      const pending = await getPendingMutations();
-      setPendingCount(pending.length);
     } catch (err) {
       console.error('Failed to load notes from local SQLite:', err);
     } finally {
       setIsLoading(false);
     }
   }, []);
+
+  // Connect Real-Time Delta Sync Engine
+  const {
+    status: syncStatus,
+    isSyncing,
+    pendingCount,
+    currentRev,
+    syncNow,
+  } = useSync({
+    onDeltasApplied: () => {
+      // Re-query local SQLite when real-time delta arrives via WebSocket Doorbell
+      loadNotes();
+    },
+  });
 
   useEffect(() => {
     loadNotes();
@@ -129,8 +142,8 @@ function NotesWorkspace() {
       setNotes((prev) =>
         prev.map((n) => (n.id === id ? { ...n, is_favorite: nextFav } : n))
       );
-      const pending = await getPendingMutations();
-      setPendingCount(pending.length);
+      // Asynchronously trigger sync drain
+      syncNow();
     } catch (err) {
       console.error('Failed to toggle favorite in SQLite:', err);
     }
@@ -148,16 +161,16 @@ function NotesWorkspace() {
       ];
       const nextColor = colorKeys[notes.length % colorKeys.length];
       const newNote = await saveLocalNote({
-        title: `Offline Thought #${notes.length + 1}`,
-        content_markdown: 'Instant local SQLite commit with sub-5ms query latency.',
+        title: `Thought #${notes.length + 1}`,
+        content_markdown: 'Instant local SQLite commit with real-time delta sync.',
         group_name: 'General Reference',
         color_token: nextColor,
         is_favorite: false,
       });
 
       setNotes((prev) => [newNote, ...prev]);
-      const pending = await getPendingMutations();
-      setPendingCount(pending.length);
+      // Asynchronously trigger sync drain
+      syncNow();
     } catch (err) {
       console.error('Failed to save note to local SQLite:', err);
     }
@@ -253,7 +266,7 @@ function NotesWorkspace() {
           </View>
         </View>
 
-        {/* Page Title & Status Row */}
+        {/* Page Title & Real-Time Sync Status Row */}
         <View style={styles.headerRow}>
           <Text
             style={[
@@ -266,6 +279,7 @@ function NotesWorkspace() {
           </Text>
 
           <View style={styles.metaBadges}>
+            {/* Database Engine Badge */}
             <View style={styles.badgeRow}>
               <Database size={15} color={colors.textSecondary} />
               <Text style={[styles.badgeText, { color: colors.textSecondary }]}>
@@ -273,11 +287,58 @@ function NotesWorkspace() {
               </Text>
             </View>
 
-            {pendingCount > 0 && (
+            {/* Real-Time Sync State Badge (Clickable to manual refresh) */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Trigger sync catch-up"
+              onPress={() => syncNow()}
+              style={({ pressed }) => [
+                styles.badgeRow,
+                syncStatus === 'synced'
+                  ? styles.syncedBadge
+                  : syncStatus === 'syncing'
+                  ? styles.syncingBadge
+                  : styles.offlineBadge,
+                { opacity: pressed ? 0.7 : 1 },
+              ]}
+            >
+              {syncStatus === 'syncing' ? (
+                <ActivityIndicator size="small" color="#D97706" style={{ marginRight: 2 }} />
+              ) : syncStatus === 'synced' ? (
+                <Cloud size={14} color="#16A34A" />
+              ) : (
+                <CloudOff size={14} color={colors.textSecondary} />
+              )}
+
+              <Text
+                style={[
+                  styles.badgeText,
+                  {
+                    color:
+                      syncStatus === 'synced'
+                        ? '#16A34A'
+                        : syncStatus === 'syncing'
+                        ? '#D97706'
+                        : colors.textSecondary,
+                    fontWeight: '600',
+                  },
+                ]}
+              >
+                {syncStatus === 'synced'
+                  ? `Live Sync (rev: ${currentRev})`
+                  : syncStatus === 'syncing'
+                  ? 'Syncing deltas...'
+                  : pendingCount > 0
+                  ? `Offline (${pendingCount} pending)`
+                  : 'Offline Mode'}
+              </Text>
+            </Pressable>
+
+            {pendingCount > 0 && syncStatus === 'synced' && (
               <View style={[styles.badgeRow, styles.pendingBadge]}>
                 <Sparkles size={14} color="#D97706" />
                 <Text style={[styles.badgeText, { color: '#D97706', fontWeight: '600' }]}>
-                  {pendingCount} pending delta {pendingCount === 1 ? 'sync' : 'syncs'}
+                  {pendingCount} pending upload
                 </Text>
               </View>
             )}
@@ -498,11 +559,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  syncedBadge: {
+    backgroundColor: 'rgba(22, 163, 74, 0.12)',
+  },
+  syncingBadge: {
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+  },
+  offlineBadge: {
+    backgroundColor: 'rgba(100, 100, 100, 0.12)',
   },
   pendingBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
     backgroundColor: 'rgba(217, 119, 6, 0.12)',
   },
   badgeText: {

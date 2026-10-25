@@ -24,7 +24,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test:db": "npx tsx src/db/verify_db.ts"
+    "test:db": "npx tsx src/db/verify_db.ts",
+    "test:sync": "npx tsx src/sync/verify_sync.ts"
   },
   "private": true
 }
