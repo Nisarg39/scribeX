@@ -21,7 +21,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Ensure baseline storage directories exist for default user
     paths = ensure_tenant_directories(settings.default_user_id)
-    logger.info(f"Initialized storage paths for default user at: {paths['tenant_root']}")
+    logger.info(f"Initialized storage paths for default user at: {paths['base_root']}")
 
     # Initialize SQLite database schema
     from app.storage.sqlite_db import init_db

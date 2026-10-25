@@ -41,11 +41,18 @@ async def test_root_endpoint():
 
 
 def test_tenant_path_resolution():
-    """Verify tenant path isolation across users."""
+    """Verify default user flat layout matching Technical_System_Architecture.md and custom tenant isolation."""
+    # 1. Default user should use clean top-level data/ paths
+    default_paths = ensure_tenant_directories(settings.default_user_id)
+    assert default_paths["vault"] == settings.data_dir / "vault"
+    assert default_paths["sqlite_db"] == settings.data_dir / "sqlite" / "scribex.db"
+    assert default_paths["lancedb"] == settings.data_dir / "lancedb"
+
+    # 2. Custom tenant should be isolated under data/tenants/
     test_user = "test_user_42"
     paths = ensure_tenant_directories(test_user)
 
-    assert paths["tenant_root"].exists()
+    assert paths["base_root"].exists()
     assert paths["vault"].exists()
     assert paths["sqlite_dir"].exists()
     assert paths["lancedb"].exists()
@@ -55,8 +62,8 @@ def test_tenant_path_resolution():
     assert paths["lancedb"] == get_lancedb_path(test_user)
 
     # Clean up test user directory
-    if paths["tenant_root"].exists():
-        shutil.rmtree(paths["tenant_root"])
+    if paths["base_root"].exists() and "test_user_42" in str(paths["base_root"]):
+        shutil.rmtree(paths["base_root"])
 
 
 @pytest.mark.asyncio

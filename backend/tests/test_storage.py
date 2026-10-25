@@ -31,8 +31,8 @@ async def setup_and_teardown_db():
     await init_db(TEST_USER)
     yield
     # Clean up test user directory
-    if paths["tenant_root"].exists():
-        shutil.rmtree(paths["tenant_root"])
+    if paths["base_root"].exists():
+        shutil.rmtree(paths["base_root"])
 
 
 @pytest.mark.asyncio
