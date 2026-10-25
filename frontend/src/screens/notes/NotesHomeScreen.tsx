@@ -42,6 +42,7 @@ import { getLocalNotes, deleteLocalNote, saveLocalNote } from '../../db/notesRep
 import { ClientNote } from '../../db/types';
 import { useSync } from '../../sync/useSync';
 import { IntakeBar } from '../../components/intake';
+import { BlockEditor } from '../../components/editor';
 
 export const NotesHomeScreen: React.FC = () => {
   const { colors, isDark, toggleTheme } = useTheme();
@@ -440,51 +441,32 @@ export const NotesHomeScreen: React.FC = () => {
         )}
       </ScrollView>
 
-      {/* Note Inspection Modal */}
+      {/* Composable Block-Based Note Editor Surface */}
       {selectedNote && (
         <Modal
           visible={Boolean(selectedNote)}
-          transparent
-          animationType="fade"
+          animationType="slide"
           onRequestClose={() => setSelectedNote(null)}
         >
-          <Pressable
-            style={styles.modalOverlay}
-            onPress={() => setSelectedNote(null)}
-          >
-            <Pressable
-              style={[
-                styles.modalCard,
-                {
-                  backgroundColor:
-                    pastelColors[selectedNote.color_token as PastelColorKey] ||
-                    pastelColors.apricot,
-                },
-              ]}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <View style={styles.modalHeader}>
-                <View style={styles.groupCapsule}>
-                  <Text style={styles.groupCapsuleText}>
-                    {selectedNote.group_name}
-                  </Text>
-                </View>
-                <Pressable
-                  onPress={() => setSelectedNote(null)}
-                  style={styles.miniCircularButton}
-                >
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#191919' }}>✕</Text>
-                </Pressable>
-              </View>
-
-              <Text style={styles.modalTitle}>{selectedNote.title}</Text>
-              <ScrollView style={styles.modalScroll}>
-                <Text style={styles.modalBody}>
-                  {selectedNote.content_markdown || 'No content.'}
-                </Text>
-              </ScrollView>
-            </Pressable>
-          </Pressable>
+          <BlockEditor
+            initialTitle={selectedNote.title}
+            initialMarkdown={selectedNote.content_markdown}
+            colorToken={selectedNote.color_token}
+            groupName={selectedNote.group_name}
+            onSave={async (payload) => {
+              const updated = await saveLocalNote({
+                id: selectedNote.id,
+                title: payload.title,
+                content_markdown: payload.content_markdown,
+                group_name: selectedNote.group_name,
+                color_token: selectedNote.color_token,
+                is_favorite: selectedNote.is_favorite,
+              });
+              setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+              setSelectedNote(updated);
+            }}
+            onClose={() => setSelectedNote(null)}
+          />
         </Modal>
       )}
     </View>
