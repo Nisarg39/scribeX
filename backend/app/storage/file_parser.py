@@ -108,3 +108,18 @@ def parse_file_bytes(file_bytes: bytes, filename: str) -> dict[str, Any]:
         "word_count": word_count,
         "page_count": page_count,
     }
+
+
+def parse_uploaded_file(file_path: Path, filename: str) -> dict[str, Any]:
+    """Convenience helper reading file path and returning structured parsed dict."""
+    file_bytes = file_path.read_bytes()
+    res = parse_file_bytes(file_bytes, filename)
+    return {
+        "content_markdown": res["text"],
+        "extracted_title": res["title_suggestion"],
+        "file_type": res["file_type"],
+        "filename": res["filename"],
+        "word_count": res["word_count"],
+        "page_count": res["page_count"],
+    }
+

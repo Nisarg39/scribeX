@@ -70,3 +70,10 @@ async def root() -> dict[str, str]:
         "docs_url": "/docs",
         "health_url": "/health",
     }
+
+
+# Register API Routers
+from app.api import intake
+
+app.include_router(intake.router)
+

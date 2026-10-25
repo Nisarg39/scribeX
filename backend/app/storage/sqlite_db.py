@@ -392,3 +392,102 @@ async def search_notes_fts(
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
+
+
+# ==============================================================================
+# Staging Intake (Ambiguity Gate Staging Table)
+# ==============================================================================
+
+
+async def save_staging_intake(
+    user_id: str,
+    raw_input: str,
+    clarity_score: float,
+    clarifying_questions: list[str],
+    proposed_action: str | None = None,
+    status: str = "PENDING_CLARIFICATION",
+    staging_id: str | None = None,
+) -> dict[str, Any]:
+    """Save an ambiguous raw input into the staging intake table."""
+    sid = staging_id or str(uuid.uuid4())
+    questions_json = json.dumps(clarifying_questions)
+
+    async with get_db_connection(user_id) as conn:
+        await conn.execute(
+            """
+            INSERT INTO staging_intake (id, user_id, raw_input, clarity_score, clarifying_questions, proposed_action, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                raw_input = excluded.raw_input,
+                clarity_score = excluded.clarity_score,
+                clarifying_questions = excluded.clarifying_questions,
+                proposed_action = excluded.proposed_action,
+                status = excluded.status
+            """,
+            (sid, user_id, raw_input, clarity_score, questions_json, proposed_action, status),
+        )
+        await conn.commit()
+
+        cursor = await conn.execute(
+            "SELECT * FROM staging_intake WHERE id = ? AND user_id = ?",
+            (sid, user_id),
+        )
+        row = await cursor.fetchone()
+        res = dict(row)
+        res["clarifying_questions"] = json.loads(res["clarifying_questions"])
+        return res
+
+
+async def get_staging_intake(user_id: str, staging_id: str) -> dict[str, Any] | None:
+    """Retrieve a staged ambiguous intake item by ID."""
+    async with get_db_connection(user_id) as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM staging_intake WHERE id = ? AND user_id = ?",
+            (staging_id, user_id),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None
+        res = dict(row)
+        res["clarifying_questions"] = json.loads(res["clarifying_questions"])
+        return res
+
+
+async def update_staging_status(
+    user_id: str,
+    staging_id: str,
+    status: str,
+) -> bool:
+    """Update status of a staged intake item (e.g. 'RESOLVED', 'DISCARDED')."""
+    async with get_db_connection(user_id) as conn:
+        cursor = await conn.execute(
+            "UPDATE staging_intake SET status = ? WHERE id = ? AND user_id = ?",
+            (status, staging_id, user_id),
+        )
+        await conn.commit()
+        return cursor.rowcount > 0
+
+
+async def list_staging_intakes(
+    user_id: str,
+    status: str = "PENDING_CLARIFICATION",
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """List staged intake records filtered by status."""
+    async with get_db_connection(user_id) as conn:
+        cursor = await conn.execute(
+            """
+            SELECT * FROM staging_intake
+            WHERE user_id = ? AND status = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (user_id, status, limit),
+        )
+        rows = await cursor.fetchall()
+        result = []
+        for r in rows:
+            item = dict(r)
+            item["clarifying_questions"] = json.loads(item["clarifying_questions"])
+            result.append(item)
+        return result
