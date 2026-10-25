@@ -52,9 +52,43 @@ class SyncEngine {
   private isStarted = false;
   private currentRev = 0;
   private pendingCount = 0;
+  private userId: string = 'default_user';
+  private authToken: string | null = null;
 
   constructor() {
     this.handleAppStateChange = this.handleAppStateChange.bind(this);
+  }
+
+  /**
+   * Dynamically update the authenticated user context for multi-tenant sync.
+   */
+  public setAuthContext(userId: string | null, token: string | null): void {
+    const previousUserId = this.userId;
+    this.userId = userId || 'default_user';
+    this.authToken = token;
+
+    if (!userId) {
+      this.status = 'offline';
+      if (this.ws) {
+        try {
+          this.ws.close();
+        } catch (e) {}
+        this.ws = null;
+      }
+      this.emitEvent();
+      return;
+    }
+
+    if (this.isStarted && (previousUserId !== userId || !this.ws)) {
+      if (this.ws) {
+        try {
+          this.ws.close();
+        } catch (e) {}
+        this.ws = null;
+      }
+      this.connectWebSocket();
+      this.syncNow();
+    }
   }
 
   public getStatus(): SyncStatus {
@@ -199,7 +233,8 @@ class SyncEngine {
     }
 
     try {
-      const url = `${syncConfig.wsUrl}?user_id=${encodeURIComponent(syncConfig.defaultUserId)}`;
+      const tokenParam = this.authToken ? `&token=${encodeURIComponent(this.authToken)}` : '';
+      const url = `${syncConfig.wsUrl}?user_id=${encodeURIComponent(this.userId)}${tokenParam}`;
       this.ws = new WebSocket(url);
 
       this.ws.onopen = () => {
@@ -304,12 +339,17 @@ class SyncEngine {
           })),
         };
 
+        const pushHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'X-User-ID': this.userId,
+        };
+        if (this.authToken) {
+          pushHeaders['Authorization'] = `Bearer ${this.authToken}`;
+        }
+
         const pushResponse = await fetch(`${syncConfig.apiUrl}/api/v1/sync/push`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-User-ID': syncConfig.defaultUserId,
-          },
+          headers: pushHeaders,
           body: JSON.stringify(pushPayload),
         });
 
@@ -325,13 +365,18 @@ class SyncEngine {
 
       // Step B: Reconnection Catch-Up Handshake
       const localRev = await getCurrentSyncRev();
+      const deltasHeaders: Record<string, string> = {
+        'X-User-ID': this.userId,
+      };
+      if (this.authToken) {
+        deltasHeaders['Authorization'] = `Bearer ${this.authToken}`;
+      }
+
       const deltasResponse = await fetch(
         `${syncConfig.apiUrl}/api/v1/sync/deltas?since_rev=${localRev}&limit=200`,
         {
           method: 'GET',
-          headers: {
-            'X-User-ID': syncConfig.defaultUserId,
-          },
+          headers: deltasHeaders,
         }
       );
 
