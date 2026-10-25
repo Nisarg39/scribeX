@@ -49,6 +49,7 @@ import { ClientNote } from '../../db/types';
 import { useSync } from '../../sync/useSync';
 import { IntakeBar } from '../../components/intake';
 import { BlockEditor } from '../../components/editor';
+import { apiClient } from '../../services/apiClient';
 
 export const NotesHomeScreen: React.FC = () => {
   const { colors, isDark, toggleTheme } = useTheme();
@@ -82,10 +83,10 @@ export const NotesHomeScreen: React.FC = () => {
     let isMounted = true;
     const checkPurgeAndLoad = async () => {
       try {
-        const hasPurged = await AsyncStorage.getItem('scribex_purged_all_notes_v1');
+        const hasPurged = await AsyncStorage.getItem('scribex_purged_all_notes_v2');
         if (!hasPurged) {
           await clearAllLocalNotes();
-          await AsyncStorage.setItem('scribex_purged_all_notes_v1', 'true');
+          await AsyncStorage.setItem('scribex_purged_all_notes_v2', 'true');
         }
       } catch (e) {
         console.warn('Purge check error:', e);
@@ -105,6 +106,12 @@ export const NotesHomeScreen: React.FC = () => {
       await clearAllLocalNotes();
       setNotes([]);
       setSelectedNote(null);
+      // Also reset on backend
+      try {
+        await apiClient.post('/api/v1/sync/reset', {});
+      } catch (e) {
+        console.warn('Backend reset call warning:', e);
+      }
     } catch (err) {
       console.error('Failed to clear notes:', err);
     }

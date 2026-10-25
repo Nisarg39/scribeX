@@ -68,6 +68,23 @@ class WebDatabaseAdapter implements DatabaseAdapter {
     await this.ensureLoaded();
   }
 
+  async clearAll(): Promise<void> {
+    this.inMemoryTables.notes = [];
+    this.inMemoryTables.pending_mutations = [];
+    this.inMemoryTables.local_sync_meta = [];
+    if (this.hasStorage()) {
+      try {
+        await AsyncStorage.multiRemove([
+          `${WEB_STORAGE_PREFIX}notes`,
+          `${WEB_STORAGE_PREFIX}meta`,
+          `${WEB_STORAGE_PREFIX}mutations`,
+        ]);
+      } catch (err) {
+        console.warn('Web storage clear error:', err);
+      }
+    }
+  }
+
   async runAsync(
     sql: string,
     params: any[] = []
@@ -156,11 +173,23 @@ class WebDatabaseAdapter implements DatabaseAdapter {
 
     // 3. DELETE FROM notes
     if (cleanSql.startsWith('DELETE FROM notes')) {
-      const [id] = params;
       const initialLen = this.inMemoryTables.notes.length;
-      this.inMemoryTables.notes = this.inMemoryTables.notes.filter((n) => n.id !== id);
+      if (params.length > 0) {
+        const [id] = params;
+        this.inMemoryTables.notes = this.inMemoryTables.notes.filter((n) => n.id !== id);
+      } else {
+        this.inMemoryTables.notes = [];
+      }
       await this.persistTable('notes');
       return { lastInsertRowId: 0, changes: initialLen - this.inMemoryTables.notes.length };
+    }
+
+    // 3b. DELETE FROM local_sync_meta
+    if (cleanSql.startsWith('DELETE FROM local_sync_meta')) {
+      const initialLen = this.inMemoryTables.local_sync_meta.length;
+      this.inMemoryTables.local_sync_meta = [];
+      await this.persistTable('local_sync_meta');
+      return { lastInsertRowId: 0, changes: initialLen };
     }
 
     // 4. INSERT INTO pending_mutations

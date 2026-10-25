@@ -350,6 +350,9 @@ export async function clearAllLocalNotes(): Promise<void> {
   await db.runAsync('DELETE FROM notes;');
   await db.runAsync('DELETE FROM pending_mutations;');
   await db.runAsync('DELETE FROM local_sync_meta;');
+  if (typeof (db as any).clearAll === 'function') {
+    await (db as any).clearAll();
+  }
 }
 
 

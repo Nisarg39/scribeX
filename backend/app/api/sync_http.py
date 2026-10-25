@@ -223,3 +223,38 @@ async def push_sync_mutations(
         current_sync_rev=current_rev,
         applied_note_ids=applied_ids,
     )
+
+
+@router.post("/reset")
+async def reset_user_notes(user_id: str = Depends(get_current_user_id)) -> dict[str, Any]:
+    """Wipe all notes, changelogs, and staged intakes for the current user."""
+    import os
+    from app.storage.sqlite_db import get_sqlite_connection
+    from app.storage.paths import get_vault_path
+
+    async with get_sqlite_connection(user_id) as conn:
+        tables = [r[0] for r in await (await conn.execute("SELECT name FROM sqlite_master WHERE type='table';")).fetchall()]
+        for t in ["notes", "notes_fts", "sync_changelog", "staging_intake", "entity_edges"]:
+            if t in tables:
+                await conn.execute(f"DELETE FROM {t};")
+        if "user_sync_meta" in tables:
+            await conn.execute("UPDATE user_sync_meta SET current_sync_rev = 0 WHERE user_id = ?;", (user_id,))
+        await conn.commit()
+
+    # Clear vault files (except .git)
+    vault_path = get_vault_path(user_id)
+    if vault_path.exists():
+        for root, dirs, files in os.walk(vault_path):
+            if ".git" in root:
+                continue
+            for f in files:
+                if f.endswith(".md") and not f.startswith("."):
+                    try:
+                        os.remove(os.path.join(root, f))
+                    except Exception:
+                        pass
+
+    # Broadcast reset to all connected client devices
+    await ws_manager.broadcast_ping(user_id=user_id, latest_sync_rev=0)
+    return {"status": "success", "message": f"All notes wiped for user {user_id}"}
+
