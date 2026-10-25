@@ -37,8 +37,14 @@ import {
 } from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { useAuth } from '../../auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { pastelColors, PastelColorKey, noteTileTokens } from '../../theme/tokens';
-import { getLocalNotes, deleteLocalNote, saveLocalNote } from '../../db/notesRepo';
+import {
+  getLocalNotes,
+  deleteLocalNote,
+  saveLocalNote,
+  clearAllLocalNotes,
+} from '../../db/notesRepo';
 import { ClientNote } from '../../db/types';
 import { useSync } from '../../sync/useSync';
 import { IntakeBar } from '../../components/intake';
@@ -73,8 +79,36 @@ export const NotesHomeScreen: React.FC = () => {
   }, [selectedGroup]);
 
   useEffect(() => {
-    loadNotes();
+    let isMounted = true;
+    const checkPurgeAndLoad = async () => {
+      try {
+        const hasPurged = await AsyncStorage.getItem('scribex_purged_all_notes_v1');
+        if (!hasPurged) {
+          await clearAllLocalNotes();
+          await AsyncStorage.setItem('scribex_purged_all_notes_v1', 'true');
+        }
+      } catch (e) {
+        console.warn('Purge check error:', e);
+      }
+      if (isMounted) {
+        await loadNotes();
+      }
+    };
+    checkPurgeAndLoad();
+    return () => {
+      isMounted = false;
+    };
   }, [loadNotes]);
+
+  const handleClearAllNotes = async () => {
+    try {
+      await clearAllLocalNotes();
+      setNotes([]);
+      setSelectedNote(null);
+    } catch (err) {
+      console.error('Failed to clear notes:', err);
+    }
+  };
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -273,10 +307,30 @@ export const NotesHomeScreen: React.FC = () => {
           <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>
             Notes
           </Text>
-          <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>
-            {formattedDate} • {notes.length} {notes.length === 1 ? 'thought' : 'thoughts'}
-            {user?.name ? ` • ${user.name}` : ''}
-          </Text>
+          <View style={styles.subtitleRow}>
+            <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>
+              {formattedDate} • {notes.length} {notes.length === 1 ? 'thought' : 'thoughts'}
+              {user?.name ? ` • ${user.name}` : ''}
+            </Text>
+            {notes.length > 0 && (
+              <Pressable
+                onPress={handleClearAllNotes}
+                hitSlop={8}
+                style={styles.clearAllButton}
+                accessibilityLabel="Clear all notes"
+              >
+                <Trash2 size={13} color={isDark ? '#FF9277' : '#EF4444'} />
+                <Text
+                  style={[
+                    styles.clearAllText,
+                    { color: isDark ? '#FF9277' : '#EF4444' },
+                  ]}
+                >
+                  Clear all
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </View>
 
         {/* Universal Intake Bar */}
@@ -568,7 +622,24 @@ const styles = StyleSheet.create({
   pageSubtitle: {
     fontSize: 14,
     fontWeight: '400',
+  },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     marginBottom: 8,
+  },
+  clearAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  clearAllText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   filterRow: {
     flexDirection: 'row',

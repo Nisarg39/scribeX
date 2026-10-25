@@ -342,3 +342,14 @@ export async function markAllNotesPendingSync(): Promise<number> {
   return result.changes;
 }
 
+/**
+ * Permanently purge all local notes, pending mutations, and sync metadata.
+ */
+export async function clearAllLocalNotes(): Promise<void> {
+  const db = await getDatabase();
+  await db.runAsync('DELETE FROM notes;');
+  await db.runAsync('DELETE FROM pending_mutations;');
+  await db.runAsync('DELETE FROM local_sync_meta;');
+}
+
+
