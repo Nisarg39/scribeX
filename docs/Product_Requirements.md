@@ -29,6 +29,11 @@ The platform, ScribeX, is an intelligent, self-organizing universal note-taking 
 * **Automated File Filing:** When the user provides a file (documents, images, spreadsheets, etc.), the assistant must examine the file's contents and purpose, place it in the proper context within the notes ecosystem, and link it to any relevant existing notes, goals, or tasks.
 * **Actionable File Intake:** Upon receiving a file, the assistant should summarize its relevance, connect it to existing context, and suggest what actions should be taken regarding that file.
 
+### 2.5. Composable Block Architecture & Unified Task Engine
+* **Universal Composable Blocks (42 Input Methods):** Rather than maintaining separate siloed apps for text, sketches, PDFs, audio recordings, or spreadsheets, all 42 input methods enter the system through a unified composable block model. A single note can seamlessly contain rich markdown, KaTeX equations, vector sketches, audio transcripts, and embedded files.
+* **Unified Task Engine (Single Source of Truth):** Action items and checklist items embedded inside meeting notes share the exact same entity identity as items on the global task board. Checking off an item in either location synchronizes the state across both instantly.
+* **Cross-Boundary Relational Graph:** Knowledge is not trapped in mutually exclusive folders. Notes connect across categories via bidirectional graph relationships (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`) and dynamic Smart Collections.
+
 ---
 
 ## 3. Personal Knowledge Architecture ("Everything About Me")

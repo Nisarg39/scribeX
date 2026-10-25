@@ -105,8 +105,8 @@ A single **Expo (React Native)** codebase targets **iOS, Android, and Desktop/Mo
 * **API Framework:** **FastAPI** (Python 3.12+, Uvicorn with ASGI workers, native `asyncio` and `WebSockets`).
 * **AI Orchestration & Structured Outputs:** **PydanticAI** or **LangGraph** + **LiteLLM** (allowing seamless switching between Gemini, Claude, and OpenAI models for the Main AI brain).
 * **Embedded Databases (Zero External DB Maintenance):**
-  * **Operational Core: Embedded SQLite (`aiosqlite` in `WAL` mode + `FTS5`):** Serves as the high-throughput operational core on the VPS. Handles the real-time device sync ledger (`sync_changelog` with monotonically increasing `sync_rev`), active notes, checklists, graph relationships (`entity_edges`), and the Temporal Identity timeline ("Versions of Me").
-  * **Projected Document Layer: Git-Backed Markdown Vault (`GitPython`):** Asynchronously projected from SQLite changes on the VPS. Every note and profile document is maintained as a human-readable `.md` file with YAML frontmatter inside a local Git repository, serving as the version-controlled document archive, off-site backup, and the primary source for the manual edit diff-learning pipeline.
+  * **Operational Core: Embedded SQLite (`aiosqlite` in `WAL` mode + `FTS5`):** Serves as the high-throughput operational core on the VPS. Handles the real-time multi-entity device sync ledger (`sync_changelog` with monotonically increasing `sync_rev`), active notes with composable block AST (`notes`), unified task entities (`tasks`), binary media ledger (`assets`), knowledge graph relationships (`entity_relations`), and the Temporal Identity timeline ("Versions of Me").
+  * **Projected Document Layer: Git-Backed Markdown Vault (`GitPython`):** Asynchronously projected from SQLite changes on the VPS. Every note and profile document is maintained as a human-readable Extended Markdown AST `.md` file with YAML frontmatter inside a local Git repository, serving as the version-controlled document archive, off-site backup, and the primary source for the manual edit diff-learning pipeline and Remote PC CLI agents.
   * **Semantic Memory: LanceDB (Embedded Disk Mode):** Serverless, file-based vector database stored on the VPS disk for semantic chunk search across notes and uploaded files.
 * **Document & Audio Ingestion:** `MarkItDown` / `PyMuPDF` + Vision LLM pipeline for documents, spreadsheets, and images, paired with a lightweight audio transcription pipeline (`faster-whisper` / Whisper API) for persistent voice note capture.
 * **Proactive Background Engine:** `APScheduler` (AsyncIOScheduler) running inside FastAPI for daily priority recalculation, morning briefings, and periodic "sleep-cycle" memory consolidation.
@@ -115,23 +115,34 @@ A single **Expo (React Native)** codebase targets **iOS, Android, and Desktop/Mo
 
 ## 5. Hybrid Local-First Storage & Real-Time Multi-Device Delta Sync
 
-To allow you to use your phone, tablet, and desktop web browser **concurrently** with instant local speed, offline resilience, and zero data loss, the platform uses an **Operational SQLite Delta Sync + Projected Git Markdown Protocol**.
+To allow you to use your phone, tablet, and desktop web browser **concurrently** with instant local speed, offline resilience, and zero data loss, the platform uses an **Operational Block SQLite Delta Sync + Canonical Markdown AST Projection Protocol**.
 
 ### 5.1. Architecture of Truth: Decoupled Operational & Projection Layers
 To ensure maximum speed without file-locking bottlenecks:
-1. **Operational Layer (Device-to-Device Sync):** The central **SQLite database on the VPS** serves as the authoritative real-time operational state. All client devices (`expo-sqlite`) sync directly against this SQLite operational core. High-frequency updates (typing notes, checking off tasks, updating priorities) happen as atomic SQLite transactions.
-2. **Projection Layer (Git Markdown Vault & LanceDB):** When a note transaction is committed in the operational SQLite database on the VPS, an asynchronous background task projects the update into the physical `.md` file inside the Git Vault and refreshes the LanceDB vector chunks. This completely isolates live typing sync from disk-level Git commit overhead while preserving full Git history, human readability, and diff learning.
+1. **Operational Layer (Device-to-Device Sync):** The central **SQLite database on the VPS** serves as the authoritative real-time operational state. All client devices (`expo-sqlite`) sync directly against this SQLite core. High-frequency updates (typing blocks, checking off tasks, updating priorities) occur as atomic SQLite transactions.
+   * `notes`: Stores `content_markdown` along with cached `blocks_json` for instant UI rendering across all 20 composable block types.
+   * `tasks`: Stores single-source-of-truth task entities shared between embedded note blocks and the global task engine.
+   * `assets`: Tracks binary media (audio, PDFs, images, vector sketches) with processing states and extracted OCR/Whisper text.
+   * `entity_relations`: Stores bidirectional knowledge graph edges (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`).
+2. **Projection Layer (Git Markdown Vault & LanceDB):** When a note transaction commits in the operational SQLite database, an asynchronous background task serializes the composable blocks into a clean **Extended Markdown AST** `.md` file in the Git Vault and refreshes the LanceDB vector chunks. This completely isolates live UI typing from disk-level Git commit overhead while ensuring:
+   * The Git Vault remains 100% human-readable.
+   * Remote PC CLI agents (Claude Code, Gemini CLI) can read and edit notes natively using standard text tools.
+   * Diff learning works reliably without proprietary file corruption.
 
 ### 5.2. Local-First Reading & Optimistic Writes
-1. **Instant Local Reads ($0\text{ ms}$):** When you open the Expo app on any device, the UI renders immediately from the local `expo-sqlite` database.
-2. **Optimistic Local Writes:** When you edit a note or check off a task, the change is written immediately to your device's local SQLite storage with a `pending_sync: true` flag and queued for immediate transmission to the VPS.
+1. **Instant Local Reads ($0\text{ ms}$):** When you open the Expo app on any device, the UI renders immediately from the local `expo-sqlite` database replica.
+2. **Optimistic Local Writes:** When you edit a block or check off a task, the change writes immediately to your device's local SQLite storage with a `pending_sync: true` flag and queues for transmission to the VPS.
 
-### 5.3. Resilient Multi-Device Sync Protocol (`sync_rev`) & Transport Architecture
+### 5.3. Resilient Multi-Device Sync Protocol (`sync_rev`) & Multi-Entity Changelog
 To guarantee that syncing is 100% reliable even when devices sleep, disconnect, or switch networks, the system decouples **data persistence** from the **transport connection**:
 
-* **Event-Sourced Revision Counter (`sync_rev`):** Every row in SQLite tracks a monotonically increasing integer `sync_rev`. The VPS maintains a `sync_changelog` table recording every incremental delta.
+* **Event-Sourced Revision Counter (`sync_rev`):** Every operational row tracks a monotonically increasing integer `sync_rev`. The VPS maintains a `sync_changelog` table recording every incremental delta across entity types:
+  * `entity_type: 'note'`: Document metadata, `content_markdown`, and `blocks_json`.
+  * `entity_type: 'task'`: Title, completion status, priority, and due dates.
+  * `entity_type: 'relation'`: Knowledge graph connections and confidence scores.
+  * `entity_type: 'asset'`: Binary attachment processing state and extracted text.
 * **WebSocket as an Instant "Doorbell" Push:**
-  * When devices are online and connected via WebSocket (`wss://vps-domain/api/v1/ws/sync`), changes are broadcast across devices in $< 50\text{ ms}$.
+  * When devices are online and connected via WebSocket (`wss://vps-domain/api/v1/ws/sync`), changes broadcast across devices in $< 50\text{ ms}$.
   * The WebSocket does *not* need to be permanently reliable. If a device drops Wi-Fi or goes into background sleep, the WebSocket simply disconnects without losing data.
 * **Guaranteed Reconnection Catch-Up (State Reconciliation):**
   * When a device reconnects (or wakes up from sleep), the client sends a handshake message with its highest known `local_sync_rev`.
@@ -143,17 +154,63 @@ To guarantee that syncing is 100% reliable even when devices sleep, disconnect, 
     * `POST /api/v1/sync/pull` (fetch deltas since `local_sync_rev`)
 
 ### 5.4. Conflict Resolution Strategy
-* **Metadata & Checklists (Field-Level LWW):** For priority changes, tag updates, and task completions, SQLite uses field-level Last-Write-Wins (LWW) based on NTP-synchronized UTC timestamps (`updated_at`).
-* **Note Body Text (3-Way Merge & AI Reconciliation):** If two devices simultaneously edit the body text of the same note while offline, FastAPI detects the concurrent revision and runs a 3-way text merge (`diff3` / `git merge-file`). If non-overlapping lines were edited, they merge cleanly. If conflicting edits overlap, both versions are preserved in a conflict block (`<<<<<<< LOCAL / >>>>>>> REMOTE`) and the Main AI assistant immediately prompts the user via a quick mobile notification or chat prompt to choose or synthesize the final text.
+* **Tasks & Metadata (Field-Level LWW):** For priority changes, tag updates, and task completions, SQLite uses field-level Last-Write-Wins (LWW) based on NTP-synchronized UTC timestamps (`updated_at`).
+* **Unified Task Model Synchronization:** Checking off a task embedded inside a meeting note immediately updates the `tasks` table and emits a `task` delta. The background projector simultaneously updates the `- [x]` marker in the note's `.md` file, keeping both views in perfect sync.
+* **Note Body Text (3-Way Merge & AI Reconciliation):** If two devices simultaneously edit blocks of the same note while offline, FastAPI detects the concurrent revision and runs a 3-way text merge (`diff3` / `git merge-file`) on the Markdown AST. If non-overlapping lines/blocks were edited, they merge cleanly. If conflicting edits overlap, both versions are preserved in a conflict block (`<<<<<<< LOCAL / >>>>>>> REMOTE`) and the Main AI assistant immediately prompts the user via a quick mobile notification or chat prompt to choose or synthesize the final text.
 
-### 5.5. Manual Edit Diff Learning Pipeline
+### 5.5. Manual Edit Diff Learning Pipeline (Noise-Filtered)
 Because the VPS asynchronously projects all accepted note edits into the Markdown Git Vault:
 * **AI Edits** are committed to Git with author: `ScribeX-AI <ai@assistant.local>`.
 * **Manual User Edits** are committed to Git with author: `User <user@assistant.local>`.
 * **Diff Learning Trigger:** Whenever a `user_manual` commit modifies a note previously created or organized by the AI, the **Diff Analyzer Worker** runs `git diff HEAD~1 HEAD`.
-* The Diff Analyzer extracts the organizational rationale (e.g., *"User grouped API keys under 'Project X/Config' instead of 'General Reference' and set priority to P2"*) and records a permanent preference rule into **Layer 4 (Behavioral & Preference Ledger)**.
+* **Noise Filtered Semantic Analysis:** The Diff Analyzer filters out raw binary hashes and SVG drawing paths, focusing strictly on:
+  1. *Filing preferences:* Moving notes from `_inbox/` to specific project folders.
+  2. *Tone and conciseness:* Shortening verbose summaries into bullet lists or structured tables.
+  3. *Priority & Task reweighting:* Elevating deadlines or tagging action items as urgent.
+* The extracted organizational rationale is recorded as a permanent preference rule into **Layer 4 (Behavioral & Preference Ledger)**.
 
-### 5.6. Automated Off-Site Cloud Backup
+### 5.6. Physical Vault Directory Structure & Cross-Boundary Traversal
+To accommodate the Universal Inbox, non-exclusive multi-tagging, and knowledge graph links without filesystem conflicts, the Git Vault uses a structured layout:
+
+```text
+data/vault/{user_id}/
+├── _inbox/                       # Fast-capture landing zone (unprocessed notes)
+│   └── 01j9a_quick_thought.md
+├── _assets/                      # Binary media vault (audio recordings, PDFs, images)
+│   ├── rec_01j9b.m4a
+│   └── doc_01j9c.pdf
+├── _core/                        # Living Cognitive Identity & Core Rules
+│   ├── identity.md
+│   ├── behavioral_ledger.md
+│   └── vault_index.json
+└── folders/                      # Optional explicit folder hierarchy
+    ├── Work/
+    │   └── ScribeX/
+    │       └── 01j9d_architecture.md
+    └── Personal/
+        └── 01j9e_daily_plan.md
+```
+
+Each note maintains rich YAML frontmatter:
+```yaml
+---
+id: "01j9d"
+title: "Architecture Blueprint"
+group: "Core Engineering"
+folder: "Work/ScribeX"
+tags: ["#architecture", "#v1", "#critical"]
+relations:
+  - target: "01j9e"
+    type: "relates_to"
+  - target: "01j9f"
+    type: "supersedes"
+color: "lavender"
+status: "active"
+sync_rev: 142
+---
+```
+
+### 5.7. Automated Off-Site Cloud Backup
 * Every commit to the VPS Git Vault and hourly SQLite snapshot (via `Litestream` or `rclone`) is automatically pushed to a **Private Git Repository (GitHub/GitLab)** and/or **Encrypted S3-Compatible Storage (Cloudflare R2 / Backblaze B2)**. If you ever migrate to a new VPS or new device, your entire life history restores in one command.
 
 ---
@@ -163,9 +220,9 @@ Because the VPS asynchronously projects all accepted note edits into the Markdow
 | Memory Layer | Storage Medium on VPS | Technical Schema & Role |
 | :--- | :--- | :--- |
 | **Layer 1: Core Identity & Vault Index (Always-Active)** | `_core/identity.md` + `_core/vault_index.json` (Cached in FastAPI RAM) | Injected into the system prompt of every Main AI call ($\sim 1,500\text{ tokens}$). Contains your current profile summary, active short/long-term goals, top priorities, and the directory map of all existing note groups. |
-| **Layer 2: Living Notes & Semantic Graph** | Markdown Vault (`.md` files with YAML frontmatter) + SQLite `entity_edges` + LanceDB | Each `.md` file contains `id`, `group`, `priority_score` ($0.0 - 1.0$), `linked_goals`, and `linked_notes`. SQLite stores bidirectional graph edges (`source_id`, `relation_type`, `target_id`) so retrieval always pulls connected context. |
+| **Layer 2: Living Notes & Semantic Graph** | Markdown Vault (`.md` files with Extended AST) + SQLite `entity_relations` + `tasks` + LanceDB | Notes store composable blocks projected to Markdown. SQLite stores bidirectional graph edges (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`) and unified task entities so retrieval always pulls connected context. |
 | **Layer 3: Temporal Identity & Version Logs ("Versions of Me")** | SQLite `identity_timeline` + `task_history` + Git Commit Log | Bi-temporal table storing (`attribute`, `old_value`, `new_value`, `valid_from`, `valid_to`, `change_reason`, `git_commit_sha`). Tracks every evolution of your career, goals, mindset, and past tasks without overwriting history. |
-| **Layer 4: Behavioral & Preference Ledger** | `_core/behavioral_ledger.md` + SQLite `learned_preferences` | Stores structured rules learned from your response patterns and manual edit diffs (`category`, `preference_rule`, `confidence_score`, `source_diff_sha`). Dynamically shapes the AI's persona, questioning threshold, and filing logic. |
+| **Layer 4: Behavioral & Preference Ledger** | `_core/behavioral_ledger.md` + SQLite `learned_preferences` | Stores structured rules learned from your response patterns and noise-filtered manual edit diffs (`category`, `preference_rule`, `confidence_score`, `source_diff_sha`). Dynamically shapes the AI's persona, questioning threshold, and filing logic. |
 
 ### The Ask-Before-Write Ambiguity Gate
 When you submit a new raw note or file to `POST /api/v1/intake`:

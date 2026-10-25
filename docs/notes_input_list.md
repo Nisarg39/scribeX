@@ -452,6 +452,19 @@ export interface NoteBlock {
   updated_at: string;
 }
 
+/** Unified Task Entity (Shared between embedded note checklists & global Kanban) */
+export interface UnifiedTask {
+  id: string;
+  note_id?: string;
+  block_id?: string;
+  title: string;
+  is_completed: boolean;
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  due_date?: string; // ISO 8601
+  sync_rev: number;
+  updated_at: string;
+}
+
 /** Binary Asset Storage */
 export interface Asset {
   id: string;
@@ -483,11 +496,209 @@ export interface EntityRelation {
 }
 ```
 
-### Storage, Sync & Retrieval Stack
-- **Local Client Replica:** Embedded SQLite (`expo-sqlite`) holding instant local copy of notes, blocks, and relations for sub-5ms latency across iOS, Android, and Web.
-- **Git Vault Projection:** Every note projection written to local Markdown with YAML frontmatter, committed atomically to tenant Git repositories.
-- **Semantic Vector Storage:** LanceDB embedding space indexing block content, transcripts, and OCR text for sub-20ms semantic search.
-- **Relational Graph Traversal:** SQLite indexed foreign keys joining `EntityRelation` records for instant graph traversal.
+---
+
+### 5.1. Operational SQLite Schemas (DDL & Multi-Tenancy)
+
+To guarantee sub-5ms local reads and concurrent multi-device sync, the backend and client SQLite replicas implement the following operational tables:
+
+```sql
+-- 1. Notes Core Table
+CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    folder_id TEXT,                    -- Optional folder path, e.g. 'Work/ScribeX'
+    group_name TEXT NOT NULL,          -- High-level functional domain
+    title TEXT NOT NULL,
+    content_markdown TEXT NOT NULL,    -- Canonical rendered markdown representation
+    blocks_json TEXT,                  -- Serialized NoteBlock[] AST for instant UI rendering
+    color_token TEXT DEFAULT 'apricot',
+    is_favorite INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'active',      -- 'inbox', 'active', 'archived', 'trashed'
+    priority_score REAL DEFAULT 0.5,
+    sync_rev INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_user_status ON notes(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_notes_user_folder ON notes(user_id, folder_id);
+CREATE INDEX IF NOT EXISTS idx_notes_user_rev ON notes(user_id, sync_rev);
+
+-- 2. Unified Tasks Table (Single-source-of-truth across notes & global task board)
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    note_id TEXT,                      -- Nullable: tasks can exist globally or inside a note
+    block_id TEXT,                     -- Specific block ID if embedded in a note
+    title TEXT NOT NULL,
+    is_completed INTEGER DEFAULT 0,
+    priority TEXT DEFAULT 'medium',    -- 'low', 'medium', 'high', 'urgent'
+    due_date TIMESTAMP,
+    sync_rev INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON tasks(user_id, is_completed);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_rev ON tasks(user_id, sync_rev);
+
+-- 3. Binary Asset Ledger
+CREATE TABLE IF NOT EXISTS assets (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    storage_key TEXT NOT NULL,         -- Relative path in vault/_assets/
+    file_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    sha256_hash TEXT NOT NULL,
+    processing_status TEXT NOT NULL,   -- 'pending', 'processing', 'completed', 'failed'
+    extracted_text TEXT,               -- Output of OCR, Whisper, or document parser
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_assets_user_status ON assets(user_id, processing_status);
+
+-- 4. Knowledge Graph Relations (Layer 2 Memory Edges)
+CREATE TABLE IF NOT EXISTS entity_relations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL,       -- 'related_to', 'part_of', 'derived_from', 'contradicts', 'supersedes'
+    target_id TEXT NOT NULL,
+    created_by TEXT DEFAULT 'user',    -- 'user' | 'ai'
+    confidence_score REAL DEFAULT 1.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rel_user_src ON entity_relations(user_id, source_id);
+CREATE INDEX IF NOT EXISTS idx_rel_user_tgt ON entity_relations(user_id, target_id);
+```
+
+---
+
+### 5.2. Canonical Markdown AST Serialization Specification
+
+To ensure that notes remain **100% human-readable in the Git Vault**, accessible to **Remote PC CLI agents (Claude Code, Gemini CLI)**, and clean for **Layer 4 Diff Learning**, composable blocks serialize into standardized Extended Markdown AST:
+
+| Block Type | Markdown AST Representation in `.md` File |
+|---|---|
+| `paragraph` | Standard plain text or markdown paragraph |
+| `heading` | `# H1`, `## H2`, `### H3`, `#### H4` |
+| `bulleted_list` | `- Item 1\n- Item 2` |
+| `numbered_list` | `1. Step 1\n2. Step 2` |
+| `checklist` / `task` | `- [ ] Task title <!-- scribex:task id=tsk_01j9a priority=high due=2026-10-30 -->` |
+| `code` | ````language\ncode\n```` |
+| `table` | Standard GFM Markdown table `\| Col 1 \| Col 2 \|\n\|---|---\|` |
+| `callout` | `> [!variant]\n> Callout text content` (Obsidian / GitHub alert format) |
+| `equation` | `$$ \text{LaTeX mathematical formula} $$` |
+| `image` | `![Caption](_assets/asset_uuid.png)` |
+| `audio` | `![Audio](_assets/rec_uuid.m4a) <!-- scribex:block type=audio duration=184 -->` |
+| `transcript` | `<!-- scribex:block type=transcript -->\n> **[00:15] Speaker:** Diarized text...` |
+| `drawing` | `![Sketch](_assets/sketch_uuid.svg) <!-- scribex:block type=drawing -->` |
+| `file` | `[FileName.pdf](_assets/file_uuid.pdf) <!-- scribex:block type=file size=1048576 -->` |
+| `location` | `<!-- scribex:block type=location lat=37.7749 lng=-122.4194 place="San Francisco" -->` |
+| `divider` | `---` |
+
+* **Zero Lock-In Round-Tripping:**  
+  When an external CLI agent modifies a note's `.md` file, the backend AST parser parses it back into `NoteBlock[]` objects without loss of structural IDs.
+
+---
+
+### 5.3. Binary Asset Ingestion & Lifecycle API Contracts
+
+Media uploads follow an asynchronous, non-blocking lifecycle:
+
+```
+[Client] ──POST /api/v1/assets/upload──> [FastAPI Backend] ──> Saves to disk (vault/_assets/)
+   │                                           │
+   │                                           └── Enqueues background worker (Whisper / OCR)
+   │                                           
+   ◄──── WebSocket Event ("ASSET_PROCESSED") ──┘
+```
+
+1. **Upload Endpoint:**
+   * `POST /api/v1/assets/upload` (`multipart/form-data`)
+   * **Request:** `file: UploadFile`, `note_id?: string`, `block_id?: string`
+   * **Response:**
+     ```json
+     {
+       "id": "ast_01j9b2",
+       "file_name": "quarterly_budget.pdf",
+       "mime_type": "application/pdf",
+       "size_bytes": 1420800,
+       "storage_key": "_assets/ast_01j9b2.pdf",
+       "processing_status": "processing",
+       "created_at": "2026-10-25T14:30:00Z"
+     }
+     ```
+2. **Asynchronous Notification & Status Check:**
+   * While processing, client can check: `GET /api/v1/assets/{asset_id}/status`.
+   * Upon completion, server broadcasts a WebSocket event to all tenant devices:
+     ```json
+     {
+       "type": "ASSET_PROCESSED",
+       "asset_id": "ast_01j9b2",
+       "processing_status": "completed",
+       "extracted_text": "Extracted text summary from document..."
+     }
+     ```
+
+---
+
+### 5.4. Resilient Delta Sync Protocol (`sync_changelog`)
+
+The sync engine uses an event-sourced revision counter (`sync_rev`) supporting multiple entity types:
+
+* **Changelog Record Format:**
+  ```json
+  {
+    "id": 142,
+    "user_id": "usr_alpha",
+    "sync_rev": 89,
+    "entity_type": "note", // 'note' | 'task' | 'relation' | 'asset'
+    "entity_id": "not_01j9c4",
+    "change_type": "UPDATE", // 'INSERT' | 'UPDATE' | 'DELETE'
+    "delta_payload": {
+      "title": "Universal Architecture",
+      "status": "active",
+      "folder_id": "Work/Architecture",
+      "content_markdown": "# Universal Architecture\n\nContent...",
+      "blocks_json": "[...]"
+    },
+    "created_at": "2026-10-25T14:35:00Z"
+  }
+  ```
+* **Task Synchronization:**  
+  Checking off a task emits `{ "entity_type": "task", "entity_id": "tsk_01", "change_type": "UPDATE", "delta_payload": { "is_completed": 1 } }`. The server automatically updates the parent note's markdown projection with `- [x]`.
+
+---
+
+### 5.5. Ask-Before-Write Ambiguity Gate RPC Contracts
+
+When raw input contains ambiguity or contradictions:
+
+1. **Intake Evaluation Response:**
+   ```json
+   {
+     "status": "NEEDS_CLARIFICATION",
+     "message": "Clarification required before committing to your vault.",
+     "clarity_score": 0.65,
+     "staging_id": "stg_01j9d5",
+     "clarifying_questions": [
+       "Did you mean to append this action item to 'Project ScribeX' or create a new note in 'Daily Operations'?"
+     ],
+     "suggested_options": [
+       { "id": "opt_1", "label": "Append to 'Project ScribeX'" },
+       { "id": "opt_2", "label": "Create new note in 'Daily Operations'" }
+     ]
+   }
+   ```
+2. **Clarification Resolution Endpoint:**
+   * `POST /api/v1/intake/{staging_id}/clarify`
+   * **Request:** `{ "answers": "Append to Project ScribeX", "selected_option_id": "opt_1" }`
+   * **Action:** Atomic 3-way commit to SQLite, Git Vault, and LanceDB $\rightarrow$ WebSocket doorbell `SYNC_PING` emitted.
 
 ---
 

@@ -19,9 +19,9 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 | **3** | [Client Offline-First SQLite Engine (`expo-sqlite`)](#step-3-client-offline-first-sqlite-engine-expo-sqlite) | `frontend/src/db/sqliteClient.ts`, `frontend/src/db/schema.ts`, `frontend/src/db/notesRepo.ts` | `[x] COMPLETED` |
 | **4** | [Real-Time Delta Sync Engine & Client State Machine](#step-4-real-time-delta-sync-engine--client-state-machine) | `frontend/src/sync/syncEngine.ts`, `frontend/src/sync/useSync.ts` | `[x] COMPLETED` |
 | **5** | [Scalable Architecture & Folder Structure + Central User & Auth State Management](#step-5-scalable-architecture--folder-structure--central-user--auth-state-management) | `frontend/src/auth/`, `frontend/src/navigation/`, `frontend/src/core/`, `frontend/src/services/` | `[x] COMPLETED` |
-| **6** | [Pastel Tile Notes Grid & Shell Architecture](#step-6-pastel-tile-notes-grid--shell-architecture) | `frontend/src/screens/notes/NotesHomeScreen.tsx` | `[ ] PENDING` |
-| **7** | [Focused Note Editor & Reading Surface](#step-7-focused-note-editor--reading-surface) | `frontend/src/components/editor/NoteEditor.tsx`, `ColorPicker.tsx` | `[ ] PENDING` |
-| **8** | [Universal Intake Bar & Ask-Before-Write Ambiguity Gate Modal](#step-8-universal-intake-bar--ask-before-write-ambiguity-gate-modal) | `frontend/src/components/intake/IntakeBar.tsx`, `ClarificationModal.tsx` | `[ ] PENDING` |
+| **6** | [Universal Intake Bar & Minimalist Workspace Canvas](#step-6-universal-intake-bar--minimalist-workspace-canvas) | `frontend/src/screens/notes/NotesHomeScreen.tsx`, `frontend/src/components/intake/` | `[ ] PENDING` |
+| **7** | [Composable Block-Based Note Surface & AST Engine](#step-7-composable-block-based-note-surface--ast-engine) | `frontend/src/components/editor/BlockEditor.tsx`, `frontend/src/core/astSerializer.ts` | `[ ] PENDING` |
+| **8** | [Ask-Before-Write Ambiguity Gate & Multi-Modal Asset Pipeline](#step-8-ask-before-write-ambiguity-gate--multi-modal-asset-pipeline) | `frontend/src/components/intake/ClarificationModal.tsx`, `frontend/src/services/assetService.ts` | `[ ] PENDING` |
 | **9** | [Conversational Onboarding Flow & Layer 1 Profile Screen](#step-9-conversational-onboarding-flow--layer-1-profile-screen) | `frontend/src/screens/OnboardingScreen.tsx`, `ProfileScreen.tsx` | `[ ] PENDING` |
 | **10** | [Phase 2 Cross-Platform Verification & E2E Sync Testing](#step-10-phase-2-cross-platform-verification--e2e-sync-testing) | `frontend/__tests__/`, `backend/tests/test_sync.py` | `[ ] PENDING` |
 
@@ -54,25 +54,15 @@ Use this checklist to track execution. Every step must be implemented, tested, a
       * Muted text: `--color-text-muted: #858585`
       * Subtle divider: `--color-border-subtle: #3A3A3A`
       * Raised icon controls: `--color-icon-bg: #383838`, icon: `--color-icon-fg: #FFFFFF`
-    * **Shared Pastel Tile Palette (Preserved in Both Light & Dark Modes):**
-      * Apricot: `--note-apricot: #FFC96F`
-      * Coral: `--note-coral: #FF9277`
-      * Lime: `--note-lime: #E5F28B`
-      * Lavender: `--note-lavender: #B18AF3`
-      * Cyan: `--note-cyan: #08C4E5`
-      * Pink: `--note-pink: #F5A4C6`
-      * Sky: `--note-sky: #8EDCEB`
-      * Star Favorite: `--color-favorite: #FFD43B`
-      * **CRITICAL RULE:** Dark text (`#191919`) on all pastel note tiles in both light and dark modes for high contrast readability.
-    * **Spacing & Typography:**
-      * 4px base rhythm (`space-1` = 4px to `space-16` = 64px).
-      * Clean modern sans-serif stack (`Inter`, system fallback).
-      * Shape radii: `16-20px` for note tiles, `40-44px` circular action buttons.
+    * **Shared Pastel Palette Tokens:**
+      * Apricot: `--note-apricot: #FFC96F`, Coral: `--note-coral: #FF9277`, Lime: `--note-lime: #E5F28B`
+      * Lavender: `--note-lavender: #B18AF3`, Cyan: `--note-cyan: #08C4E5`, Pink: `--note-pink: #F5A4C6`, Sky: `--note-sky: #8EDCEB`
+      * **CRITICAL RULE:** Avoid creating generic UI layouts like cards and standard box components. Use clean typography, open space, and bespoke layout rhythms.
   * `frontend/src/theme/ThemeProvider.tsx`:
     * Theme context supporting light, dark, and system preference with persistent local storage.
 * **Verification Criteria:**
   * `npx expo start` boots cleanly for Web, iOS, and Android.
-  * Switching between light and dark themes transitions smoothly without inverting or darkening pastel note tile colors.
+  * Switching between light and dark themes transitions smoothly without page reloads.
 
 ---
 
@@ -100,17 +90,9 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 * **Deliverables:**
   * `frontend/src/db/sqliteClient.ts`:
     * Embedded SQLite connection manager using `expo-sqlite`.
-    * Local schema initialization matching server core:
-      * `notes`: `id`, `group_name`, `title`, `content_markdown`, `priority_score`, `color_token`, `is_favorite`, `sync_rev`, `updated_at`.
-      * `local_sync_meta`: `current_sync_rev`, `last_synced_at`.
-      * `pending_mutations`: `id`, `entity_id`, `mutation_type`, `payload`, `created_at`.
+    * Local schema initialization matching server core (`notes`, `local_sync_meta`, `pending_mutations`).
   * `frontend/src/db/notesRepo.ts`:
-    * Local CRUD queries:
-      * `getLocalNotes(groupFilter?: string)`: Fast indexed read sorted by `updated_at DESC`.
-      * `getLocalNoteById(id: string)`.
-      * `saveLocalNote(note: Partial<Note>)`: Optimistic local write + stages pending mutation.
-      * `deleteLocalNote(id: string)`: Optimistic local delete.
-      * `applyServerDeltas(deltas: SyncDelta[])`: Atomic transaction applying server updates and updating `current_sync_rev`.
+    * Local CRUD queries: `getLocalNotes()`, `getLocalNoteById()`, `saveLocalNote()`, `deleteLocalNote()`, and `applyServerDeltas()`.
 * **Verification Criteria:**
   * Local database boots and inserts 100 sample notes with query latency $< 5\text{ ms}$.
   * App operates with complete read/write capability while offline (airplane mode).
@@ -120,132 +102,71 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 ### Step 4: Real-Time Delta Sync Engine & Client State Machine
 * **Objective:** Build the bidirectional synchronization engine on the client that combines WebSocket doorbell push, HTTP catch-up handshake, and offline mutation drain.
 * **Deliverables:**
-  * `frontend/src/sync/syncEngine.ts`:
-    * **Doorbell Listener:** Connects to `ws://.../ws/sync`; on receiving `SYNC_PING`, immediately requests delta catch-up if `latest_sync_rev > current_sync_rev`.
-    * **Catch-Up Handshake:** Queries `GET /api/v1/sync/deltas?since_rev=current_sync_rev`, writes changes to local SQLite, and advances `current_sync_rev`.
-    * **Offline Mutation Queue:** Drains `pending_mutations` to `POST /api/v1/sync/push` upon network reconnection.
-    * **Lifecycle Reconnect:** Uses React Native `AppState` to trigger catch-up handshake when app returns from background or device unlocks.
-  * `frontend/src/sync/useSync.ts`:
-    * React hook exposing sync status (`synced`, `syncing`, `offline`, `error`) and manual pull-to-refresh trigger.
+  * `frontend/src/sync/syncEngine.ts`: Doorbell listener, catch-up handshake, and mutation queue drain.
+  * `frontend/src/sync/useSync.ts`: React hook exposing sync status (`synced`, `syncing`, `offline`, `error`).
 * **Verification Criteria:**
   * Editing a note on Device A triggers WebSocket doorbell ping $\rightarrow$ Device B applies delta and updates UI in $< 100\text{ ms}$.
-  * Performing 3 edits offline and reconnecting cleanly flushes mutations to the server without conflict.
+  * Reconnecting cleanly flushes offline mutations without conflict.
 
 ---
 
 ### Step 5: Scalable Architecture & Folder Structure + Central User & Auth State Management
-* **Objective:** Establish the modular, production-grade directory architecture for the frontend application, implement central authentication/user state management (`AuthContext`), and integrate dynamic multi-tenant session binding for the sync engine and local database.
+* **Objective:** Establish modular directory architecture, implement central authentication (`AuthContext`), and integrate dynamic multi-tenant session binding for the sync engine and local database.
 * **Deliverables:**
-  * **Scalable Directory Architecture (`frontend/src/`):**
-    * `src/core/`: Application constants, configuration, TypeScript interfaces, and platform utilities.
-    * `src/theme/`: Pastel Tile design system tokens, themes, typography, and `ThemeProvider`.
-    * `src/db/`: Offline-first SQLite client, relational schema, and repository data access objects.
-    * `src/sync/`: Real-time WebSocket doorbell, client state machine, and `useSync` hook.
-    * `src/auth/`: Central authentication state context, secure credential persistence, and session management.
-    * `src/navigation/`: Root routing logic with dynamic authentication gating.
-    * `src/components/`: Reusable design system primitives adhering to Pastel Tile tokens:
-      * `components/common/`: Buttons, input fields, avatar badges, modals.
-      * `components/shell/`: Sidebar rail, mobile header, workspace wrappers.
-      * `components/notes/`: `NoteTile`, `NoteGrid`, `SearchField`, `PageHeading`.
-      * `components/editor/`: `NoteEditor`, `ColorPicker` swatches.
-      * `components/intake/`: `IntakeBar`, `ClarificationModal`.
-    * `src/screens/`:
-      * `screens/auth/`: SaaS-ready Sign-In & Sign-Up screens designed with Pastel Tile aesthetics (clean typography, charcoal/light canvas, no generic card containers).
-      * `screens/notes/`: Main notes workspace.
-      * `screens/editor/`: Focused reading & editing surface.
-      * `screens/onboarding/`: Conversational 6-pillar interview.
-      * `screens/profile/`: Layer 1 Living Cognitive Identity viewer.
-    * `src/services/`: HTTP client with authorization headers, audio recorder, and file parsers.
-  * **Central User & Auth State Management (`frontend/src/auth/`):**
-    * `AuthContext.tsx` & `useAuth.ts`:
-      * Tracks reactive state: `isLoading`, `isAuthenticated`, `user: UserProfile | null`, `token: string | null`, `authMode: 'authenticated' | 'guest' | 'unauthenticated'`.
-      * Exposes session actions: `signIn(credentials)`, `signUp(payload)`, `signOut()`, `continueAsGuest()`, and `upgradeGuestAccount()`.
-    * `sessionStorage.ts`:
-      * Platform-resilient secure session storage (`expo-secure-store` on iOS/Android, `AsyncStorage` on Web).
-      * Persists user identity and session token across app restarts.
-  * **Dynamic Multi-Tenant Sync & Database Binding:**
-    * Updates `syncEngine.setAuthContext(userId, token)`:
-      * Automatically passes user ID and JWT bearer token to WebSocket URL query parameters (`/ws/sync?user_id=...`) and HTTP headers (`Authorization: Bearer <token>`, `X-User-ID`).
-      * Disconnects and purges memory state upon `signOut()`.
-    * Namespaces local SQLite database storage per user tenant.
-  * **Root Navigation & Dynamic Auth Gating (`frontend/src/navigation/RootNavigator.tsx`):**
-    * Inspects `isAuthenticated` / `authMode`.
-    * **If Unauthenticated:** Displays `AuthScreen` offering Sign-In, Sign-Up, and "Try as Guest (Instant Offline)" paths without generic cards.
-    * **If Authenticated / Guest:** Mounts the primary `AppShell` with the active user's notes grid.
+  * Scalable directory architecture (`frontend/src/core/`, `theme/`, `db/`, `sync/`, `auth/`, `navigation/`, `screens/`, `services/`).
+  * Central auth state management (`AuthContext.tsx`, `useAuth.ts`, `sessionStorage.ts`).
+  * Dynamic multi-tenant sync & database binding with token handling.
 * **Verification Criteria:**
-  * Clean build with modular folder structure and zero circular dependencies (`npx tsc --noEmit` exits with 0).
+  * Clean build with 0 TypeScript errors.
   * Sign-In / Sign-Out transitions immediately switch between the Auth Screen and the main Notes workspace.
-  * Session persists across browser refresh (Web) and app reloads (Native).
-  * Sync engine dynamically initiates connections using the active user's authenticated ID and disconnects upon sign-out.
 
 ---
 
-### Step 6: Pastel Tile Notes Grid & Shell Architecture
-* **Objective:** Implement the signature visual experience defined in the Pastel Tile UI Design System: clean navigation rail, large bold "Notes" heading, minimal top search row, and high-contrast pastel note tiles.
+### Step 6: Universal Intake Bar & Minimalist Workspace Canvas
+* **Objective:** Build the unified input bar and the minimalist post-login workspace canvas adhering to non-generic UI principles (clean typography, generous whitespace, bespoke non-card layout rhythms, and top-right mode/logout controls).
 * **Deliverables:**
-  * `frontend/src/components/shell/AppShell.tsx`:
-    * Desktop shell: Fixed-width quiet sidebar/rail (**96–112 px**), 1px subtle divider (`#E8E8E8` / `#3A3A3A`), large main workspace with generous padding (**56–72 px** desktop, **24–32 px** tablet).
-    * Mobile shell: Responsive top bar with collapsible drawer.
-  * `frontend/src/components/shell/Sidebar.tsx`:
-    * Brand header at top-left.
-    * Signature **Add-note button**: Circular dark button (**42–48 px** diameter, `#111111` in light mode, `#383838` in dark mode) with centered white plus icon.
-    * Theme toggle button (sun/moon icon).
-    * User avatar & profile menu button with sign-out trigger.
-  * `frontend/src/components/notes/SearchField.tsx`:
-    * Minimal top search input with small search icon and muted placeholder (`#929292` / `#858585`).
-  * `frontend/src/components/notes/PageHeading.tsx`:
-    * Prominent, bold "Notes" heading (**44–52 px** desktop, **34–40 px** mobile, weight 700).
-  * `frontend/src/components/notes/NoteTile.tsx`:
-    * **Signature Component:**
-      * Pastel background selected from token palette (`#FFC96F`, `#FF9277`, `#E5F28B`, `#B18AF3`, `#08C4E5`, `#F5A4C6`, `#8EDCEB`).
-      * High-contrast dark text (`#191919`) for title and preview.
-      * Left-aligned title/preview at top; secondary muted date label at bottom-left.
-      * Circular star favorite button (**32 px**) at top-right with `#FFD43B` yellow star.
-      * Circular dark edit action button (**40–44 px**) at bottom-right.
-      * Corner radius: **16–20 px**, padding: **22–26 px** (desktop) / **14–18 px** (mobile), minimum height: **220–245 px**.
-      * Subtle hover surface lift; zero dramatic zoom or heavy drop shadow.
-  * `frontend/src/components/notes/NoteGrid.tsx`:
-    * Responsive CSS Grid (3–4 columns desktop, 2 columns tablet, 1–2 columns mobile, **24–32 px** gap desktop, **12–16 px** gap mobile).
-* **Verification Criteria:**
-  * Pixel-accurate visual alignment with `docs/ScribeX-Pastel-Tile-UI-Design-System.md`.
-  * Grid renders 50 notes smoothly with 60 FPS scrolling and zero layout shift.
-
----
-
-### Step 7: Focused Note Editor & Reading Surface
-* **Objective:** Implement the distraction-free reading surface and Markdown note editor that preserves the note's pastel color identity while providing maximum reading comfort.
-* **Deliverables:**
-  * `frontend/src/components/editor/NoteEditor.tsx`:
-    * Focused reading surface: Charcoal canvas (`#242424`) in dark mode, clean white (`#FFFFFF`) in light mode.
-    * Prominent left-aligned title (**28–36 px** desktop) with date subtitle below.
-    * Body typography with generous line height (**1.55–1.75**) and comfortable max line length.
-    * Compact rounded top navigation controls (back, favorite, color picker, delete).
-    * Auto-save debounce (300ms) triggering optimistic local SQLite save and sync queue.
-  * `frontend/src/components/editor/ColorPicker.tsx`:
-    * Compact circular pastel swatches allowing instant reassignment of the note's pastel palette token.
-* **Verification Criteria:**
-  * Opening a note opens the editor with instant transition.
-  * Typing notes auto-saves locally and updates tile preview in real time without lag.
-
----
-
-### Step 8: Universal Intake Bar & Ask-Before-Write Ambiguity Gate Modal
-* **Objective:** Build the universal entry point widget for quick thoughts, voice memos, and document uploads, equipped with an interactive modal that presents Friday's clarifying questions when ambiguity is detected.
-* **Deliverables:**
+  * `frontend/src/screens/notes/NotesHomeScreen.tsx`:
+    * Clean, distraction-free workspace canvas with top-right theme toggle and logout actions.
+    * Prominent workspace heading with dynamic greeting and active status indicators.
+    * Dynamic non-card note rendering with high-contrast text and pastel accent tokens.
   * `frontend/src/components/intake/IntakeBar.tsx`:
-    * Compact floating or header intake field with text input, voice record button, and file upload trigger.
-    * Dispatches to `POST /api/v1/intake` on the VPS backend.
-  * `frontend/src/components/intake/ClarificationModal.tsx`:
-    * **Ambiguity Gate UI:**
-      * Triggers when backend returns `status: "NEEDS_CLARIFICATION"`.
-      * Displays Friday's friendly clarification banner: *"I noticed some ambiguity before writing to your vault."*
-      * Lists specific clarifying questions (e.g. *"Which project specs should I update?"*).
-      * Input field for user clarification response.
-      * Submits to `POST /api/v1/intake/{staging_id}/clarify`.
-      * On `status: "PROCESSED"`, modal closes with a subtle success toast and the new note tile slides into the grid.
+    * Universal Intake Bar for friction-free text capture, voice audio recording, and file drops.
+    * Connects directly to `POST /api/v1/intake` on the VPS backend.
 * **Verification Criteria:**
-  * Entering *"Update the specs"* pops up the clarification dialog with questions.
-  * Typing answers resolves the clarification, creates the note, and displays the new pastel tile in the grid.
+  * Friction-free text capture writes optimistically to local SQLite and syncs in $< 50\text{ ms}$.
+  * Avoids generic card patterns; provides bespoke, fluid responsive workspace layout.
+
+---
+
+### Step 7: Composable Block-Based Note Surface & AST Engine
+* **Objective:** Implement the universal block-based note editor supporting the 20-block registry (paragraphs, headings, checklists, code, KaTeX, audio transcripts, callouts) and the bidirectional Extended Markdown AST serializer.
+* **Deliverables:**
+  * `frontend/src/core/astSerializer.ts`:
+    * Bidirectional converter: parses Markdown with inline block metadata $\longleftrightarrow$ reactive `NoteBlock[]`.
+    * Injects deterministic task IDs (`<!-- scribex:task id=... -->`) into Markdown task items for single-source-of-truth syncing.
+  * `frontend/src/components/editor/BlockEditor.tsx`:
+    * Composable, fluid block surface supporting inline editing, reordering, and type conversion.
+    * Unified task interaction: checking off an inline task updates the unified `tasks` table and emits a task delta.
+    * Auto-save debounce (300ms) triggering optimistic local SQLite save and sync queue.
+* **Verification Criteria:**
+  * Markdown AST serialization and deserialization round-trips with 100% data fidelity.
+  * Editing an inline task inside a note immediately syncs to the global task state.
+
+---
+
+### Step 8: Ask-Before-Write Ambiguity Gate & Multi-Modal Asset Pipeline
+* **Objective:** Build the interactive Clarification Modal for the Ask-Before-Write Ambiguity Gate and integrate the binary asset upload pipeline.
+* **Deliverables:**
+  * `frontend/src/components/intake/ClarificationModal.tsx`:
+    * Intercepts `status: "NEEDS_CLARIFICATION"` from `POST /api/v1/intake`.
+    * Presents Friday's clarifying questions with actionable choice pills and text input.
+    * Dispatches user resolution to `POST /api/v1/intake/{staging_id}/clarify`.
+  * `frontend/src/services/assetService.ts`:
+    * Handles multipart uploads to `POST /api/v1/assets/upload`.
+    * Listens for WebSocket `ASSET_PROCESSED` events to hydrate OCR and Whisper transcripts.
+* **Verification Criteria:**
+  * Ambiguous intake inputs pause and display the Clarification Modal.
+  * Submitting an answer resolves the staging item and updates the note canvas with zero layout shift.
 
 ---
 
@@ -254,31 +175,22 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 * **Deliverables:**
   * `frontend/src/screens/OnboardingScreen.tsx`:
     * Multi-turn conversational interface connecting to `POST /api/v1/onboarding/start`, `/message`, `/finalize`.
-    * Elegant chat presentation showing Friday's guided questions and user responses across the 6 pillars.
-    * Progress indicator showing completed pillars (1 through 6).
-    * Finalization screen celebrating profile creation and loading seeded notes.
+    * Guided questions and user responses across the 6 pillars.
   * `frontend/src/screens/ProfileScreen.tsx`:
     * Dynamic viewer for Layer 1 Core Identity (`_core/identity.md`).
     * Displays User Mindset, Active Goals, Current Top Priorities, and Note Groups.
 * **Verification Criteria:**
-  * Completing the onboarding interview transitions the app into the main Notes grid populated with initial seed notes.
-  * Profile screen displays living identity details synced from the backend.
+  * Completing the onboarding interview transitions the app into the main Notes workspace with initial seed context.
 
 ---
 
 ### Step 10: Phase 2 Cross-Platform Verification & E2E Sync Testing
 * **Objective:** Execute automated and manual end-to-end verification across Web, iOS, and Android to guarantee performance, design system fidelity, and sync resilience.
 * **Deliverables:**
-  * `frontend/__tests__/`:
-    * Component tests for `NoteTile`, `NoteGrid`, `NoteEditor`, `ClarificationModal`.
-    * Theme switching test verifying high-contrast dark text on pastel tiles in both themes.
-    * Offline sync engine unit tests simulating network loss and recovery.
-    * Auth state unit tests verifying token lifecycle and login/logout transitions.
-  * `backend/tests/test_sync.py`:
-    * Backend integration tests verifying multi-device delta sync transactions and WebSocket push.
-  * Cross-platform build checks:
-    * `npx expo export --platform web` builds cleanly for production.
-    * `npx expo run:ios` and `npx expo run:android` pass compilation.
+  * Component and integration tests for AST serializer, block editor, and ClarificationModal.
+  * Theme switching test verifying high-contrast dark text on pastel accents in both themes.
+  * Offline sync engine unit tests simulating network loss and recovery.
+  * Cross-platform build checks (`npx expo export --platform web`, iOS, Android).
 * **Verification Criteria:**
   * 100% test pass rate across frontend and backend sync test suites.
   * Two active browser/device clients sync note edits bidirectionally in $< 100\text{ ms}$.
