@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -8,6 +8,7 @@ import {
   TextInput,
   useWindowDimensions,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -18,6 +19,8 @@ import {
   Pencil,
   Star,
   Sparkles,
+  Database,
+  CloudCheck,
 } from 'lucide-react-native';
 import {
   ThemeProvider,
@@ -25,59 +28,58 @@ import {
   PastelColorKey,
   pastelColors,
 } from './src/theme';
+import {
+  ClientNote,
+  getLocalNotes,
+  saveLocalNote,
+  toggleLocalFavorite,
+  seedInitialNotesIfEmpty,
+  getPendingMutations,
+} from './src/db';
 
-interface SampleNote {
-  id: string;
+const INITIAL_SAMPLES: Array<{
   title: string;
-  snippet: string;
-  date: string;
+  content: string;
+  group: string;
   color: PastelColorKey;
   isFavorite?: boolean;
-}
-
-const SAMPLE_NOTES: SampleNote[] = [
+}> = [
   {
-    id: '1',
     title: 'Cognitive Architecture',
-    snippet: 'Layer 1 captures raw user intentions and mental models. Layer 2 maintains continuous timeline graph.',
-    date: 'Oct 25, 2026',
+    content: 'Layer 1 captures raw user intentions and mental models. Layer 2 maintains continuous timeline graph.',
+    group: 'Architecture',
     color: 'apricot',
     isFavorite: true,
   },
   {
-    id: '2',
     title: 'Pastel Tile Design Rule',
-    snippet: 'Keep note backgrounds colorful in both themes. Use dark text (#191919) across both light & dark modes.',
-    date: 'Oct 24, 2026',
+    content: 'Keep note backgrounds colorful in both themes. Use dark text (#191919) across both light & dark modes.',
+    group: 'Design',
     color: 'coral',
   },
   {
-    id: '3',
     title: 'Offline-First SQLite',
-    snippet: 'Direct sub-5ms local reads with zero network spinners. Background WebSocket doorbell pings for sync.',
-    date: 'Oct 22, 2026',
+    content: 'Direct sub-5ms local reads with zero network spinners across iOS, Android, and Web.',
+    group: 'Sync',
     color: 'lime',
     isFavorite: true,
   },
   {
-    id: '4',
     title: 'Git Markdown Projection',
-    snippet: 'Atomic commits per entity to local Git vault. Full human-readable markdown with YAML frontmatter.',
-    date: 'Oct 20, 2026',
+    content: 'Atomic commits per entity to local Git vault. Full human-readable markdown with YAML frontmatter.',
+    group: 'Vault',
     color: 'lavender',
   },
   {
-    id: '5',
     title: 'Ask-Before-Write Gate',
-    snippet: 'Ambiguity classification pauses automatic writes and triggers conversational clarification.',
-    date: 'Oct 19, 2026',
+    content: 'Ambiguity classification pauses automatic writes and triggers conversational clarification.',
+    group: 'Intake',
     color: 'cyan',
   },
   {
-    id: '6',
     title: 'LanceDB Vector Hybrid',
-    snippet: 'Zero-cloud local vector search indexing markdown chunks alongside fast BM25 keyword matching.',
-    date: 'Oct 18, 2026',
+    content: 'Zero-cloud local vector search indexing markdown chunks alongside fast BM25 keyword matching.',
+    group: 'AI',
     color: 'pink',
   },
 ];
@@ -88,30 +90,83 @@ function NotesWorkspace() {
     colors,
     noteTileTokens,
     radii,
-    spacing,
     typography,
     toggleTheme,
   } = useTheme();
 
   const { width } = useWindowDimensions();
   const [searchQuery, setSearchQuery] = useState('');
-  const [notes, setNotes] = useState<SampleNote[]>(SAMPLE_NOTES);
+  const [notes, setNotes] = useState<ClientNote[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const isWide = width >= 1024;
   const isTablet = width >= 640 && width < 1024;
-
   const numColumns = isWide ? 3 : isTablet ? 2 : 1;
 
-  const toggleFavorite = (id: string) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isFavorite: !n.isFavorite } : n))
-    );
+  // Load notes directly from local offline-first SQLite database
+  const loadNotes = useCallback(async () => {
+    try {
+      await seedInitialNotesIfEmpty(INITIAL_SAMPLES);
+      const loaded = await getLocalNotes();
+      setNotes(loaded);
+      const pending = await getPendingMutations();
+      setPendingCount(pending.length);
+    } catch (err) {
+      console.error('Failed to load notes from local SQLite:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
+
+  const handleToggleFavorite = async (id: string) => {
+    try {
+      const nextFav = await toggleLocalFavorite(id);
+      setNotes((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, is_favorite: nextFav } : n))
+      );
+      const pending = await getPendingMutations();
+      setPendingCount(pending.length);
+    } catch (err) {
+      console.error('Failed to toggle favorite in SQLite:', err);
+    }
+  };
+
+  const handleCreateNote = async () => {
+    try {
+      const colorKeys: PastelColorKey[] = [
+        'apricot',
+        'coral',
+        'lime',
+        'lavender',
+        'cyan',
+        'pink',
+      ];
+      const nextColor = colorKeys[notes.length % colorKeys.length];
+      const newNote = await saveLocalNote({
+        title: `Offline Thought #${notes.length + 1}`,
+        content_markdown: 'Instant local SQLite commit with sub-5ms query latency.',
+        group_name: 'General Reference',
+        color_token: nextColor,
+        is_favorite: false,
+      });
+
+      setNotes((prev) => [newNote, ...prev]);
+      const pending = await getPendingMutations();
+      setPendingCount(pending.length);
+    } catch (err) {
+      console.error('Failed to save note to local SQLite:', err);
+    }
   };
 
   const filteredNotes = notes.filter(
     (n) =>
       n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      n.snippet.toLowerCase().includes(searchQuery.toLowerCase())
+      n.content_markdown.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -153,7 +208,7 @@ function NotesWorkspace() {
                   }),
                 },
               ]}
-              placeholder="Search notes..."
+              placeholder="Search notes in local SQLite..."
               placeholderTextColor={colors.textMuted}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -191,33 +246,14 @@ function NotesWorkspace() {
                   opacity: pressed ? 0.8 : 1,
                 },
               ]}
-              onPress={() => {
-                const colorKeys: PastelColorKey[] = [
-                  'apricot',
-                  'coral',
-                  'lime',
-                  'lavender',
-                  'cyan',
-                  'pink',
-                ];
-                const nextColor =
-                  colorKeys[notes.length % colorKeys.length];
-                const newNote: SampleNote = {
-                  id: String(Date.now()),
-                  title: `New Note #${notes.length + 1}`,
-                  snippet: 'Captured via ScribeX instant pastel editor.',
-                  date: 'Today',
-                  color: nextColor,
-                };
-                setNotes([newNote, ...notes]);
-              }}
+              onPress={handleCreateNote}
             >
               <Plus size={22} color={colors.iconFg} />
             </Pressable>
           </View>
         </View>
 
-        {/* Page Title Row */}
+        {/* Page Title & Status Row */}
         <View style={styles.headerRow}>
           <Text
             style={[
@@ -228,133 +264,156 @@ function NotesWorkspace() {
           >
             Notes
           </Text>
-          <View style={styles.badgeRow}>
-            <Sparkles size={16} color={colors.textSecondary} />
-            <Text style={[styles.badgeText, { color: colors.textSecondary }]}>
-              {notes.length} {notes.length === 1 ? 'note' : 'notes'} • {isDark ? 'Dark Mode' : 'Light Mode'}
-            </Text>
+
+          <View style={styles.metaBadges}>
+            <View style={styles.badgeRow}>
+              <Database size={15} color={colors.textSecondary} />
+              <Text style={[styles.badgeText, { color: colors.textSecondary }]}>
+                Offline SQLite Active • {notes.length} {notes.length === 1 ? 'note' : 'notes'}
+              </Text>
+            </View>
+
+            {pendingCount > 0 && (
+              <View style={[styles.badgeRow, styles.pendingBadge]}>
+                <Sparkles size={14} color="#D97706" />
+                <Text style={[styles.badgeText, { color: '#D97706', fontWeight: '600' }]}>
+                  {pendingCount} pending delta {pendingCount === 1 ? 'sync' : 'syncs'}
+                </Text>
+              </View>
+            )}
           </View>
         </View>
 
         {/* Note Tiles Grid */}
-        <View style={styles.gridContainer}>
-          {filteredNotes.map((note) => {
-            const tileBg = pastelColors[note.color];
-            return (
-              <View
-                key={note.id}
-                style={[
-                  styles.tileWrapper,
-                  {
-                    width:
-                      numColumns === 3
-                        ? '31.5%'
-                        : numColumns === 2
-                        ? '48.5%'
-                        : '100%',
-                    marginBottom: 24,
-                  },
-                ]}
-              >
+        {isLoading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.textPrimary} />
+          </View>
+        ) : (
+          <View style={styles.gridContainer}>
+            {filteredNotes.map((note) => {
+              const tileBg = pastelColors[note.color_token] || pastelColors.apricot;
+              const formattedDate = new Date(note.updated_at).toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+              });
+
+              return (
                 <View
+                  key={note.id}
                   style={[
-                    styles.noteTile,
+                    styles.tileWrapper,
                     {
-                      backgroundColor: tileBg,
-                      borderRadius: radii.noteTile,
+                      width:
+                        numColumns === 3
+                          ? '31.5%'
+                          : numColumns === 2
+                          ? '48.5%'
+                          : '100%',
+                      marginBottom: 24,
                     },
                   ]}
                 >
-                  {/* Top Row: Title + Favorite Toggle */}
-                  <View style={styles.tileHeader}>
+                  <View
+                    style={[
+                      styles.noteTile,
+                      {
+                        backgroundColor: tileBg,
+                        borderRadius: radii.noteTile,
+                      },
+                    ]}
+                  >
+                    {/* Top Row: Title + Dark Circular Favorite Button */}
+                    <View style={styles.tileHeader}>
+                      <Text
+                        numberOfLines={2}
+                        style={[
+                          styles.tileTitle,
+                          typography.noteTitle,
+                          { color: noteTileTokens.textPrimary },
+                        ]}
+                      >
+                        {note.title}
+                      </Text>
+
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          note.is_favorite ? 'Unmark favorite' : 'Mark favorite'
+                        }
+                        hitSlop={6}
+                        style={({ pressed }) => [
+                          styles.tileFavoriteButton,
+                          {
+                            backgroundColor: note.is_favorite
+                              ? noteTileTokens.favoriteSurfaceActive
+                              : noteTileTokens.favoriteSurfaceInactive,
+                            opacity: pressed ? 0.75 : 1,
+                          },
+                        ]}
+                        onPress={() => handleToggleFavorite(note.id)}
+                      >
+                        <Star
+                          size={16}
+                          color={
+                            note.is_favorite
+                              ? noteTileTokens.favoriteIconActive
+                              : noteTileTokens.favoriteIconInactive
+                          }
+                          fill={
+                            note.is_favorite
+                              ? noteTileTokens.favoriteIconActive
+                              : 'transparent'
+                          }
+                        />
+                      </Pressable>
+                    </View>
+
+                    {/* Body Preview */}
                     <Text
-                      numberOfLines={2}
+                      numberOfLines={4}
                       style={[
-                        styles.tileTitle,
-                        typography.noteTitle,
+                        styles.tileSnippet,
+                        typography.noteBodyPreview,
                         { color: noteTileTokens.textPrimary },
                       ]}
                     >
-                      {note.title}
+                      {note.content_markdown}
                     </Text>
 
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={
-                        note.isFavorite ? 'Unmark favorite' : 'Mark favorite'
-                      }
-                      hitSlop={6}
-                      style={({ pressed }) => [
-                        styles.tileFavoriteButton,
-                        {
-                          backgroundColor: note.isFavorite
-                            ? noteTileTokens.favoriteSurfaceActive
-                            : noteTileTokens.favoriteSurfaceInactive,
-                          opacity: pressed ? 0.75 : 1,
-                        },
-                      ]}
-                      onPress={() => toggleFavorite(note.id)}
-                    >
-                      <Star
-                        size={16}
-                        color={
-                          note.isFavorite
-                            ? noteTileTokens.favoriteIconActive
-                            : noteTileTokens.favoriteIconInactive
-                        }
-                        fill={
-                          note.isFavorite
-                            ? noteTileTokens.favoriteIconActive
-                            : 'transparent'
-                        }
-                      />
-                    </Pressable>
-                  </View>
+                    {/* Bottom Metadata & Action Row */}
+                    <View style={styles.tileFooter}>
+                      <Text
+                        style={[
+                          styles.tileDate,
+                          typography.dateMetadata,
+                          { color: noteTileTokens.textSecondary },
+                        ]}
+                      >
+                        {formattedDate} {note.pending_sync ? '• local' : ''}
+                      </Text>
 
-                  {/* Body Preview */}
-                  <Text
-                    numberOfLines={4}
-                    style={[
-                      styles.tileSnippet,
-                      typography.noteBodyPreview,
-                      { color: noteTileTokens.textPrimary },
-                    ]}
-                  >
-                    {note.snippet}
-                  </Text>
-
-                  {/* Bottom Metadata & Action Row */}
-                  <View style={styles.tileFooter}>
-                    <Text
-                      style={[
-                        styles.tileDate,
-                        typography.dateMetadata,
-                        { color: noteTileTokens.textSecondary },
-                      ]}
-                    >
-                      {note.date}
-                    </Text>
-
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Edit note: ${note.title}`}
-                      style={({ pressed }) => [
-                        styles.tileActionButton,
-                        {
-                          backgroundColor: noteTileTokens.actionBg,
-                          borderRadius: radii.circularAction,
-                          opacity: pressed ? 0.75 : 1,
-                        },
-                      ]}
-                    >
-                      <Pencil size={15} color={noteTileTokens.actionFg} />
-                    </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit note: ${note.title}`}
+                        style={({ pressed }) => [
+                          styles.tileActionButton,
+                          {
+                            backgroundColor: noteTileTokens.actionBg,
+                            borderRadius: radii.circularAction,
+                            opacity: pressed ? 0.75 : 1,
+                          },
+                        ]}
+                      >
+                        <Pencil size={15} color={noteTileTokens.actionFg} />
+                      </Pressable>
+                    </View>
                   </View>
                 </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -427,16 +486,33 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   pageTitle: {
-    marginBottom: 6,
+    marginBottom: 8,
+  },
+  metaBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
   },
   badgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
+  pendingBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+  },
   badgeText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  loadingContainer: {
+    paddingVertical: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   gridContainer: {
     flexDirection: 'row',
