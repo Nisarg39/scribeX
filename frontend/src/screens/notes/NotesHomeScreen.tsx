@@ -1,62 +1,218 @@
 /**
- * Blank Authenticated Workspace Screen.
+ * ScribeX Minimalist Workspace Canvas & Pastel Tile Notes Stream.
  *
- * Displays a clean blank canvas after logging in, with only:
- * - Individual Dark / Light mode switch in the top right corner
- * - Logout button in the top right corner
+ * Adheres strictly to the ScribeX Pastel Tile UI Design System:
+ * - Soft Minimalism: restrained controls, generous whitespace, neutral frame.
+ * - Prominent "Notes" editorial heading with dynamic metadata.
+ * - Non-generic pastel tiles with dark typography (#191919) preserved across both themes.
+ * - Universal Intake Bar with optimistic local SQLite persistence.
+ * - Top-right individual dark/light mode toggle and logout actions.
  */
 
-import React from 'react';
-import { StyleSheet, View, Text, Pressable, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  useWindowDimensions,
+  Platform,
+  RefreshControl,
+  Modal,
+} from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Sun, Moon, LogOut, CloudOff } from 'lucide-react-native';
+import {
+  Sun,
+  Moon,
+  LogOut,
+  CloudOff,
+  Star,
+  Trash2,
+  Filter,
+  CheckCircle2,
+  RefreshCw,
+  Folder,
+  Calendar,
+} from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { useAuth } from '../../auth';
+import { pastelColors, PastelColorKey, noteTileTokens } from '../../theme/tokens';
+import { getLocalNotes, deleteLocalNote, saveLocalNote } from '../../db/notesRepo';
+import { ClientNote } from '../../db/types';
+import { useSync } from '../../sync/useSync';
+import { IntakeBar } from '../../components/intake';
 
 export const NotesHomeScreen: React.FC = () => {
   const { colors, isDark, toggleTheme } = useTheme();
   const { signOut, isGuest, user } = useAuth();
+  const { width } = useWindowDimensions();
+
+  const [notes, setNotes] = useState<ClientNote[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string>('All');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<ClientNote | null>(null);
+
+  // Subscribe to real-time Delta Sync Engine
+  const { status: syncStatus, pendingCount, syncNow } = useSync({
+    onDeltasApplied: () => {
+      loadNotes();
+    },
+  });
+
+  const loadNotes = useCallback(async () => {
+    try {
+      const allNotes = await getLocalNotes(
+        selectedGroup === 'All' ? undefined : selectedGroup
+      );
+      setNotes(allNotes);
+    } catch (err) {
+      console.warn('Failed to load local notes:', err);
+    }
+  }, [selectedGroup]);
+
+  useEffect(() => {
+    loadNotes();
+  }, [loadNotes]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await syncNow();
+    await loadNotes();
+    setIsRefreshing(false);
+  };
+
+  const handleToggleFavorite = async (note: ClientNote) => {
+    try {
+      const updated = await saveLocalNote({
+        id: note.id,
+        title: note.title,
+        content_markdown: note.content_markdown,
+        group_name: note.group_name,
+        color_token: note.color_token,
+        is_favorite: !note.is_favorite,
+      });
+      setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err);
+    }
+  };
+
+  const handleDeleteNote = async (id: string) => {
+    try {
+      await deleteLocalNote(id);
+      setNotes((prev) => prev.filter((n) => n.id !== id));
+      if (selectedNote?.id === id) {
+        setSelectedNote(null);
+      }
+    } catch (err) {
+      console.error('Failed to delete note:', err);
+    }
+  };
+
+  const availableGroups = useMemo(() => {
+    const groups = new Set<string>();
+    groups.add('All');
+    notes.forEach((n) => {
+      if (n.group_name) groups.add(n.group_name);
+    });
+    return Array.from(groups);
+  }, [notes]);
+
+  // Asymmetric multi-column masonry distribution for desktop/tablet
+  const isWide = width >= 768;
+  const isLarge = width >= 1100;
+  const columnCount = isLarge ? 3 : isWide ? 2 : 1;
+
+  const noteColumns = useMemo(() => {
+    const cols: ClientNote[][] = Array.from({ length: columnCount }, () => []);
+    notes.forEach((note, index) => {
+      cols[index % columnCount].push(note);
+    });
+    return cols;
+  }, [notes, columnCount]);
+
+  const formattedDate = useMemo(() => {
+    const now = new Date();
+    return now.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'short',
+      day: 'numeric',
+    });
+  }, []);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.appBg }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Top Bar with Status and Actions */}
+      {/* Top Bar with Status and Top-Right Actions */}
       <View style={styles.topBar}>
-        {isGuest ? (
-          <View
-            style={[
-              styles.guestBadge,
-              {
-                backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-                borderColor: colors.borderSubtle,
-              },
-            ]}
-          >
-            <CloudOff size={14} color={colors.textMuted} />
-            <Text style={[styles.guestText, { color: colors.textSecondary }]}>
-              Guest Mode (Local Only)
-            </Text>
-            <Pressable onPress={signOut} hitSlop={6} style={styles.upgradeLink}>
-              <Text
-                style={[
-                  styles.upgradeText,
-                  { color: isDark ? '#FFC96F' : '#111111' },
-                ]}
-              >
-                Sign in to Sync
+        <View style={styles.topLeft}>
+          {isGuest ? (
+            <View
+              style={[
+                styles.guestBadge,
+                {
+                  backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                  borderColor: colors.borderSubtle,
+                },
+              ]}
+            >
+              <CloudOff size={13} color={colors.textMuted} />
+              <Text style={[styles.guestText, { color: colors.textSecondary }]}>
+                Guest Mode (Local Only)
               </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.userContainer}>
-            <Text style={[styles.userText, { color: colors.textMuted }]}>
-              {user?.name || user?.email || 'Authenticated'}
-            </Text>
-          </View>
-        )}
+              <Pressable onPress={signOut} hitSlop={6} style={styles.upgradeLink}>
+                <Text
+                  style={[
+                    styles.upgradeText,
+                    { color: isDark ? '#FFC96F' : '#111111' },
+                  ]}
+                >
+                  Sign in
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.syncBadge,
+                {
+                  backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                  borderColor: colors.borderSubtle,
+                },
+              ]}
+            >
+              <View
+                style={[
+                  styles.syncDot,
+                  {
+                    backgroundColor:
+                      syncStatus === 'synced'
+                        ? '#10B981'
+                        : syncStatus === 'syncing'
+                        ? '#F59E0B'
+                        : '#6B7280',
+                  },
+                ]}
+              />
+              <Text style={[styles.syncText, { color: colors.textSecondary }]}>
+                {syncStatus === 'synced'
+                  ? 'All Synced'
+                  : syncStatus === 'syncing'
+                  ? 'Syncing...'
+                  : 'Offline'}
+              </Text>
+              {pendingCount > 0 && (
+                <Text style={[styles.pendingPill, { color: colors.textMuted }]}>
+                  • {pendingCount} pending
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
 
-        {/* Top Right Controls: Theme Toggle & Logout */}
+        {/* Top-Right Controls: Theme Toggle & Logout */}
         <View style={styles.topRightControls}>
           <Pressable
             onPress={toggleTheme}
@@ -72,9 +228,9 @@ export const NotesHomeScreen: React.FC = () => {
             accessibilityLabel="Toggle Theme"
           >
             {isDark ? (
-              <Sun size={18} color={colors.textPrimary} />
+              <Sun size={17} color={colors.textPrimary} />
             ) : (
-              <Moon size={18} color={colors.textPrimary} />
+              <Moon size={17} color={colors.textPrimary} />
             )}
           </Pressable>
 
@@ -91,10 +247,246 @@ export const NotesHomeScreen: React.FC = () => {
             ]}
             accessibilityLabel="Sign Out"
           >
-            <LogOut size={18} color={colors.textSecondary} />
+            <LogOut size={17} color={colors.textSecondary} />
           </Pressable>
         </View>
       </View>
+
+      {/* Main Editorial Canvas Scrollview */}
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { maxWidth: 1160, alignSelf: 'center', width: '100%' },
+        ]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor={colors.textMuted}
+          />
+        }
+      >
+        {/* Editorial Heading Section */}
+        <View style={styles.headerSection}>
+          <Text style={[styles.pageTitle, { color: colors.textPrimary }]}>
+            Notes
+          </Text>
+          <Text style={[styles.pageSubtitle, { color: colors.textSecondary }]}>
+            {formattedDate} • {notes.length} {notes.length === 1 ? 'thought' : 'thoughts'}
+            {user?.name ? ` • ${user.name}` : ''}
+          </Text>
+        </View>
+
+        {/* Universal Intake Bar */}
+        <IntakeBar
+          onNoteCreated={(newNote) => {
+            setNotes((prev) => [newNote, ...prev.filter((n) => n.id !== newNote.id)]);
+          }}
+          selectedGroup={selectedGroup}
+        />
+
+        {/* Group Filter Pills */}
+        {availableGroups.length > 1 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            {availableGroups.map((group) => {
+              const isSelected = selectedGroup === group;
+              return (
+                <Pressable
+                  key={group}
+                  onPress={() => setSelectedGroup(group)}
+                  style={[
+                    styles.filterPill,
+                    {
+                      backgroundColor: isSelected
+                        ? colors.iconBg
+                        : isDark
+                        ? colors.surfaceRaised
+                        : colors.surface,
+                      borderColor: isSelected ? colors.iconBg : colors.borderSubtle,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.filterText,
+                      {
+                        color: isSelected ? colors.iconFg : colors.textSecondary,
+                        fontWeight: isSelected ? '600' : '400',
+                      },
+                    ]}
+                  >
+                    {group}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {/* Notes Fluid Asymmetric Rhythm (Non-Card Pastel Tiles) */}
+        {notes.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyPrompt, { color: colors.textMuted }]}>
+              Your mind is for having ideas, not holding them.
+            </Text>
+            <Text style={[styles.emptySubprompt, { color: colors.textSecondary }]}>
+              Type any thought, task, or paste markdown in the intake bar above.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.masonryContainer}>
+            {noteColumns.map((column, colIdx) => (
+              <View key={colIdx} style={styles.masonryColumn}>
+                {column.map((note) => {
+                  const tileBg =
+                    pastelColors[note.color_token as PastelColorKey] || pastelColors.apricot;
+
+                  return (
+                    <Pressable
+                      key={note.id}
+                      onPress={() => setSelectedNote(note)}
+                      style={({ pressed }) => [
+                        styles.pastelTile,
+                        {
+                          backgroundColor: tileBg,
+                          transform: [{ scale: pressed ? 0.985 : 1 }],
+                        },
+                      ]}
+                    >
+                      {/* Note Header: Group Pill & Favorite Star */}
+                      <View style={styles.tileHeader}>
+                        <View style={styles.groupCapsule}>
+                          <Text style={styles.groupCapsuleText}>
+                            {note.group_name || 'General'}
+                          </Text>
+                        </View>
+
+                        <View style={styles.tileHeaderActions}>
+                          <Pressable
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleToggleFavorite(note);
+                            }}
+                            hitSlop={8}
+                            style={[
+                              styles.miniCircularButton,
+                              note.is_favorite && styles.favoriteActiveButton,
+                            ]}
+                            accessibilityLabel="Favorite"
+                          >
+                            <Star
+                              size={14}
+                              color={
+                                note.is_favorite
+                                  ? noteTileTokens.favoriteIconActive
+                                  : noteTileTokens.favoriteIconInactive
+                              }
+                              fill={
+                                note.is_favorite
+                                  ? noteTileTokens.favoriteIconActive
+                                  : 'none'
+                              }
+                            />
+                          </Pressable>
+
+                          <Pressable
+                            onPress={(e) => {
+                              e.stopPropagation();
+                              handleDeleteNote(note.id);
+                            }}
+                            hitSlop={8}
+                            style={styles.miniCircularButton}
+                            accessibilityLabel="Delete"
+                          >
+                            <Trash2 size={13} color="rgba(25, 25, 25, 0.45)" />
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      {/* Note Title & Content Body */}
+                      <Text style={styles.tileTitle} numberOfLines={2}>
+                        {note.title}
+                      </Text>
+
+                      {note.content_markdown ? (
+                        <Text style={styles.tileSnippet} numberOfLines={6}>
+                          {note.content_markdown}
+                        </Text>
+                      ) : null}
+
+                      {/* Tile Footer */}
+                      <View style={styles.tileFooter}>
+                        <Text style={styles.tileTime}>
+                          {new Date(note.updated_at).toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </Text>
+                        {note.pending_sync && (
+                          <Text style={styles.tileSyncHint}>• pending</Text>
+                        )}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+
+      {/* Note Inspection Modal */}
+      {selectedNote && (
+        <Modal
+          visible={Boolean(selectedNote)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSelectedNote(null)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setSelectedNote(null)}
+          >
+            <Pressable
+              style={[
+                styles.modalCard,
+                {
+                  backgroundColor:
+                    pastelColors[selectedNote.color_token as PastelColorKey] ||
+                    pastelColors.apricot,
+                },
+              ]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={styles.modalHeader}>
+                <View style={styles.groupCapsule}>
+                  <Text style={styles.groupCapsuleText}>
+                    {selectedNote.group_name}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setSelectedNote(null)}
+                  style={styles.miniCircularButton}
+                >
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: '#191919' }}>✕</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.modalTitle}>{selectedNote.title}</Text>
+              <ScrollView style={styles.modalScroll}>
+                <Text style={styles.modalBody}>
+                  {selectedNote.content_markdown || 'No content.'}
+                </Text>
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
     </View>
   );
 };
@@ -107,7 +499,7 @@ const styles = StyleSheet.create({
   },
   topBar: {
     position: 'absolute',
-    top: Platform.OS === 'web' ? 24 : 52,
+    top: Platform.OS === 'web' ? 20 : 48,
     left: 24,
     right: 24,
     flexDirection: 'row',
@@ -115,12 +507,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 100,
   },
+  topLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   guestBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
   },
@@ -129,41 +525,209 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   upgradeLink: {
-    marginLeft: 6,
-    paddingHorizontal: 8,
+    marginLeft: 4,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 6,
   },
   upgradeText: {
     fontSize: 12,
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
-  userContainer: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  syncBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
   },
-  userText: {
-    fontSize: 13,
+  syncDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  syncText: {
+    fontSize: 12,
     fontWeight: '500',
+  },
+  pendingPill: {
+    fontSize: 11,
   },
   topRightControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   iconButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    borderWidth: 1,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+    borderWidth: 1,
+  },
+  scrollContent: {
+    paddingTop: Platform.OS === 'web' ? 84 : 100,
+    paddingHorizontal: 24,
+    paddingBottom: 64,
+  },
+  headerSection: {
+    marginBottom: 8,
+  },
+  pageTitle: {
+    fontSize: Platform.OS === 'web' ? 44 : 36,
+    fontWeight: '700',
+    letterSpacing: -0.6,
+    lineHeight: Platform.OS === 'web' ? 48 : 40,
+    marginBottom: 6,
+  },
+  pageSubtitle: {
+    fontSize: 14,
+    fontWeight: '400',
+    marginBottom: 8,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 20,
+    paddingVertical: 4,
+  },
+  filterPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 18,
+    borderWidth: 1,
+  },
+  filterText: {
+    fontSize: 13,
+  },
+  masonryContainer: {
+    flexDirection: 'row',
+    gap: 16,
+    width: '100%',
+  },
+  masonryColumn: {
+    flex: 1,
+    gap: 16,
+  },
+  pastelTile: {
+    borderRadius: 22,
+    padding: 20,
+    width: '100%',
+  },
+  tileHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  groupCapsule: {
+    backgroundColor: 'rgba(25, 25, 25, 0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  groupCapsuleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: noteTileTokens.textPrimary,
+    letterSpacing: 0.2,
+  },
+  tileHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  miniCircularButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(25, 25, 25, 0.07)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  favoriteActiveButton: {
+    backgroundColor: noteTileTokens.favoriteSurfaceActive,
+  },
+  tileTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: noteTileTokens.textPrimary,
+    lineHeight: 23,
+    marginBottom: 8,
+  },
+  tileSnippet: {
+    fontSize: 14,
+    color: noteTileTokens.textSecondary,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  tileFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tileTime: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(25, 25, 25, 0.55)',
+  },
+  tileSyncHint: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: 'rgba(25, 25, 25, 0.45)',
+  },
+  emptyContainer: {
+    paddingVertical: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyPrompt: {
+    fontSize: 18,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  emptySubprompt: {
+    fontSize: 14,
+    textAlign: 'center',
+    maxWidth: 420,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 600,
+    maxHeight: '80%',
+    borderRadius: 24,
+    padding: 28,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: noteTileTokens.textPrimary,
+    lineHeight: 30,
+    marginBottom: 14,
+  },
+  modalScroll: {
+    maxHeight: 400,
+  },
+  modalBody: {
+    fontSize: 15,
+    lineHeight: 24,
+    color: noteTileTokens.textPrimary,
   },
 });
-
