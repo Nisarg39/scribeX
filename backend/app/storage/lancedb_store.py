@@ -30,12 +30,19 @@ def get_lancedb(user_id: str = settings.default_user_id) -> lancedb.DBConnection
     return lancedb.connect(str(db_path))
 
 
+def _table_exists(db, name: str) -> bool:
+    try:
+        tables = db.list_tables()
+        table_list = tables.tables if hasattr(tables, "tables") else list(tables)
+        return name in table_list
+    except Exception:
+        return name in db.table_names()
+
+
 def get_or_create_chunks_table(user_id: str = settings.default_user_id):
     """Retrieve or initialize the note_chunks vector table in LanceDB."""
     db = get_lancedb(user_id)
-    existing_tables = db.table_names()
-
-    if TABLE_NAME in existing_tables:
+    if _table_exists(db, TABLE_NAME):
         return db.open_table(TABLE_NAME)
 
     # Define schema using PyArrow
@@ -173,7 +180,7 @@ def index_note_chunks(
 def delete_note_chunks(user_id: str, note_id: str) -> None:
     """Delete all vector chunks associated with a specific note."""
     db = get_lancedb(user_id)
-    if TABLE_NAME not in db.table_names():
+    if not _table_exists(db, TABLE_NAME):
         return
 
     table = db.open_table(TABLE_NAME)
@@ -191,7 +198,7 @@ def vector_search(
 ) -> list[dict[str, Any]]:
     """Perform fast cosine similarity search in LanceDB on local disk."""
     db = get_lancedb(user_id)
-    if TABLE_NAME not in db.table_names():
+    if not _table_exists(db, TABLE_NAME):
         return []
 
     table = db.open_table(TABLE_NAME)

@@ -15,10 +15,11 @@ def get_base_storage_dir(user_id: str = settings.default_user_id) -> Path:
     For the default user, uses the clean top-level data directory.
     For custom tenant IDs (SaaS mode), isolates under data/tenants/{user_id}.
     """
+    resolved_data_dir = settings.data_dir.resolve()
     if user_id == settings.default_user_id:
-        base_dir = settings.data_dir
+        base_dir = resolved_data_dir
     else:
-        base_dir = settings.data_dir / "tenants" / user_id
+        base_dir = resolved_data_dir / "tenants" / user_id
 
     base_dir.mkdir(parents=True, exist_ok=True)
     return base_dir
