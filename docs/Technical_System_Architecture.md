@@ -7,7 +7,7 @@ This document defines the production technical architecture for ScribeX - Friday
 ### Core Architectural Pillars
 1. **Zero-Downtime 24/7 Availability (Lightweight Cloud VPS):** The core FastAPI backend and embedded memory engine run on an always-on lightweight Linux VPS. The assistant remains $100\%$ operational for note-taking, context retrieval, daily briefings, and planning even when the user's personal PC is powered off.
 2. **Sub-Millisecond AI Context Retrieval (Embedded VPS Storage):** Instead of making slow network hops to external cloud databases, the VPS stores the Markdown Context Vault, Vector Index, and Temporal Knowledge Graph directly on its local NVMe SSD. FastAPI retrieves context in $< 5\text{ ms}$.
-3. **True Local-First Multi-Device Concurrency:** Every client device (iOS, Android, Desktop Web) maintains a local SQLite replica and file cache. The app opens instantly ($0\text{ ms}$ network wait), works offline, and uses **Real-Time WebSocket Delta Sync** so multiple devices can view and edit context concurrently without version conflicts.
+3. **True Local-First Multi-Device Concurrency (SQLite Operational Core + Resilient Sync):** Every client device (iOS, Android, Desktop Web) maintains a local SQLite replica (`expo-sqlite` with OPFS on Web). The app opens instantly ($0\text{ ms}$ network wait) and writes optimistically. Real-time syncing uses an event-sourced revision protocol (`sync_rev`) over WebSockets as an instant push notification ('doorbell'), backed by guaranteed revision catch-up upon reconnection and an HTTP REST fallback endpoint. The central SQLite database serves as the operational synchronization engine, which asynchronously projects updates to the Git Markdown Vault.
 4. **Decoupled Remote PC Agentic Execution:** The user's personal PC runs a lightweight background daemon that connects outbound to the Cloud VPS over an encrypted WebSocket tunnel. When the PC is online, it executes tasks via any configured CLI AI agent (Claude Code, Gemini CLI, Codex CLI, Aider, Goose, OpenCode). If the PC is offline, tasks are queued safely on the VPS until the PC comes online.
 
 ---
@@ -104,41 +104,55 @@ A single **Expo (React Native)** codebase targets **iOS, Android, and Desktop/Mo
 * **API Framework:** **FastAPI** (Python 3.12+, Uvicorn with ASGI workers, native `asyncio` and `WebSockets`).
 * **AI Orchestration & Structured Outputs:** **PydanticAI** or **LangGraph** + **LiteLLM** (allowing seamless switching between Gemini, Claude, and OpenAI models for the Main AI brain).
 * **Embedded Databases (Zero External DB Maintenance):**
-  * **Git-Backed Markdown Vault (`GitPython`):** Every note and core context document is stored as a physical `.md` file with YAML frontmatter inside a local Git repository on the VPS.
-  * **SQLite (`aiosqlite` in `WAL` mode + `FTS5`):** Stores the Temporal Identity Graph, Episodic Version Logs, Task History, Sync Revision Ledger, and Full-Text Search (BM25) index.
-  * **LanceDB (Embedded Disk Mode):** Serverless, file-based vector database stored on the VPS disk for semantic chunk search across notes and uploaded files.
-* **Document & File Parsing:** `MarkItDown` / `PyMuPDF` + Vision LLM pipeline for converting uploaded PDFs, spreadsheets, and images into structured Markdown summaries linked to the vault.
+  * **Operational Core: Embedded SQLite (`aiosqlite` in `WAL` mode + `FTS5`):** Serves as the high-throughput operational core on the VPS. Handles the real-time device sync ledger (`sync_changelog` with monotonically increasing `sync_rev`), active notes, checklists, graph relationships (`entity_edges`), and the Temporal Identity timeline ("Versions of Me").
+  * **Projected Document Layer: Git-Backed Markdown Vault (`GitPython`):** Asynchronously projected from SQLite changes on the VPS. Every note and profile document is maintained as a human-readable `.md` file with YAML frontmatter inside a local Git repository, serving as the version-controlled document archive, off-site backup, and the primary source for the manual edit diff-learning pipeline.
+  * **Semantic Memory: LanceDB (Embedded Disk Mode):** Serverless, file-based vector database stored on the VPS disk for semantic chunk search across notes and uploaded files.
+* **Document & Audio Ingestion:** `MarkItDown` / `PyMuPDF` + Vision LLM pipeline for documents, spreadsheets, and images, paired with a lightweight audio transcription pipeline (`faster-whisper` / Whisper API) for persistent voice note capture.
 * **Proactive Background Engine:** `APScheduler` (AsyncIOScheduler) running inside FastAPI for daily priority recalculation, morning briefings, and periodic "sleep-cycle" memory consolidation.
 
 ---
 
 ## 5. Hybrid Local-First Storage & Real-Time Multi-Device Delta Sync
 
-To allow you to use your phone, tablet, and desktop web browser **concurrently** with instant local speed and zero data loss, the platform uses an **Event-Sourced Revision & Git Delta Sync Protocol**.
+To allow you to use your phone, tablet, and desktop web browser **concurrently** with instant local speed, offline resilience, and zero data loss, the platform uses an **Operational SQLite Delta Sync + Projected Git Markdown Protocol**.
 
-### 5.1. How Local-First Reading & Writing Works
-1. **Instant Local Reads:** When you open the Expo app on any device, the UI renders immediately from the local `expo-sqlite` database.
-2. **Optimistic Local Writes:** When you manually edit a context file or check off a task, the change is written immediately to your device's local SQLite storage with a `pending_sync` flag and transmitted to the FastAPI VPS via WebSocket.
+### 5.1. Architecture of Truth: Decoupled Operational & Projection Layers
+To ensure maximum speed without file-locking bottlenecks:
+1. **Operational Layer (Device-to-Device Sync):** The central **SQLite database on the VPS** serves as the authoritative real-time operational state. All client devices (`expo-sqlite`) sync directly against this SQLite operational core. High-frequency updates (typing notes, checking off tasks, updating priorities) happen as atomic SQLite transactions.
+2. **Projection Layer (Git Markdown Vault & LanceDB):** When a note transaction is committed in the operational SQLite database on the VPS, an asynchronous background task projects the update into the physical `.md` file inside the Git Vault and refreshes the LanceDB vector chunks. This completely isolates live typing sync from disk-level Git commit overhead while preserving full Git history, human readability, and diff learning.
 
-### 5.2. Real-Time Delta Sync Protocol (`sync_rev`)
-Every note, task, and context file tracks a monotonically increasing integer `sync_rev` (Sync Revision Number) and a `last_modified_by` tag (`user_manual` vs. `ai_assistant`).
+### 5.2. Local-First Reading & Optimistic Writes
+1. **Instant Local Reads ($0\text{ ms}$):** When you open the Expo app on any device, the UI renders immediately from the local `expo-sqlite` database.
+2. **Optimistic Local Writes:** When you edit a note or check off a task, the change is written immediately to your device's local SQLite storage with a `pending_sync: true` flag and queued for immediate transmission to the VPS.
 
-1. **Client Connects / Reconnects:**
-   * The Expo client sends its highest known `local_sync_rev` to `wss://vps-domain/api/v1/ws/sync`.
-   * FastAPI queries the `sync_changelog` table in SQLite (`WHERE sync_rev > client_sync_rev`) and pushes only the changed records/deltas down to the device.
-2. **Concurrent Multi-Device Broadcast:**
-   * If you have your Desktop Web App and Mobile App open simultaneously and edit a note on Web, FastAPI commits the change to the VPS Git Vault, increments `sync_rev`, and broadcasts the delta payload over WebSocket to your Mobile App in $< 50\text{ ms}$.
-3. **Conflict Resolution:**
-   * For concurrent edits to the same Markdown file, FastAPI performs a **3-way Git merge** (`git merge-file`) using the common ancestor commit in the VPS Git Vault. If a non-overlapping change occurred, it merges cleanly; if lines conflict, both versions are preserved and the AI asks you which to keep.
+### 5.3. Resilient Multi-Device Sync Protocol (`sync_rev`) & Transport Architecture
+To guarantee that syncing is 100% reliable even when devices sleep, disconnect, or switch networks, the system decouples **data persistence** from the **transport connection**:
 
-### 5.3. Manual Edit Diff Learning Pipeline
-Because every change in the Markdown Vault is committed to the VPS Git repository:
-* **AI Edits** are committed with author `ScribeX-AI <ai@assistant.local>`.
-* **Manual User Edits** are committed with author `User <user@assistant.local>`.
-* **Diff Learning Trigger:** Whenever FastAPI receives a `user_manual` edit on a file or folder that the AI previously created or organized, a background task runs `git diff HEAD~1 HEAD` and passes the diff to the **Diff Analyzer Worker**.
-* The Diff Analyzer extracts the organizational lesson (e.g., *"User moved API credentials note out of 'General Reference' into 'Project X/Config' and lowered its priority from P1 to P3"*) and writes a permanent rule into **Layer 4 (Behavioral & Preference Ledger)**.
+* **Event-Sourced Revision Counter (`sync_rev`):** Every row in SQLite tracks a monotonically increasing integer `sync_rev`. The VPS maintains a `sync_changelog` table recording every incremental delta.
+* **WebSocket as an Instant "Doorbell" Push:**
+  * When devices are online and connected via WebSocket (`wss://vps-domain/api/v1/ws/sync`), changes are broadcast across devices in $< 50\text{ ms}$.
+  * The WebSocket does *not* need to be permanently reliable. If a device drops Wi-Fi or goes into background sleep, the WebSocket simply disconnects without losing data.
+* **Guaranteed Reconnection Catch-Up (State Reconciliation):**
+  * When a device reconnects (or wakes up from sleep), the client sends a handshake message with its highest known `local_sync_rev`.
+  * FastAPI queries `SELECT * FROM sync_changelog WHERE sync_rev > :local_sync_rev ORDER BY sync_rev ASC` and streams only the missing deltas down to the client.
+  * The client applies these deltas inside a local SQLite transaction and pushes any queued `pending_sync` local edits up to the VPS.
+* **HTTP REST Sync Fallback:**
+  * For environments where WebSockets are blocked by restrictive firewalls or corporate proxies, the client automatically falls back to standard HTTP endpoints:
+    * `POST /api/v1/sync/push` (upload local deltas)
+    * `POST /api/v1/sync/pull` (fetch deltas since `local_sync_rev`)
 
-### 5.4. Automated Off-Site Cloud Backup
+### 5.4. Conflict Resolution Strategy
+* **Metadata & Checklists (Field-Level LWW):** For priority changes, tag updates, and task completions, SQLite uses field-level Last-Write-Wins (LWW) based on NTP-synchronized UTC timestamps (`updated_at`).
+* **Note Body Text (3-Way Merge & AI Reconciliation):** If two devices simultaneously edit the body text of the same note while offline, FastAPI detects the concurrent revision and runs a 3-way text merge (`diff3` / `git merge-file`). If non-overlapping lines were edited, they merge cleanly. If conflicting edits overlap, both versions are preserved in a conflict block (`<<<<<<< LOCAL / >>>>>>> REMOTE`) and the Main AI assistant immediately prompts the user via a quick mobile notification or chat prompt to choose or synthesize the final text.
+
+### 5.5. Manual Edit Diff Learning Pipeline
+Because the VPS asynchronously projects all accepted note edits into the Markdown Git Vault:
+* **AI Edits** are committed to Git with author: `ScribeX-AI <ai@assistant.local>`.
+* **Manual User Edits** are committed to Git with author: `User <user@assistant.local>`.
+* **Diff Learning Trigger:** Whenever a `user_manual` commit modifies a note previously created or organized by the AI, the **Diff Analyzer Worker** runs `git diff HEAD~1 HEAD`.
+* The Diff Analyzer extracts the organizational rationale (e.g., *"User grouped API keys under 'Project X/Config' instead of 'General Reference' and set priority to P2"*) and records a permanent preference rule into **Layer 4 (Behavioral & Preference Ledger)**.
+
+### 5.6. Automated Off-Site Cloud Backup
 * Every commit to the VPS Git Vault and hourly SQLite snapshot (via `Litestream` or `rclone`) is automatically pushed to a **Private Git Repository (GitHub/GitLab)** and/or **Encrypted S3-Compatible Storage (Cloudflare R2 / Backblaze B2)**. If you ever migrate to a new VPS or new device, your entire life history restores in one command.
 
 ---
@@ -269,7 +283,8 @@ scribex/
 │   │   ├── main.py                     # FastAPI entry point & lifespan events
 │   │   ├── api/
 │   │   │   ├── intake.py               # Universal note/file ingestion & clarification
-│   │   │   ├── sync_ws.py              # Multi-device real-time delta sync WebSocket
+│   │   │   ├── sync_ws.py              # Multi-device real-time delta sync WebSocket (Doorbell)
+│   │   │   ├── sync_http.py            # HTTP REST delta sync fallback (Push/Pull)
 │   │   │   └── pc_bridge_ws.py         # Remote PC daemon WebSocket controller
 │   │   ├── memory/
 │   │   │   ├── layer1_identity.py      # Core Identity & Always-Active Index
@@ -309,7 +324,7 @@ scribex/
 
 To build and test this systematically without getting overwhelmed, instruct your AI coding assistant to follow these four phases:
 
-* **Phase 1: FastAPI Core + Git Vault + 4-Layer Memory (VPS Backend):** Set up the FastAPI server, the Git-backed Markdown Vault (`GitPython`), embedded SQLite + LanceDB, the interactive onboarding flow, and the Universal Intake endpoint with Ask-Before-Write clarification.
-* **Phase 2: Universal Expo App + Local-First Delta Sync:** Build the Expo app (`iOS`, `Android`, `Web`) with `expo-sqlite` local caching and the WebSocket Delta Sync engine so notes, checklists, and manual edits sync concurrently in real time across devices.
+* **Phase 1: FastAPI Core + Operational SQLite + Git Vault Projection (VPS Backend):** Set up the FastAPI server, embedded SQLite WAL operational tables (`sync_changelog`, `entity_edges`, `identity_timeline`), the Git-backed Markdown Vault projector (`GitPython`), LanceDB vector store, interactive onboarding flow, and Universal Intake endpoint with Ask-Before-Write clarification.
+* **Phase 2: Universal Expo App + Resilient Delta Sync:** Build the Expo app (`iOS`, `Android`, `Web`) with `expo-sqlite` local caching and the resilient delta sync engine (WebSocket doorbell push + revision catch-up handshake + HTTP fallback) so notes, checklists, and manual edits sync concurrently in real time across devices.
 * **Phase 3: Manual Edit Diff Learner + Temporal "Versions of Me":** Enable the background Git diff analyzer that compares `user_manual` commits against `ai_assistant` commits to populate Layer 4 (Behavioral Ledger) and Layer 3 (Identity Evolution Timeline).
 * **Phase 4: Remote PC Bridge Daemon + Pluggable CLI Verification Loop:** Deploy the `pc-agent-bridge` script on your personal PC, connect it via WebSocket to FastAPI, configure `cli_agents.yaml`, and activate the 3-stage verification pipeline.
