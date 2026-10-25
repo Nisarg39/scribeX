@@ -45,15 +45,15 @@ class IntakeAnalysis(BaseModel):
         default=None,
         description="ID of the existing note to update, if applicable.",
     )
-    suggested_group: str = Field(
+    suggested_group: str | None = Field(
         default="Inbox",
         description="Recommended note group or folder in the user's vault.",
     )
-    extracted_title: str = Field(
+    extracted_title: str | None = Field(
         default="Untitled Note",
         description="Synthesized title for the note.",
     )
-    refined_content: str = Field(
+    refined_content: str | None = Field(
         default="",
         description="Polished markdown content ready for atomic vault projection.",
     )
@@ -197,12 +197,12 @@ Your job is to evaluate raw incoming user text/voice notes and decide whether to
      * Set `clarity_score` < 0.85 (e.g. 0.40 - 0.70)
      * Set `proposed_action = "clarify"`
      * Provide 1 to 3 polite, targeted `clarifying_questions`.
-2. Clear Unambiguous Input:
-   - If the input contains sufficient information (e.g. "Finished client onboarding checklist for Acme Corp", "Meeting with Sarah about Q3 budget: agreed on $50k allocation", or a complete structured note), you MUST:
+2. Clear Unambiguous Input & Documents:
+   - If the input contains sufficient information (e.g. "Finished client onboarding checklist for Acme Corp", "Meeting with Sarah about Q3 budget: agreed on $50k allocation", or an uploaded document with headings and structured text), you MUST:
      * Set `ambiguity_detected = false`
      * Set `clarity_score` >= 0.85 (typically 0.90 to 1.0)
      * Decide if this updates an existing note found in Layer 2 context (`proposed_action = "update_existing_note"`, `target_note_id = "<id>"`) or starts a new note (`proposed_action = "create_new_note"`, `target_note_id = null`).
-     * Set `suggested_group` (e.g. Projects, Goals, Habits, Meetings, Inbox).
+     * Set `suggested_group` (e.g. Projects, Goals, Habits, Meetings, Inbox, Archive).
      * Set `extracted_title` and format `refined_content` into clean, well-structured Markdown.
      * Estimate `priority_score` (0.0 to 1.0).
 
@@ -242,6 +242,12 @@ Output pure JSON matching the schema:
 
         content = response.choices[0].message.content
         data = json.loads(content)
+        # Sanitize potentially null values
+        data["suggested_group"] = data.get("suggested_group") or "Inbox"
+        data["extracted_title"] = data.get("extracted_title") or "Untitled Note"
+        data["refined_content"] = data.get("refined_content") or clean_input
+        data["clarifying_questions"] = data.get("clarifying_questions") or []
+        data["linked_goal_ids"] = data.get("linked_goal_ids") or []
         return IntakeAnalysis(**data)
 
     except Exception as e:
