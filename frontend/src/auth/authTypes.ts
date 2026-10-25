@@ -34,6 +34,7 @@ export interface AuthState {
   isLoading: boolean;
   isAuthenticated: boolean;
   isGuest: boolean;
+  hasEverSignedIn: boolean;
   authMode: AuthMode;
   user: User | null;
   token: string | null;
@@ -47,3 +48,4 @@ export interface AuthContextValue extends AuthState {
   continueAsGuest: (guestName?: string) => Promise<void>;
   clearError: () => void;
 }
+

@@ -25,8 +25,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Initialize SQLite database schema
     from app.storage.sqlite_db import init_db
+    from app.storage.auth_db import init_auth_db
+    await init_auth_db()
     await init_db(settings.default_user_id)
-    logger.info("Operational SQLite database initialized in WAL mode.")
+    logger.info("Operational SQLite database and Auth database initialized in WAL mode.")
 
     yield
 
@@ -73,11 +75,13 @@ async def root() -> dict[str, str]:
 
 
 # Register API Routers
-from app.api import intake, onboarding, sync_http, sync_ws
+from app.api import auth, intake, onboarding, sync_http, sync_ws
 
+app.include_router(auth.router)
 app.include_router(intake.router)
 app.include_router(onboarding.router)
 app.include_router(sync_http.router)
 app.include_router(sync_ws.router)
+
 
 

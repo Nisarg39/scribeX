@@ -7,57 +7,93 @@
  */
 
 import React from 'react';
-import { StyleSheet, View, Pressable, Platform } from 'react-native';
+import { StyleSheet, View, Text, Pressable, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { Sun, Moon, LogOut } from 'lucide-react-native';
+import { Sun, Moon, LogOut, CloudOff } from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { useAuth } from '../../auth';
 
 export const NotesHomeScreen: React.FC = () => {
   const { colors, isDark, toggleTheme } = useTheme();
-  const { signOut } = useAuth();
+  const { signOut, isGuest, user } = useAuth();
 
   return (
     <View style={[styles.container, { backgroundColor: colors.appBg }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Top Right Controls: Theme Toggle & Logout */}
-      <View style={styles.topRightControls}>
-        <Pressable
-          onPress={toggleTheme}
-          hitSlop={8}
-          style={({ pressed }) => [
-            styles.iconButton,
-            {
-              backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-              borderColor: colors.borderSubtle,
-              opacity: pressed ? 0.75 : 1,
-            },
-          ]}
-          accessibilityLabel="Toggle Theme"
-        >
-          {isDark ? (
-            <Sun size={18} color={colors.textPrimary} />
-          ) : (
-            <Moon size={18} color={colors.textPrimary} />
-          )}
-        </Pressable>
+      {/* Top Bar with Status and Actions */}
+      <View style={styles.topBar}>
+        {isGuest ? (
+          <View
+            style={[
+              styles.guestBadge,
+              {
+                backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                borderColor: colors.borderSubtle,
+              },
+            ]}
+          >
+            <CloudOff size={14} color={colors.textMuted} />
+            <Text style={[styles.guestText, { color: colors.textSecondary }]}>
+              Guest Mode (Local Only)
+            </Text>
+            <Pressable onPress={signOut} hitSlop={6} style={styles.upgradeLink}>
+              <Text
+                style={[
+                  styles.upgradeText,
+                  { color: isDark ? '#FFC96F' : '#111111' },
+                ]}
+              >
+                Sign in to Sync
+              </Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.userContainer}>
+            <Text style={[styles.userText, { color: colors.textMuted }]}>
+              {user?.name || user?.email || 'Authenticated'}
+            </Text>
+          </View>
+        )}
 
-        <Pressable
-          onPress={signOut}
-          hitSlop={8}
-          style={({ pressed }) => [
-            styles.iconButton,
-            {
-              backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-              borderColor: colors.borderSubtle,
-              opacity: pressed ? 0.75 : 1,
-            },
-          ]}
-          accessibilityLabel="Sign Out"
-        >
-          <LogOut size={18} color={colors.textSecondary} />
-        </Pressable>
+        {/* Top Right Controls: Theme Toggle & Logout */}
+        <View style={styles.topRightControls}>
+          <Pressable
+            onPress={toggleTheme}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.iconButton,
+              {
+                backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                borderColor: colors.borderSubtle,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+            accessibilityLabel="Toggle Theme"
+          >
+            {isDark ? (
+              <Sun size={18} color={colors.textPrimary} />
+            ) : (
+              <Moon size={18} color={colors.textPrimary} />
+            )}
+          </Pressable>
+
+          <Pressable
+            onPress={signOut}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.iconButton,
+              {
+                backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                borderColor: colors.borderSubtle,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+            accessibilityLabel="Sign Out"
+          >
+            <LogOut size={18} color={colors.textSecondary} />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -69,14 +105,52 @@ const styles = StyleSheet.create({
     height: '100%',
     width: '100%',
   },
-  topRightControls: {
+  topBar: {
     position: 'absolute',
     top: Platform.OS === 'web' ? 24 : 52,
+    left: 24,
     right: 24,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  guestBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  guestText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  upgradeLink: {
+    marginLeft: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  upgradeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
+  userContainer: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  userText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  topRightControls: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    zIndex: 100,
   },
   iconButton: {
     width: 42,
@@ -92,3 +166,4 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
 });
+

@@ -67,7 +67,7 @@ class SyncEngine {
     this.userId = userId || 'default_user';
     this.authToken = token;
 
-    if (!userId) {
+    if (!userId || !token) {
       this.status = 'offline';
       if (this.ws) {
         try {
@@ -90,6 +90,7 @@ class SyncEngine {
       this.syncNow();
     }
   }
+
 
   public getStatus(): SyncStatus {
     return this.status;
@@ -227,10 +228,11 @@ class SyncEngine {
    * WebSocket Doorbell Connection & Auto-Reconnect Loop.
    */
   private connectWebSocket(): void {
-    if (!this.isStarted) return;
+    if (!this.isStarted || !this.authToken) return;
     if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
       return;
     }
+
 
     try {
       const tokenParam = this.authToken ? `&token=${encodeURIComponent(this.authToken)}` : '';
@@ -313,6 +315,12 @@ class SyncEngine {
    * 2. Catches up missing server deltas from GET /api/v1/sync/deltas?since_rev=X.
    */
   public async syncNow(): Promise<void> {
+    if (!this.authToken) {
+      this.status = 'offline';
+      this.emitEvent();
+      return;
+    }
+
     if (this.isSyncing) {
       this.queuedSync = true;
       return;
@@ -321,6 +329,7 @@ class SyncEngine {
     this.isSyncing = true;
     this.status = 'syncing';
     this.emitEvent();
+
 
     let deltasCount = 0;
 

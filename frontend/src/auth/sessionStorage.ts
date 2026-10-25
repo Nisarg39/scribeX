@@ -10,11 +10,30 @@ import { AuthSession } from './authTypes';
 
 const SESSION_STORAGE_KEY = 'scribex_auth_session';
 const GUEST_STORAGE_KEY = 'scribex_guest_active';
+const HAS_SIGNED_IN_KEY = 'scribex_has_signed_in';
+
+export async function setHasSignedIn(hasSignedIn: boolean): Promise<void> {
+  try {
+    await AsyncStorage.setItem(HAS_SIGNED_IN_KEY, hasSignedIn ? 'true' : 'false');
+  } catch (err) {
+    console.warn('Failed to persist hasSignedIn flag:', err);
+  }
+}
+
+export async function getHasSignedIn(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(HAS_SIGNED_IN_KEY);
+    return raw === 'true';
+  } catch (err) {
+    return false;
+  }
+}
 
 export async function saveSession(session: AuthSession): Promise<void> {
   try {
     await AsyncStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     await AsyncStorage.removeItem(GUEST_STORAGE_KEY);
+    await setHasSignedIn(true);
   } catch (err) {
     console.warn('Failed to persist auth session:', err);
   }
@@ -45,9 +64,11 @@ export async function setGuestMode(isGuest: boolean, guestId?: string): Promise<
       const guestPayload = {
         isGuest: true,
         guestId: guestId || `guest_${Date.now()}`,
+        startedAt: new Date().toISOString(),
       };
       await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(guestPayload));
       await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
+      await setHasSignedIn(false);
     } else {
       await AsyncStorage.removeItem(GUEST_STORAGE_KEY);
     }
@@ -66,3 +87,4 @@ export async function loadGuestMode(): Promise<{ isGuest: boolean; guestId?: str
     return { isGuest: false };
   }
 }
+

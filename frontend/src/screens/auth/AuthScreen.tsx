@@ -62,9 +62,20 @@ export const AuthScreen: React.FC = () => {
       setLocalError('Please enter your email address.');
       return;
     }
-    if (mode === 'signup' && !name.trim()) {
-      setLocalError('Please enter your name.');
-      return;
+    if (mode === 'signup') {
+      if (!name.trim()) {
+        setLocalError('Please enter your full name.');
+        return;
+      }
+      if (!password || password.length < 6) {
+        setLocalError('Password must be at least 6 characters long.');
+        return;
+      }
+    } else {
+      if (!password) {
+        setLocalError('Please enter your password.');
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -156,7 +167,7 @@ export const AuthScreen: React.FC = () => {
 
             <Text style={[styles.subHeading, { color: colors.textSecondary }]}>
               {mode === 'signin'
-                ? 'Sign in to access your offline notes and real-time syncing across devices.'
+                ? 'Sign in to access your notes, knowledge graph, and cloud sync.'
                 : 'Zero commingled tables. Fully isolated tenant vault powered by offline-first SQLite.'}
             </Text>
           </View>
@@ -260,7 +271,7 @@ export const AuthScreen: React.FC = () => {
 
             <View style={styles.inputGroup}>
               <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
-                Password (Optional in dev)
+                {mode === 'signup' ? 'Password (min. 6 characters)' : 'Password'}
               </Text>
               <Pressable
                 onPress={() => passwordRef.current?.focus()}
@@ -357,10 +368,16 @@ export const AuthScreen: React.FC = () => {
             >
               <Zap size={12} color="#191919" />
             </View>
-            <Text style={[styles.guestButtonText, { color: colors.textPrimary }]}>
-              Try as Guest (Instant Offline)
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.guestButtonText, { color: colors.textPrimary }]}>
+                Try as Guest (Instant Offline)
+              </Text>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 1 }}>
+                No account required • Stored locally on this device
+              </Text>
+            </View>
           </Pressable>
+
 
           {/* Mode Switch Link */}
           <View style={styles.switchRow}>

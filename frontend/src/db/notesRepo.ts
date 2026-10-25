@@ -331,3 +331,14 @@ export async function seedInitialNotesIfEmpty(
     });
   }
 }
+
+/**
+ * Mark all local notes as pending sync.
+ * Used when a guest user converts/registers so all local notes are pushed to VPS.
+ */
+export async function markAllNotesPendingSync(): Promise<number> {
+  const db = await getDatabase();
+  const result = await db.runAsync('UPDATE notes SET pending_sync = 1;');
+  return result.changes;
+}
+

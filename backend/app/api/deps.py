@@ -2,6 +2,7 @@
 
 from fastapi import Header
 from app.core.config import settings
+from app.core.security import decode_access_token
 
 
 async def get_current_user_id(
@@ -10,16 +11,22 @@ async def get_current_user_id(
 ) -> str:
     """Resolve the active user ID for the current request.
 
-    In Phase 1, defaults to settings.default_user_id ('default_user').
-    In SaaS phases, decodes JWT / machine pairing tokens from Authorization header.
+    1. Checks Authorization header for valid signed JWT bearer token.
+    2. Checks X-User-ID header if provided.
+    3. Falls back to default_user_id.
     """
-    if x_user_id:
-        return x_user_id
-
-    # Future SaaS JWT decoding stub
     if authorization and authorization.startswith("Bearer "):
-        token = authorization.split(" ")[1]
+        token = authorization.split(" ")[1].strip()
+        decoded = decode_access_token(token)
+        if decoded and "sub" in decoded:
+            return decoded["sub"]
+        
+        # Support development token prefixes
         if token.startswith("usr_"):
             return token
 
+    if x_user_id:
+        return x_user_id
+
     return settings.default_user_id
+
