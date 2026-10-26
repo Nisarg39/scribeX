@@ -491,3 +491,101 @@ async def list_staging_intakes(
             item["clarifying_questions"] = json.loads(item["clarifying_questions"])
             result.append(item)
         return result
+
+
+async def save_asset_record(
+    user_id: str,
+    asset_id: str,
+    storage_key: str,
+    file_name: str,
+    mime_type: str,
+    size_bytes: int,
+    sha256_hash: str,
+    processing_status: str = "completed",
+    extracted_text: str | None = None,
+) -> dict[str, Any]:
+    """Save metadata for an uploaded binary or parsed document asset."""
+    async with get_db_connection(user_id) as conn:
+        # Ensure table exists if not yet initialized
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS assets (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                storage_key TEXT NOT NULL,
+                file_name TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                size_bytes INTEGER NOT NULL,
+                sha256_hash TEXT NOT NULL,
+                processing_status TEXT NOT NULL,
+                extracted_text TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """
+        )
+        await conn.execute(
+            """
+            INSERT OR REPLACE INTO assets (
+                id, user_id, storage_key, file_name, mime_type,
+                size_bytes, sha256_hash, processing_status, extracted_text
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                asset_id,
+                user_id,
+                storage_key,
+                file_name,
+                mime_type,
+                size_bytes,
+                sha256_hash,
+                processing_status,
+                extracted_text,
+            ),
+        )
+        await conn.commit()
+
+    return {
+        "id": asset_id,
+        "user_id": user_id,
+        "storage_key": storage_key,
+        "file_name": file_name,
+        "mime_type": mime_type,
+        "size_bytes": size_bytes,
+        "sha256_hash": sha256_hash,
+        "processing_status": processing_status,
+        "extracted_text": extracted_text,
+    }
+
+
+async def get_asset_record(user_id: str, asset_id: str) -> dict[str, Any] | None:
+    """Retrieve an asset metadata record by ID."""
+    async with get_db_connection(user_id) as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM assets WHERE id = ? AND user_id = ?;",
+            (asset_id, user_id),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def update_asset_status(
+    user_id: str,
+    asset_id: str,
+    status: str,
+    extracted_text: str | None = None,
+) -> bool:
+    """Update processing status and extracted text for an asset."""
+    async with get_db_connection(user_id) as conn:
+        if extracted_text is not None:
+            cursor = await conn.execute(
+                "UPDATE assets SET processing_status = ?, extracted_text = ? WHERE id = ? AND user_id = ?;",
+                (status, extracted_text, asset_id, user_id),
+            )
+        else:
+            cursor = await conn.execute(
+                "UPDATE assets SET processing_status = ? WHERE id = ? AND user_id = ?;",
+                (status, asset_id, user_id),
+            )
+        await conn.commit()
+        return cursor.rowcount > 0
+

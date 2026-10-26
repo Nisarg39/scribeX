@@ -121,3 +121,20 @@ CREATE TRIGGER IF NOT EXISTS trg_notes_after_update AFTER UPDATE ON notes BEGIN
     INSERT INTO notes_fts(note_id, user_id, title, content_markdown)
     VALUES (new.id, new.user_id, new.title, new.content_markdown);
 END;
+
+-- 9. Binary Asset Ledger
+CREATE TABLE IF NOT EXISTS assets (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    storage_key TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    sha256_hash TEXT NOT NULL,
+    processing_status TEXT NOT NULL, -- 'pending', 'processing', 'completed', 'failed'
+    extracted_text TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_assets_user_status ON assets(user_id, processing_status);
+

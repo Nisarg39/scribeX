@@ -5,7 +5,7 @@
  * surface connected to the VPS Backend Ask-Before-Write Ambiguity Gate and local SQLite.
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -21,9 +21,6 @@ import {
   Mic,
   Paperclip,
   Sparkles,
-  HelpCircle,
-  CheckCircle2,
-  X,
 } from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { useAuth } from '../../auth';
@@ -31,16 +28,12 @@ import { saveLocalNote } from '../../db/notesRepo';
 import { ClientNote } from '../../db/types';
 import { apiClient } from '../../services/apiClient';
 import { syncEngine } from '../../sync/syncEngine';
+import { assetService } from '../../services/assetService';
+import { ClarificationModal, ClarificationData } from './ClarificationModal';
 
 interface IntakeBarProps {
   onNoteCreated?: (note: ClientNote) => void;
   selectedGroup?: string;
-}
-
-interface ClarificationState {
-  stagingId: string;
-  questions: string[];
-  rawInput: string;
 }
 
 export const IntakeBar: React.FC<IntakeBarProps> = ({
@@ -54,12 +47,58 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
   const [isFocused, setIsFocused] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [clarification, setClarification] = useState<ClarificationState | null>(null);
-  const [clarificationAnswer, setClarificationAnswer] = useState('');
-  const [isResolvingClarification, setIsResolvingClarification] = useState(false);
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  const [clarificationData, setClarificationData] = useState<ClarificationData | null>(null);
 
   const inputRef = useRef<any>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Listen for background OCR/Whisper ASSET_PROCESSED events
+  useEffect(() => {
+    const unsubscribe = assetService.subscribe((event) => {
+      if (event.extracted_text) {
+        setText((prev) => {
+          if (prev && !prev.includes(event.extracted_text!)) {
+            return `${prev}\n\n${event.extracted_text}`;
+          }
+          return prev || event.extracted_text || '';
+        });
+      }
+    });
+    return unsubscribe;
+  }, []);
+
+  // File / Document / Audio upload trigger
+  const handleTriggerFileUpload = () => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,application/pdf,text/*,audio/*';
+      input.onchange = async (e: any) => {
+        const file = e.target?.files?.[0];
+        if (!file) return;
+        await uploadAndAttachFile(file);
+      };
+      input.click();
+    }
+  };
+
+  const uploadAndAttachFile = async (filePayload: any) => {
+    setIsUploadingAsset(true);
+    try {
+      const asset = await assetService.uploadAsset(filePayload);
+      const assetRef = `\n\n[Asset: ${asset.file_name}](/api/v1/assets/${asset.id}/file)\n`;
+      let snippet = assetRef;
+      if (asset.extracted_text) {
+        snippet += `\n> ${asset.extracted_text.trim()}\n`;
+      }
+      setText((prev) => (prev ? `${prev.trim()}${snippet}` : `${asset.file_name}${snippet}`));
+    } catch (err: any) {
+      console.warn('Asset upload error:', err);
+    } finally {
+      setIsUploadingAsset(false);
+    }
+  };
 
   // Toggle mic pulse animation
   const toggleRecording = () => {
@@ -129,10 +168,12 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
           });
 
           if (intakeRes.status === 'NEEDS_CLARIFICATION' && intakeRes.clarifying_questions?.length) {
-            setClarification({
+            setClarificationData({
               stagingId: intakeRes.staging_id,
-              questions: intakeRes.clarifying_questions,
               rawInput: trimmed,
+              clarifyingQuestions: intakeRes.clarifying_questions,
+              proposedAction: intakeRes.proposed_action,
+              clarityScore: intakeRes.clarity_score,
             });
           } else {
             // Trigger background catch-up sync
@@ -147,26 +188,6 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
       console.error('Failed to capture note locally:', err);
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleResolveClarification = async () => {
-    if (!clarification || !clarificationAnswer.trim() || isResolvingClarification) return;
-
-    setIsResolvingClarification(true);
-    try {
-      await apiClient.post(
-        `/api/v1/intake/${clarification.stagingId}/clarify`,
-        { answers: clarificationAnswer.trim() }
-      );
-      setClarification(null);
-      setClarificationAnswer('');
-      syncEngine.syncNow().catch(() => {});
-    } catch (err) {
-      console.warn('Clarification resolution queued:', err);
-      setClarification(null);
-    } finally {
-      setIsResolvingClarification(false);
     }
   };
 
@@ -193,7 +214,7 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
           },
         ]}
       >
-        {/* Left Actions: Voice recording & Attachment */}
+        {/* Left Actions: Voice recording, Attachments & Templates */}
         <View style={styles.leftActions}>
           <Pressable
             onPress={toggleRecording}
@@ -217,6 +238,23 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
                 }
               />
             </Animated.View>
+          </Pressable>
+
+          <Pressable
+            onPress={handleTriggerFileUpload}
+            hitSlop={8}
+            disabled={isUploadingAsset}
+            style={({ pressed }) => [
+              styles.utilityButton,
+              pressed && { opacity: 0.75 },
+            ]}
+            accessibilityLabel="Attach document or file"
+          >
+            {isUploadingAsset ? (
+              <ActivityIndicator size="small" color={colors.textPrimary} />
+            ) : (
+              <Paperclip size={17} color={colors.textMuted} />
+            )}
           </Pressable>
 
           <Pressable
@@ -287,75 +325,18 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
         </Pressable>
       </View>
 
-      {/* Ask-Before-Write Ambiguity Gate Clarification Banner */}
-      {clarification && (
-        <View
-          style={[
-            styles.clarificationBox,
-            {
-              backgroundColor: isDark ? '#2D2820' : '#FFF9E6',
-              borderColor: '#FFC96F',
-            },
-          ]}
-        >
-          <View style={styles.clarificationHeader}>
-            <View style={styles.clarificationTitleRow}>
-              <HelpCircle size={16} color="#D97706" />
-              <Text style={[styles.clarificationTitle, { color: isDark ? '#FFC96F' : '#92400E' }]}>
-                Friday needs quick clarification
-              </Text>
-            </View>
-            <Pressable onPress={() => setClarification(null)} hitSlop={8}>
-              <X size={16} color={colors.textMuted} />
-            </Pressable>
-          </View>
-
-          {clarification.questions.map((q, idx) => (
-            <Text key={idx} style={[styles.clarificationQuestion, { color: colors.textPrimary }]}>
-              • {q}
-            </Text>
-          ))}
-
-          <View style={styles.clarificationInputRow}>
-            <TextInput
-              value={clarificationAnswer}
-              onChangeText={setClarificationAnswer}
-              placeholder="Type your answer to clarify..."
-              placeholderTextColor={colors.textMuted}
-              style={[
-                styles.clarificationInput,
-                {
-                  color: colors.textPrimary,
-                  backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-                  borderColor: colors.borderSubtle,
-                  ...Platform.select({
-                    web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any,
-                  }),
-                },
-              ]}
-            />
-            <Pressable
-              onPress={handleResolveClarification}
-              disabled={!clarificationAnswer.trim() || isResolvingClarification}
-              style={[
-                styles.clarificationButton,
-                {
-                  backgroundColor: colors.iconBg,
-                  opacity: clarificationAnswer.trim() ? 1 : 0.6,
-                },
-              ]}
-            >
-              {isResolvingClarification ? (
-                <ActivityIndicator size="small" color={colors.iconFg} />
-              ) : (
-                <Text style={[styles.clarificationButtonText, { color: colors.iconFg }]}>
-                  Resolve
-                </Text>
-              )}
-            </Pressable>
-          </View>
-        </View>
-      )}
+      {/* ScribeX Ask-Before-Write Ambiguity Gate Clarification Modal */}
+      <ClarificationModal
+        visible={!!clarificationData}
+        data={clarificationData}
+        onResolved={(noteResult) => {
+          setClarificationData(null);
+          syncEngine.syncNow().catch(() => {});
+        }}
+        onDismiss={() => {
+          setClarificationData(null);
+        }}
+      />
     </View>
   );
 };
@@ -403,56 +384,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 10,
-  },
-  clarificationBox: {
-    marginTop: 10,
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  clarificationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  clarificationTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  clarificationTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  clarificationQuestion: {
-    fontSize: 13,
-    lineHeight: 19,
-    marginBottom: 6,
-  },
-  clarificationInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 8,
-  },
-  clarificationInput: {
-    flex: 1,
-    height: 40,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    fontSize: 14,
-  },
-  clarificationButton: {
-    height: 40,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  clarificationButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

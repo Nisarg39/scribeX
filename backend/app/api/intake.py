@@ -263,6 +263,16 @@ async def get_pending_staging_items(
     return await list_staging_intakes(user_id=user_id, status="PENDING_CLARIFICATION")
 
 
+@router.delete("/{staging_id}")
+async def discard_staging_item(
+    staging_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> dict[str, str]:
+    """Discard a staged intake item."""
+    await update_staging_status(user_id=user_id, staging_id=staging_id, status="DISCARDED")
+    return {"status": "DISCARDED", "message": f"Staged intake {staging_id} discarded."}
+
+
 @router.post("/upload", response_model=IntakeResponse)
 async def upload_document_intake(
     file: UploadFile = File(...),

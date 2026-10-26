@@ -89,6 +89,33 @@ class SyncConnectionManager:
 
         return notified_count
 
+    async def broadcast_event(
+        self,
+        user_id: str,
+        data: dict[str, Any],
+    ) -> int:
+        """Broadcast arbitrary structured event payload (e.g. ASSET_PROCESSED) to a tenant's active sockets."""
+        connections = list(self._active_connections.get(user_id, set()))
+        if not connections:
+            return 0
+
+        raw_message = json.dumps(data)
+        notified_count = 0
+        dead_connections: list[WebSocket] = []
+
+        for ws in connections:
+            try:
+                await ws.send_text(raw_message)
+                notified_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to send event to client for user '{user_id}': {e}")
+                dead_connections.append(ws)
+
+        for dead_ws in dead_connections:
+            self.disconnect(dead_ws, user_id)
+
+        return notified_count
+
     def get_active_count(self, user_id: str) -> int:
         """Return the number of active socket connections for a user."""
         return len(self._active_connections.get(user_id, set()))

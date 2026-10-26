@@ -272,6 +272,9 @@ class SyncEngine {
             if (data.latest_sync_rev > localRev) {
               await this.syncNow();
             }
+          } else if (data.type === 'ASSET_PROCESSED') {
+            const { assetService } = await import('../services/assetService');
+            assetService.notifyAssetProcessed(data);
           }
         } catch (err) {
           console.warn('Error handling WebSocket message:', err);

@@ -84,6 +84,51 @@ export class ApiClient {
 
     return response.json() as Promise<T>;
   }
+
+  public async put<T>(
+    endpoint: string,
+    body: any,
+    options: RequestOptions = {}
+  ): Promise<T> {
+    const authHeaders = await this.getAuthHeaders();
+    const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+    const response = await fetch(url, {
+      ...options,
+      method: 'PUT',
+      headers: {
+        ...authHeaders,
+        ...(options.headers as Record<string, string>),
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API Error ${response.status}: ${response.statusText}`);
+    }
+
+    return response.json() as Promise<T>;
+  }
+
+  public async delete<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
+    const authHeaders = await this.getAuthHeaders();
+    const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+
+    const response = await fetch(url, {
+      ...options,
+      method: 'DELETE',
+      headers: {
+        ...authHeaders,
+        ...(options.headers as Record<string, string>),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API Error ${response.status}: ${response.statusText}`);
+    }
+
+    return response.json() as Promise<T>;
+  }
 }
 
 export const apiClient = new ApiClient();
