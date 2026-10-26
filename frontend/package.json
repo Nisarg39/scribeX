@@ -25,7 +25,11 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test:db": "npx tsx src/db/verify_db.ts",
-    "test:sync": "npx tsx src/sync/verify_sync.ts"
+    "test:sync": "npx tsx src/sync/verify_sync.ts",
+    "test:ast": "npx tsx src/core/verify_ast.ts",
+    "test:theme": "npx tsx src/theme/verify_theme_contrast.ts",
+    "test:resilience": "npx tsx src/sync/verify_sync_resilience.ts",
+    "test:all": "npx tsx src/core/verify_phase2_suite.ts"
   },
   "private": true
 }
