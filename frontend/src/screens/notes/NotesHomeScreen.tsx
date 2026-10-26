@@ -20,6 +20,7 @@ import {
   Platform,
   RefreshControl,
   Modal,
+  Image,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -51,7 +52,34 @@ import { useSync } from '../../sync/useSync';
 import { IntakeBar } from '../../components/intake';
 import { BlockEditor } from '../../components/editor';
 import { apiClient } from '../../services/apiClient';
+import { appConfig } from '../../core/config';
 import { ProfileScreen } from '../profile';
+
+function extractFirstImageUrl(markdown: string): string | null {
+  if (!markdown) return null;
+  const imgMatch =
+    markdown.match(/!\[[^\]]*\]\(([^)]+)\)/) ||
+    markdown.match(/\[(?:Asset:\s*)?[^\]]+\.(?:png|jpe?g|gif|webp|svg|bmp)[^\]]*\]\(([^)]+)\)/i);
+  if (imgMatch) {
+    let url = imgMatch[1].trim();
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+    return `${appConfig.apiUrl}${url.startsWith('/') ? url : `/${url}`}`;
+  }
+  return null;
+}
+
+function getCleanSnippet(markdown: string): string {
+  if (!markdown) return '';
+  return markdown
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
+    .replace(/\[(?:Asset:\s*)?[^\]]+\]\([^)]+\)/g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
+    .replace(/PNG[\s\S]*?IHDR[\s\S]*/gi, '')
+    .trim();
+}
 
 export const NotesHomeScreen: React.FC = () => {
   const { colors, isDark, toggleTheme } = useTheme();
@@ -430,6 +458,9 @@ export const NotesHomeScreen: React.FC = () => {
                 {column.map((note) => {
                   const tileBg =
                     pastelColors[note.color_token as PastelColorKey] || pastelColors.apricot;
+                  const firstImageUrl = extractFirstImageUrl(note.content_markdown);
+                  const cleanSnippet = getCleanSnippet(note.content_markdown);
+                  const cleanTitle = getCleanSnippet(note.title) || 'Photo Note';
 
                   return (
                     <Pressable
@@ -493,14 +524,25 @@ export const NotesHomeScreen: React.FC = () => {
                         </View>
                       </View>
 
+                      {/* Image Preview if note contains an image */}
+                      {firstImageUrl ? (
+                        <View style={styles.tileImageContainer}>
+                          <Image
+                            source={{ uri: firstImageUrl }}
+                            style={styles.tileImage}
+                            resizeMode="cover"
+                          />
+                        </View>
+                      ) : null}
+
                       {/* Note Title & Content Body */}
                       <Text style={styles.tileTitle} numberOfLines={2}>
-                        {note.title}
+                        {cleanTitle}
                       </Text>
 
-                      {note.content_markdown ? (
-                        <Text style={styles.tileSnippet} numberOfLines={6}>
-                          {note.content_markdown}
+                      {cleanSnippet ? (
+                        <Text style={styles.tileSnippet} numberOfLines={firstImageUrl ? 3 : 6}>
+                          {cleanSnippet}
                         </Text>
                       ) : null}
 
@@ -733,6 +775,18 @@ const styles = StyleSheet.create({
   },
   favoriteActiveButton: {
     backgroundColor: noteTileTokens.favoriteSurfaceActive,
+  },
+  tileImageContainer: {
+    width: '100%',
+    height: 130,
+    borderRadius: 14,
+    overflow: 'hidden',
+    marginBottom: 10,
+    backgroundColor: 'rgba(25, 25, 25, 0.05)',
+  },
+  tileImage: {
+    width: '100%',
+    height: '100%',
   },
   tileTitle: {
     fontSize: 18,

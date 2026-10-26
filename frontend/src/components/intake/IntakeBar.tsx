@@ -29,6 +29,7 @@ import { ClientNote } from '../../db/types';
 import { apiClient } from '../../services/apiClient';
 import { syncEngine } from '../../sync/syncEngine';
 import { assetService } from '../../services/assetService';
+import { appConfig } from '../../core/config';
 import { ClarificationModal, ClarificationData } from './ClarificationModal';
 
 interface IntakeBarProps {
@@ -87,11 +88,29 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
     setIsUploadingAsset(true);
     try {
       const asset = await assetService.uploadAsset(filePayload);
-      const assetRef = `\n\n[Asset: ${asset.file_name}](/api/v1/assets/${asset.id}/file)\n`;
-      let snippet = assetRef;
-      if (asset.extracted_text) {
+      const isImage =
+        asset.mime_type?.startsWith('image/') ||
+        /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(asset.file_name);
+      const isAudio =
+        asset.mime_type?.startsWith('audio/') ||
+        /\.(m4a|mp3|wav|ogg|aac)$/i.test(asset.file_name);
+
+      const fileUrl = `${appConfig.apiUrl}/api/v1/assets/${asset.id}/file`;
+
+      let assetTag = '';
+      if (isImage) {
+        assetTag = `![${asset.file_name}](${fileUrl})`;
+      } else if (isAudio) {
+        assetTag = `![${asset.file_name}](${fileUrl}) <!-- scribex:block type=audio -->`;
+      } else {
+        assetTag = `[${asset.file_name}](${fileUrl})`;
+      }
+
+      let snippet = `\n\n${assetTag}\n`;
+      if (asset.extracted_text && asset.extracted_text.trim()) {
         snippet += `\n> ${asset.extracted_text.trim()}\n`;
       }
+
       setText((prev) => (prev ? `${prev.trim()}${snippet}` : `${asset.file_name}${snippet}`));
     } catch (err: any) {
       console.warn('Asset upload error:', err);
@@ -130,9 +149,19 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
 
   const parseInput = (raw: string) => {
     const lines = raw.trim().split('\n');
-    const firstLine = lines[0].replace(/^[#\-*\s]+/, '').trim();
-    const title = firstLine.length > 50 ? `${firstLine.substring(0, 47)}...` : firstLine || 'Untitled Thought';
-    const contentMarkdown = lines.length > 1 ? lines.slice(1).join('\n').trim() : raw.trim();
+    let firstLine = lines[0].replace(/^[#\-*\s]+/, '').trim();
+    // Check if first line is a media markdown tag
+    const imgMatch = firstLine.match(/^!?\[(?:Asset:\s*)?([^\]]*)\]\(([^)]+)\)/);
+    let title = 'Untitled Thought';
+    if (imgMatch) {
+      const caption = imgMatch[1].trim();
+      title = caption || 'Photo Note';
+    } else {
+      title = firstLine.length > 50 ? `${firstLine.substring(0, 47)}...` : firstLine || 'Untitled Thought';
+    }
+
+    // If first line was an image embed or link, preserve it in contentMarkdown
+    const contentMarkdown = (lines.length > 1 && !imgMatch) ? lines.slice(1).join('\n').trim() : raw.trim();
     return { title, contentMarkdown };
   };
 

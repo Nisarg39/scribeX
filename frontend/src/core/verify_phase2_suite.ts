@@ -9,7 +9,7 @@
  * 5. Delta Sync Resilience & Multi-Device Conflict Ingestion
  */
 
-import { execSync } from 'child_process';
+const { execSync } = require('child_process');
 
 const steps = [
   { name: 'Extended Markdown AST Serializer', script: 'npx tsx src/core/verify_ast.ts' },

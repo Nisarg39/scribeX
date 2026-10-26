@@ -74,12 +74,26 @@ def parse_csv_bytes(csv_bytes: bytes) -> str:
     return "\n".join(md_lines)
 
 
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".ico", ".tiff"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".ogg", ".webm", ".aac", ".flac"}
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv"}
+
+
 def parse_file_bytes(file_bytes: bytes, filename: str) -> dict[str, Any]:
     """Parse raw file bytes into structured Markdown text and metadata."""
     ext = Path(filename).suffix.lower()
     page_count = None
 
-    if ext in (".pdf",):
+    if ext in IMAGE_EXTENSIONS:
+        text = ""
+        file_type = "image"
+    elif ext in AUDIO_EXTENSIONS:
+        text = ""
+        file_type = "audio"
+    elif ext in VIDEO_EXTENSIONS:
+        text = ""
+        file_type = "video"
+    elif ext in (".pdf",):
         text, page_count = parse_pdf_bytes(file_bytes)
         file_type = "pdf"
     elif ext in (".csv",):
@@ -93,7 +107,7 @@ def parse_file_bytes(file_bytes: bytes, filename: str) -> dict[str, Any]:
             text = file_bytes.decode("utf-8", errors="replace")
         file_type = "json"
     else:
-        # Plain text, Markdown, or default
+        # Plain text, Markdown, or default text formats
         text = file_bytes.decode("utf-8", errors="replace")
         file_type = "markdown" if ext in (".md", ".markdown") else "text"
 

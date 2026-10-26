@@ -109,3 +109,41 @@ async def test_discard_staging_intake():
         staged_after = await get_staging_intake(TEST_ASSET_USER, staging_id)
         assert staged_after is not None
         assert staged_after["status"] == "DISCARDED"
+
+
+@pytest.mark.asyncio
+async def test_upload_image_asset_and_unauthenticated_file_download():
+    """Verify that uploading an image does not extract raw binary text, and file download works without auth."""
+    transport = ASGITransport(app=app)
+    headers = {"X-User-Id": TEST_ASSET_USER}
+
+    fake_png_content = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+    file_io = io.BytesIO(fake_png_content)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Upload image asset
+        response = await client.post(
+            "/api/v1/assets/upload",
+            files={"file": ("screenshot.png", file_io, "image/png")},
+            data={"note_id": "note_456"},
+            headers=headers,
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+
+        assert data["id"].startswith("ast_")
+        assert data["file_name"] == "screenshot.png"
+        assert data["mime_type"] == "image/png"
+        assert data["size_bytes"] == len(fake_png_content)
+        assert data["processing_status"] == "completed"
+        # Must NOT extract raw binary control characters or corrupt strings
+        assert data["extracted_text"] is None
+
+        asset_id = data["id"]
+
+        # 2. Check unauthenticated GET /api/v1/assets/{asset_id}/file (simulating browser <img> or RN <Image>)
+        no_auth_res = await client.get(f"/api/v1/assets/{asset_id}/file")
+        assert no_auth_res.status_code == 200
+        assert no_auth_res.content == fake_png_content
+        assert "image/png" in no_auth_res.headers.get("content-type", "")

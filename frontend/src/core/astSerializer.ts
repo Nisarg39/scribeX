@@ -338,30 +338,41 @@ export function parseMarkdownToBlocks(markdown: string): NoteBlock[] {
     }
 
     // 9. Markdown Image or Audio Asset
-    // ![Caption](_assets/...) <!-- scribex:block type=audio ... -->
-    const mediaMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)(.*)$/);
+    // Supports:
+    // ![Caption](url)
+    // [Asset: Caption](url)
+    // [Caption.png](url)
+    const mediaMatch = line.match(/^!?\[(?:Asset:\s*)?([^\]]*)\]\(([^)]+)\)(.*)$/);
     if (mediaMatch) {
-      const caption = mediaMatch[1];
+      const caption = mediaMatch[1] || 'Image';
       const url = mediaMatch[2];
-      const meta = mediaMatch[3];
+      const meta = mediaMatch[3] || '';
+      const isImgExt =
+        /\.(png|jpe?g|gif|webp|svg|bmp)(\?.*)?$/i.test(url) ||
+        /\.(png|jpe?g|gif|webp|svg|bmp)$/i.test(caption);
+      const isAudio =
+        meta.includes('type=audio') ||
+        /\.(m4a|mp3|wav|ogg|aac)(\?.*)?$/i.test(url);
 
-      if (meta.includes('type=audio') || url.endsWith('.m4a') || url.endsWith('.mp3')) {
+      if (isAudio) {
         blocks.push({
           id: generateBlockId('audio'),
           block_type: 'audio',
           position: blocks.length,
           content: { url, caption },
         });
-      } else {
+        i++;
+        continue;
+      } else if (isImgExt || line.trim().startsWith('!')) {
         blocks.push({
           id: generateBlockId('img'),
           block_type: 'image',
           position: blocks.length,
           content: { url, caption },
         });
+        i++;
+        continue;
       }
-      i++;
-      continue;
     }
 
     // 10. Empty line

@@ -80,16 +80,19 @@ async def upload_asset(
     sha256_hash = hasher.hexdigest()
     mime_type = file.content_type or "application/octet-stream"
 
-    # Extract text if supported document format
+    # Extract text if supported document format (PDF, TXT, CSV, MD, JSON)
     extracted_text = None
     processing_status = "completed"
 
-    try:
-        parsed = parse_uploaded_file(dest_file, filename=safe_name)
-        extracted_text = parsed.get("content_markdown")
-    except Exception:
-        # Non-text binary asset (e.g. image/audio) or unparsable
-        pass
+    ext = Path(safe_name).suffix.lower()
+    from app.storage.file_parser import IMAGE_EXTENSIONS, AUDIO_EXTENSIONS, VIDEO_EXTENSIONS
+    if ext not in (IMAGE_EXTENSIONS | AUDIO_EXTENSIONS | VIDEO_EXTENSIONS):
+        try:
+            parsed = parse_uploaded_file(dest_file, filename=safe_name)
+            extracted_text = parsed.get("content_markdown") or None
+        except Exception:
+            # Non-text binary asset (e.g. image/audio) or unparsable
+            pass
 
     # Save asset record in operational SQLite
     record = await save_asset_record(
@@ -162,23 +165,39 @@ async def download_asset_file(
     user_id: str = Depends(get_current_user_id),
 ):
     """Serve the raw binary file for an asset from the tenant's Git Vault."""
+    import mimetypes
+    from app.core.config import settings
+
     record = await get_asset_record(user_id=user_id, asset_id=asset_id)
-    if not record:
+    file_path = None
+    mime_type = "application/octet-stream"
+    filename = "download"
+
+    if record:
+        vault_dir = get_vault_path(user_id)
+        candidate = vault_dir / record["storage_key"]
+        if candidate.exists():
+            file_path = candidate
+            mime_type = record.get("mime_type") or "application/octet-stream"
+            filename = record.get("file_name") or "download"
+
+    # Fallback if unauthenticated GET (e.g. from <img> tags or RN <Image source={{ uri }} />)
+    if not file_path or not file_path.exists():
+        matches = list(settings.data_dir.resolve().glob(f"**/_assets/{asset_id}_*"))
+        if matches:
+            file_path = matches[0]
+            guessed_mime, _ = mimetypes.guess_type(file_path.name)
+            mime_type = guessed_mime or "application/octet-stream"
+            filename = file_path.name.split(f"{asset_id}_", 1)[-1]
+
+    if not file_path or not file_path.exists():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Asset '{asset_id}' not found.",
         )
 
-    vault_dir = get_vault_path(user_id)
-    file_path = vault_dir / record["storage_key"]
-    if not file_path.exists():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Asset file not found on disk.",
-        )
-
     return FileResponse(
         path=str(file_path),
-        media_type=record["mime_type"],
-        filename=record["file_name"],
+        media_type=mime_type,
+        filename=filename,
     )

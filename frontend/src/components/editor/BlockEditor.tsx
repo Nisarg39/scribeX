@@ -16,6 +16,7 @@ import {
   ScrollView,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import {
   CheckSquare,
@@ -33,6 +34,7 @@ import {
   Sparkles,
   ArrowLeft,
   Check,
+  Image as ImageIcon,
 } from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { pastelColors, PastelColorKey } from '../../theme/tokens';
@@ -42,6 +44,15 @@ import {
   parseMarkdownToBlocks,
   serializeBlocksToMarkdown,
 } from '../../core/astSerializer';
+import { appConfig } from '../../core/config';
+
+const resolveMediaUrl = (url?: string): string => {
+  if (!url) return '';
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+    return url;
+  }
+  return `${appConfig.apiUrl}${url.startsWith('/') ? url : `/${url}`}`;
+};
 
 interface BlockEditorProps {
   initialTitle: string;
@@ -334,6 +345,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                       <Code2 size={14} color={colors.textMuted} />
                     ) : block.block_type === 'callout' ? (
                       <AlertCircle size={14} color={colors.textMuted} />
+                    ) : block.block_type === 'image' ? (
+                      <ImageIcon size={14} color={colors.textMuted} />
                     ) : (
                       <Type size={14} color={colors.textMuted} />
                     )}
@@ -583,6 +596,36 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                   {/* DIVIDER BLOCK */}
                   {block.block_type === 'divider' && (
                     <View style={[styles.dividerLine, { backgroundColor: colors.borderSubtle }]} />
+                  )}
+
+                  {/* IMAGE BLOCK */}
+                  {block.block_type === 'image' && (
+                    <View style={styles.imageBlockContainer}>
+                      {Boolean(block.content?.url) && (
+                        <View style={[styles.imageWrapper, { borderColor: colors.borderSubtle }]}>
+                          <Image
+                            source={{ uri: resolveMediaUrl(block.content.url) }}
+                            style={styles.editorImage}
+                            resizeMode="cover"
+                          />
+                        </View>
+                      )}
+                      <TextInput
+                        value={block.content?.caption || ''}
+                        onChangeText={(val) => updateBlock(block.id, { caption: val })}
+                        placeholder="Add an image caption..."
+                        placeholderTextColor={colors.textMuted}
+                        style={[
+                          styles.imageCaptionInput,
+                          {
+                            color: colors.textSecondary,
+                            ...Platform.select({
+                              web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any,
+                            }),
+                          },
+                        ]}
+                      />
+                    </View>
                   )}
                 </View>
 
@@ -999,5 +1042,27 @@ const styles = StyleSheet.create({
   addBlockText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  imageBlockContainer: {
+    width: '100%',
+    marginVertical: 6,
+  },
+  imageWrapper: {
+    width: '100%',
+    height: 240,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    backgroundColor: 'rgba(0,0,0,0.03)',
+  },
+  editorImage: {
+    width: '100%',
+    height: '100%',
+  },
+  imageCaptionInput: {
+    fontSize: 12,
+    marginTop: 6,
+    fontStyle: 'italic',
+    paddingHorizontal: 4,
   },
 });
