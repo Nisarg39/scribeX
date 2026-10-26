@@ -34,6 +34,7 @@ import {
   RefreshCw,
   Folder,
   Calendar,
+  User as UserIcon,
 } from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { useAuth } from '../../auth';
@@ -50,6 +51,7 @@ import { useSync } from '../../sync/useSync';
 import { IntakeBar } from '../../components/intake';
 import { BlockEditor } from '../../components/editor';
 import { apiClient } from '../../services/apiClient';
+import { ProfileScreen } from '../profile';
 
 export const NotesHomeScreen: React.FC = () => {
   const { colors, isDark, toggleTheme } = useTheme();
@@ -60,6 +62,7 @@ export const NotesHomeScreen: React.FC = () => {
   const [selectedGroup, setSelectedGroup] = useState<string>('All');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedNote, setSelectedNote] = useState<ClientNote | null>(null);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   // Subscribe to real-time Delta Sync Engine
   const { status: syncStatus, pendingCount, syncNow } = useSync({
@@ -183,6 +186,10 @@ export const NotesHomeScreen: React.FC = () => {
     });
   }, []);
 
+  if (isProfileOpen) {
+    return <ProfileScreen onBack={() => { setIsProfileOpen(false); loadNotes(); }} />;
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.appBg }]}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -254,8 +261,24 @@ export const NotesHomeScreen: React.FC = () => {
           )}
         </View>
 
-        {/* Top-Right Controls: Theme Toggle & Logout */}
+        {/* Top-Right Controls: Profile, Theme Toggle & Logout */}
         <View style={styles.topRightControls}>
+          <Pressable
+            onPress={() => setIsProfileOpen(true)}
+            hitSlop={8}
+            style={({ pressed }) => [
+              styles.iconButton,
+              {
+                backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
+                borderColor: colors.borderSubtle,
+                opacity: pressed ? 0.75 : 1,
+              },
+            ]}
+            accessibilityLabel="Layer 1 Profile"
+          >
+            <UserIcon size={17} color={colors.textPrimary} />
+          </Pressable>
+
           <Pressable
             onPress={toggleTheme}
             hitSlop={8}
