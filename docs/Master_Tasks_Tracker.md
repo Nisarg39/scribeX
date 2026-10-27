@@ -36,7 +36,7 @@
   - Polymorphic block manager: paragraph, headings (H1–H4), bulleted list, numbered list.
   - Interactive block manipulation: insert, reorder, delete, Enter/Backspace split/merge.
   - Canonical Extended Markdown AST serializer (`NoteBlock[]` $\leftrightarrow$ `.md` round-tripping).
-- [ ] **Step 4: Structured Data Blocks: Tables, Code Blocks, LaTeX & Callouts**
+- [x] **Step 4: Structured Data Blocks: Tables, Code Blocks, LaTeX & Callouts**
   - Interactive tabular grid with row/column insertion and CSV paste.
   - Monospace code blocks with syntax highlighting and one-click copy.
   - Inline and display KaTeX LaTeX mathematical formulas.

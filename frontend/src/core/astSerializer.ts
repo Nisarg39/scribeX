@@ -22,9 +22,13 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
 
   const lines = markdown.split('\n');
   const blocks: ComposableBlock[] = [];
+
   let inCodeBlock = false;
   let codeLang = '';
   let codeBuffer: string[] = [];
+
+  let inEquationBlock = false;
+  let equationBuffer: string[] = [];
 
   let currentParagraph: string[] = [];
 
@@ -53,7 +57,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
           id: `b-${Date.now()}-${blocks.length + 1}`,
           type: 'code',
           content: codeBuffer.join('\n'),
-          metadata: { language: codeLang },
+          metadata: { language: codeLang || 'typescript' },
         });
         codeBuffer = [];
         codeLang = '';
@@ -71,7 +75,43 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 2. Divider (--- or ***)
+    // 2. Equation Block ($$)
+    if (line.trim() === '$$') {
+      if (inEquationBlock) {
+        blocks.push({
+          id: `b-${Date.now()}-${blocks.length + 1}`,
+          type: 'equation',
+          content: equationBuffer.join('\n').trim(),
+          metadata: { displayMode: true },
+        });
+        equationBuffer = [];
+        inEquationBlock = false;
+      } else {
+        flushParagraph();
+        inEquationBlock = true;
+      }
+      continue;
+    }
+
+    if (inEquationBlock) {
+      equationBuffer.push(line);
+      continue;
+    }
+
+    // Single-line equation: $$ ... $$
+    const singleLineEq = line.trim().match(/^\$\$(.+)\$\$$/);
+    if (singleLineEq) {
+      flushParagraph();
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'equation',
+        content: singleLineEq[1].trim(),
+        metadata: { displayMode: true },
+      });
+      continue;
+    }
+
+    // 3. Divider (--- or ***)
     if (/^(\*{3,}|-{3,}|_{3,})$/.test(line.trim())) {
       flushParagraph();
       blocks.push({
@@ -82,7 +122,78 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 3. Headings (# H1 to #### H4)
+    // 4. Callout Alert (> [!info] / > [!warning] / > [!success] / > [!quote])
+    const calloutHeaderMatch = line.match(/^>\s*\[!(info|warning|success|quote|note|tip|caution)\]/i);
+    if (calloutHeaderMatch) {
+      flushParagraph();
+      const rawVariant = calloutHeaderMatch[1].toLowerCase();
+      const variant = rawVariant === 'note' || rawVariant === 'tip' ? 'info' 
+                    : rawVariant === 'caution' ? 'warning' 
+                    : rawVariant;
+      
+      const calloutLines: string[] = [];
+      // Read rest of callout block
+      while (i + 1 < lines.length && lines[i + 1].trim().startsWith('>')) {
+        i++;
+        calloutLines.push(lines[i].replace(/^>\s?/, ''));
+      }
+
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'callout',
+        content: calloutLines.join('\n').trim(),
+        metadata: { variant },
+      });
+      continue;
+    }
+
+    // 5. GFM Markdown Table (| Col 1 | Col 2 |)
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      // Check if subsequent lines form a table (need at least 2 lines with a separator |---|)
+      const tableLines: string[] = [line.trim()];
+      let j = i + 1;
+      while (j < lines.length && lines[j].trim().startsWith('|') && lines[j].trim().endsWith('|')) {
+        tableLines.push(lines[j].trim());
+        j++;
+      }
+
+      if (tableLines.length >= 2) {
+        // Has header and separator
+        const separatorIdx = tableLines.findIndex(tl => /^\|(\s*:?-+:?\s*\|)+$/.test(tl));
+        if (separatorIdx > 0) {
+          flushParagraph();
+          i = j - 1; // Advance outer loop
+
+          // Parse columns and rows
+          const headerLine = tableLines[0];
+          const columns = headerLine
+            .split('|')
+            .slice(1, -1)
+            .map(c => c.trim());
+
+          const rows: string[][] = [];
+          for (let r = separatorIdx + 1; r < tableLines.length; r++) {
+            const rowCells = tableLines[r]
+              .split('|')
+              .slice(1, -1)
+              .map(c => c.trim());
+            // Align length to columns
+            while (rowCells.length < columns.length) rowCells.push('');
+            rows.push(rowCells.slice(0, columns.length));
+          }
+
+          blocks.push({
+            id: `b-${Date.now()}-${blocks.length + 1}`,
+            type: 'table',
+            content: tableLines.join('\n'),
+            metadata: { columns, rows },
+          });
+          continue;
+        }
+      }
+    }
+
+    // 6. Headings (# H1 to #### H4)
     const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
     if (headingMatch) {
       flushParagraph();
@@ -96,7 +207,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 4. Checklist (- [ ] or - [x])
+    // 7. Checklist (- [ ] or - [x])
     const checkMatch = line.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
     if (checkMatch) {
       flushParagraph();
@@ -110,7 +221,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 5. Blockquote (> Text)
+    // 8. Standard Blockquote (> Text)
     if (line.startsWith('>')) {
       flushParagraph();
       blocks.push({
@@ -121,7 +232,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 6. Empty Line (deliberate paragraph separator)
+    // 9. Empty Line (deliberate paragraph separator)
     if (line.trim() === '') {
       flushParagraph();
       continue;
@@ -168,8 +279,36 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
       }
 
       case 'code': {
-        const lang = block.metadata?.language || '';
+        const lang = block.metadata?.language || 'typescript';
         chunks.push(`\`\`\`${lang}\n${block.content}\n\`\`\``);
+        break;
+      }
+
+      case 'callout': {
+        const variant = block.metadata?.variant || 'info';
+        const innerContent = block.content.trim() || 'Insight';
+        const lines = innerContent.split('\n').map(l => `> ${l}`).join('\n');
+        chunks.push(`> [!${variant}]\n${lines}`);
+        break;
+      }
+
+      case 'table': {
+        if (block.metadata?.columns && Array.isArray(block.metadata.columns)) {
+          const cols: string[] = block.metadata.columns;
+          const rows: string[][] = block.metadata.rows || [];
+          const header = `| ${cols.join(' | ')} |`;
+          const sep = `| ${cols.map(() => '---').join(' | ')} |`;
+          const rowLines = rows.map(r => `| ${r.join(' | ')} |`);
+          chunks.push([header, sep, ...rowLines].join('\n'));
+        } else if (block.content.trim()) {
+          chunks.push(block.content.trim());
+        }
+        break;
+      }
+
+      case 'equation': {
+        const formula = block.content.trim();
+        chunks.push(`$$\n${formula}\n$$`);
         break;
       }
 

@@ -17,7 +17,10 @@ import {
   ListTodo,
   Code2,
   Quote as QuoteIcon,
-  Minus
+  Minus,
+  Table,
+  AlertCircle,
+  Sigma
 } from 'lucide-react-native';
 
 interface BlockEditorProps {
@@ -352,6 +355,36 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               <QuoteIcon size={13} color={isDark ? '#F7F7F7' : '#171717'} />
               <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
                 Quote
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleAddBlock('table', { columns: ['Header 1', 'Header 2'], rows: [['', '']] })}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border active:scale-95"
+            >
+              <Table size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Table
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleAddBlock('callout', { variant: 'info' })}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border active:scale-95"
+            >
+              <AlertCircle size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Callout
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleAddBlock('equation', { displayMode: true })}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border active:scale-95"
+            >
+              <Sigma size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                LaTeX Formula
               </Text>
             </Pressable>
 

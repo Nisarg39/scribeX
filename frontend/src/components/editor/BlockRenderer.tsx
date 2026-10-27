@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TextInput, Pressable } from 'react-native';
+import { View, TextInput, Pressable } from 'react-native';
 import { ComposableBlock, BlockType } from '../../types/note';
 import { useTheme, NoteColors } from '../../theme';
 import { 
@@ -14,8 +14,12 @@ import {
   ListTodo, 
   Quote, 
   Minus,
-  AlignLeft
+  AlignLeft,
+  Table,
+  AlertCircle,
+  Sigma
 } from 'lucide-react-native';
+import { TableBlock, CodeBlock, CalloutBlock, EquationBlock } from './blocks';
 
 interface BlockRendererProps {
   block: ComposableBlock;
@@ -65,10 +69,11 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       <View className="flex-row items-center justify-between mb-2 pb-1.5 border-b border-light-border/40 dark:border-dark-border/40">
         
         {/* Type Selector Pills */}
-        <View className="flex-row items-center gap-1">
+        <View className="flex-row items-center flex-wrap gap-1">
           <Pressable
             onPress={() => onChangeType('paragraph')}
             className={`p-1.5 rounded-lg ${block.type === 'paragraph' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Text"
           >
             <AlignLeft size={13} color={block.type === 'paragraph' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
@@ -79,6 +84,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
               onUpdateMetadata({ level: 1 });
             }}
             className={`p-1.5 rounded-lg ${block.type === 'heading' && block.metadata?.level === 1 ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Heading 1"
           >
             <Heading1 size={13} color={block.type === 'heading' && block.metadata?.level === 1 ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
@@ -89,6 +95,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
               onUpdateMetadata({ level: 2 });
             }}
             className={`p-1.5 rounded-lg ${block.type === 'heading' && block.metadata?.level === 2 ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Heading 2"
           >
             <Heading2 size={13} color={block.type === 'heading' && block.metadata?.level === 2 ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
@@ -99,13 +106,18 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
               onUpdateMetadata({ checked: false });
             }}
             className={`p-1.5 rounded-lg ${block.type === 'checklist' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Checklist"
           >
             <ListTodo size={13} color={block.type === 'checklist' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
 
           <Pressable
-            onPress={() => onChangeType('code')}
+            onPress={() => {
+              onChangeType('code');
+              if (!block.metadata?.language) onUpdateMetadata({ language: 'typescript' });
+            }}
             className={`p-1.5 rounded-lg ${block.type === 'code' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Code"
           >
             <Code2 size={13} color={block.type === 'code' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
@@ -113,8 +125,47 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           <Pressable
             onPress={() => onChangeType('quote')}
             className={`p-1.5 rounded-lg ${block.type === 'quote' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Quote"
           >
             <Quote size={13} color={block.type === 'quote' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              onChangeType('table');
+              if (!block.metadata?.columns) {
+                onUpdateMetadata({
+                  columns: ['Header 1', 'Header 2'],
+                  rows: [['', '']],
+                });
+              }
+            }}
+            className={`p-1.5 rounded-lg ${block.type === 'table' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Table"
+          >
+            <Table size={13} color={block.type === 'table' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              onChangeType('callout');
+              if (!block.metadata?.variant) onUpdateMetadata({ variant: 'info' });
+            }}
+            className={`p-1.5 rounded-lg ${block.type === 'callout' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Callout"
+          >
+            <AlertCircle size={13} color={block.type === 'callout' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              onChangeType('equation');
+              if (block.metadata?.displayMode === undefined) onUpdateMetadata({ displayMode: true });
+            }}
+            className={`p-1.5 rounded-lg ${block.type === 'equation' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Equation"
+          >
+            <Sigma size={13} color={block.type === 'equation' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
         </View>
 
@@ -192,18 +243,16 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </View>
       )}
 
-      {/* 4. Code Snippet Block */}
+      {/* 4. Code Block */}
       {block.type === 'code' && (
-        <View className="p-3 rounded-xl bg-black/5 dark:bg-black/30 border border-light-border dark:border-white/5 font-mono">
-          <TextInput
-            multiline
-            placeholder="// Paste or write code snippet..."
-            placeholderTextColor={isDark ? '#858585' : '#929292'}
-            value={block.content}
-            onChangeText={onUpdateContent}
-            className="text-xs md:text-sm font-mono text-light-textPrimary dark:text-dark-textPrimary leading-relaxed py-1"
-          />
-        </View>
+        <CodeBlock
+          code={block.content}
+          language={block.metadata?.language || 'typescript'}
+          fileName={block.metadata?.fileName || ''}
+          onUpdateCode={onUpdateContent}
+          onUpdateLanguage={(language) => onUpdateMetadata({ ...block.metadata, language })}
+          onUpdateFileName={(fileName) => onUpdateMetadata({ ...block.metadata, fileName })}
+        />
       )}
 
       {/* 5. Blockquote Block */}
@@ -220,7 +269,42 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </View>
       )}
 
-      {/* 6. Standard Paragraph Block */}
+      {/* 6. Table Block */}
+      {block.type === 'table' && (
+        <TableBlock
+          columns={block.metadata?.columns || ['Header 1', 'Header 2']}
+          rows={block.metadata?.rows || [['', '']]}
+          onUpdateTable={(columns, rows) => {
+            onUpdateMetadata({ ...block.metadata, columns, rows });
+            const header = `| ${columns.join(' | ')} |`;
+            const sep = `| ${columns.map(() => '---').join(' | ')} |`;
+            const rowLines = rows.map(r => `| ${r.join(' | ')} |`);
+            onUpdateContent([header, sep, ...rowLines].join('\n'));
+          }}
+        />
+      )}
+
+      {/* 7. Callout Block */}
+      {block.type === 'callout' && (
+        <CalloutBlock
+          content={block.content}
+          variant={block.metadata?.variant || 'info'}
+          onUpdateContent={onUpdateContent}
+          onUpdateVariant={(variant) => onUpdateMetadata({ ...block.metadata, variant })}
+        />
+      )}
+
+      {/* 8. Equation Block */}
+      {block.type === 'equation' && (
+        <EquationBlock
+          latex={block.content}
+          displayMode={block.metadata?.displayMode ?? true}
+          onUpdateLatex={onUpdateContent}
+          onUpdateDisplayMode={(displayMode) => onUpdateMetadata({ ...block.metadata, displayMode })}
+        />
+      )}
+
+      {/* 9. Standard Paragraph Block */}
       {block.type === 'paragraph' && (
         <TextInput
           multiline
