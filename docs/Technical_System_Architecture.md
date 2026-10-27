@@ -5,6 +5,7 @@
 This document defines the production technical architecture for ScribeX - Friday (Iron man style Personal Assistant) & Note-Taking Platform. It is designed to be handed directly to an AI coding assistant to scaffold and implement the system.
 
 ### Core Architectural Pillars
+0. **User Journey Starts with Friction-Free Manual Note Taking First, AI Assistant Second:** The foundation of ScribeX is a world-class, local-first note-taking experience that works with zero friction and zero mandatory AI setup. The user can immediately capture ideas, organize folders, tag items, write rich blocks, track tasks, and link notes with sub-5ms local SQLite speed. The AI assistant ("Friday") is layered on top of this rock-solid note engine as an intelligent companion rather than an intrusive gatekeeper.
 1. **Zero-Downtime 24/7 Availability (Lightweight Cloud VPS):** The core FastAPI backend and embedded memory engine run on an always-on lightweight Linux VPS. The assistant remains $100\%$ operational for note-taking, context retrieval, daily briefings, and planning even when the user's personal PC is powered off.
 2. **Sub-Millisecond AI Context Retrieval (Embedded VPS Storage):** Instead of making slow network hops to external cloud databases, the VPS stores the Markdown Context Vault, Vector Index, and Temporal Knowledge Graph directly on its local NVMe SSD. FastAPI retrieves context in $< 5\text{ ms}$.
 3. **True Local-First Multi-Device Concurrency (SQLite Operational Core + Resilient Sync):** Every client device (iOS, Android, Desktop Web) maintains a local SQLite replica (`expo-sqlite` with OPFS on Web). The app opens instantly ($0\text{ ms}$ network wait) and writes optimistically. Real-time syncing uses an event-sourced revision protocol (`sync_rev`) over WebSockets as an instant push notification ('doorbell'), backed by guaranteed revision catch-up upon reconnection and an HTTP REST fallback endpoint. The central SQLite database serves as the operational synchronization engine, which asynchronously projects updates to the Git Markdown Vault.
@@ -119,13 +120,16 @@ To allow you to use your phone, tablet, and desktop web browser **concurrently**
 
 ### 5.1. Architecture of Truth: Decoupled Operational & Projection Layers
 To ensure maximum speed without file-locking bottlenecks:
-1. **Operational Layer (Device-to-Device Sync):** The central **SQLite database on the VPS** serves as the authoritative real-time operational state. All client devices (`expo-sqlite`) sync directly against this SQLite core. High-frequency updates (typing blocks, checking off tasks, updating priorities) occur as atomic SQLite transactions.
-   * `notes`: Stores `content_markdown` along with cached `blocks_json` for instant UI rendering across all 20 composable block types.
+1. **Operational Layer (Device-to-Device Sync):** The central **SQLite database on the VPS** (and the local `expo-sqlite` replica on each client) serves as the authoritative real-time operational state. All client devices sync directly against this SQLite core. High-frequency updates (typing blocks, checking off tasks, updating priorities, creating folders, tagging) occur as atomic SQLite transactions.
+   * `folders`: Stores hierarchical project containers with recursive `parent_id` and physical vault directory paths.
+   * `tags` & `note_tags`: Stores multi-dimensional classification tags and many-to-many note associations.
+   * `notes`: Stores `content_markdown` along with cached `blocks_json` for instant UI rendering across all 20 composable block types, plus folder and tag links.
    * `tasks`: Stores single-source-of-truth task entities shared between embedded note blocks and the global task engine.
    * `assets`: Tracks binary media (audio, PDFs, images, vector sketches) with processing states and extracted OCR/Whisper text.
    * `entity_relations`: Stores bidirectional knowledge graph edges (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`).
+   * `sync_changelog`: Event-sourced change ledger tracking monotonic `sync_rev` deltas for all operational entities.
 2. **Projection Layer (Git Markdown Vault & LanceDB):** When a note transaction commits in the operational SQLite database, an asynchronous background task serializes the composable blocks into a clean **Extended Markdown AST** `.md` file in the Git Vault and refreshes the LanceDB vector chunks. This completely isolates live UI typing from disk-level Git commit overhead while ensuring:
-   * The Git Vault remains 100% human-readable.
+   * The Git Vault remains 100% human-readable and mirrors the physical folder hierarchy (`data/vault/{user_id}/folders/...`).
    * Remote PC CLI agents (Claude Code, Gemini CLI) can read and edit notes natively using standard text tools.
    * Diff learning works reliably without proprietary file corruption.
 
@@ -137,6 +141,8 @@ To ensure maximum speed without file-locking bottlenecks:
 To guarantee that syncing is 100% reliable even when devices sleep, disconnect, or switch networks, the system decouples **data persistence** from the **transport connection**:
 
 * **Event-Sourced Revision Counter (`sync_rev`):** Every operational row tracks a monotonically increasing integer `sync_rev`. The VPS maintains a `sync_changelog` table recording every incremental delta across entity types:
+  * `entity_type: 'folder'`: Folder creation, renaming, nested hierarchy updates, and color tokens.
+  * `entity_type: 'tag'`: Tag creation and metadata.
   * `entity_type: 'note'`: Document metadata, `content_markdown`, and `blocks_json`.
   * `entity_type: 'task'`: Title, completion status, priority, and due dates.
   * `entity_type: 'relation'`: Knowledge graph connections and confidence scores.
@@ -319,52 +325,89 @@ Provide this folder structure to your AI coding assistant to initialize the proj
 
 ```text
 scribex/
-├── frontend/
-│   └── expo-universal/                 # Universal Expo App (iOS, Android, Web)
-│       ├── app/                        # Expo Router screens
-│       │   ├── (tabs)/
-│       │   │   ├── index.tsx           # Universal Intake, Chat & Daily Briefing
-│       │   │   ├── vault.tsx           # 3-Pane Context Vault & Manual Editor
-│       │   │   ├── timeline.tsx        # "Versions of Me" & Manual Diff History
-│       │   │   └── agents.tsx          # Remote PC CLI Agent Monitor & Config
-│       │   └── onboarding.tsx          # Interactive Discovery Interview
-│       ├── components/
-│       │   ├── desktop/                # 3-Pane IDE & Side-by-Side Diff Viewer
-│       │   └── mobile/                 # Voice Capture, Share Target, Push Cards
-│       ├── db/
-│       │   ├── schema.ts               # Local expo-sqlite schema
-│       │   └── syncEngine.ts           # Real-time WebSocket Delta Sync client
-│       └── package.json
+├── frontend/                           # Universal Expo App (iOS, Android, Web)
+│   ├── app/                            # Expo Router file-based screens
+│   │   ├── _layout.tsx                 # Root layout (ThemeProvider, SQLiteProvider, Modals)
+│   │   ├── index.tsx                   # Main Canvas (Friction-free Notes Surface)
+│   │   ├── note/
+│   │   │   └── [id].tsx                # Focused Deep Note View
+│   │   ├── folders/                    # Folder Hierarchy & Navigation Tree
+│   │   ├── search/                     # Fast Search & Smart Collections
+│   │   └── settings/                   # User Preferences & Vault Settings
+│   ├── src/
+│   │   ├── components/                 # Fluid, non-generic UI (NativeWind v4)
+│   │   │   ├── editor/                 # Composable Block Editor & AST Renderers
+│   │   │   │   ├── BlockEditor.tsx     # Canvas container & interaction manager
+│   │   │   │   ├── BlockRenderer.tsx   # Polymorphic block dispatcher
+│   │   │   │   ├── BlockGutter.tsx     # Drag handles, type switchers, add buttons
+│   │   │   │   └── blocks/             # 20 Content Blocks (Text, Table, Code, LaTeX, Audio, etc.)
+│   │   │   ├── navigation/             # App Header, Folder Tree Drawer, Breadcrumbs
+│   │   │   ├── relations/              # Bidirectional links, Graph Drawer & Backlinks
+│   │   │   ├── media/                  # Audio Player, Lightbox, Document Viewer
+│   │   │   └── ui/                     # Fluid buttons, chips, menus, modals (non-card!)
+│   │   ├── db/                         # Local-First SQLite Engine (expo-sqlite / OPFS)
+│   │   │   ├── schema.ts               # DDL for notes, folders, tags, tasks, assets, relations
+│   │   │   ├── client.ts               # Database connection & WAL mode config
+│   │   │   ├── notesRepo.ts            # Notes CRUD & atomic block operations
+│   │   │   ├── foldersRepo.ts          # Nested folder operations & path resolution
+│   │   │   ├── tagsRepo.ts             # Tag operations & associations
+│   │   │   ├── tasksRepo.ts            # Unified task model CRUD & syncing
+│   │   │   ├── relationsRepo.ts        # Graph edges & bidirectional backlinks
+│   │   │   └── searchRepo.ts           # FTS5 full-text search & Smart Collections
+│   │   ├── core/                       # AST Parsers & Markdown Serializers
+│   │   │   ├── astSerializer.ts        # NoteBlock[] <-> Extended Markdown AST converter
+│   │   │   ├── markdownParser.ts       # GFM parser with YAML frontmatter
+│   │   │   └── types.ts                # TypeScript interfaces (Note, Folder, Tag, Block, Task)
+│   │   ├── sync/                       # Delta Sync Client (Phase 2)
+│   │   │   ├── syncEngine.ts           # Event-sourced changelog processor
+│   │   │   ├── syncClient.ts           # WebSocket doorbell & REST fallback client
+│   │   │   └── useSync.ts              # Reactive hook for sync state
+│   │   └── theme/                      # Styling & Design Tokens
+│   │       ├── tokens.ts               # Soft minimalist pastel & dark theme palette
+│   │       └── ThemeProvider.tsx       # Theme state provider
+│   ├── tailwind.config.js              # NativeWind v4 Tailwind configuration
+│   ├── global.css                      # Base stylesheet & CSS variables
+│   ├── babel.config.js                 # Expo + NativeWind + Worklets Babel config
+│   ├── app.json                        # Expo configuration
+│   └── package.json                    # Frontend dependencies
 │
-├── backend/                            # 24/7 Cloud VPS FastAPI Backend
+├── backend/                            # 24/7 Cloud VPS FastAPI Backend (Phase 2 & 3)
 │   ├── app/
 │   │   ├── main.py                     # FastAPI entry point & lifespan events
+│   │   ├── core/
+│   │   │   ├── config.py               # VPS environment settings & paths
+│   │   │   └── security.py             # Auth & JWT verification
 │   │   ├── api/
-│   │   │   ├── intake.py               # Universal note/file ingestion & clarification
-│   │   │   ├── sync_ws.py              # Multi-device real-time delta sync WebSocket (Doorbell)
-│   │   │   ├── sync_http.py            # HTTP REST delta sync fallback (Push/Pull)
-│   │   │   └── pc_bridge_ws.py         # Remote PC daemon WebSocket controller
-│   │   ├── memory/
-│   │   │   ├── layer1_identity.py      # Core Identity & Always-Active Index
-│   │   │   ├── layer2_vault.py         # Git Markdown Vault + LanceDB + Graph
-│   │   │   ├── layer3_temporal.py      # Bi-temporal "Versions of Me" & Task Logs
-│   │   │   └── layer4_learner.py       # Behavioral Ledger & Manual Git Diff Learner
-│   │   ├── agents/
-│   │   │   ├── orchestrator.py         # Main ScribeX Brain (Friday Assistant - Context + Routing)
-│   │   │   ├── verifier.py             # Independent Remote PC Work Reviewer
-│   │   │   └── scheduler.py            # Proactive briefings & sleep consolidation
-│   │   └── storage/
-│   │       ├── sqlite_db.py            # Embedded SQLite WAL + FTS5 manager
-│   │       ├── git_vault.py            # GitPython commit, merge & diff engine
-│   │       └── backup_sync.py          # Encrypted off-site Git/S3 backup worker
+│   │   │   ├── sync_ws.py              # Multi-device WebSocket doorbell hub
+│   │   │   ├── sync_http.py            # HTTP REST delta sync fallback (/push, /pull)
+│   │   │   ├── assets.py               # Binary media upload & streaming (/assets/upload)
+│   │   │   ├── intake.py               # Friday universal intake & ambiguity gate (Phase 3)
+│   │   │   └── pc_bridge_ws.py         # Remote PC daemon WebSocket controller (Phase 4)
+│   │   ├── db/
+│   │   │   ├── schemas.sql             # Authoritative SQLite WAL schemas
+│   │   │   └── sqlite_db.py            # Async SQLite manager (aiosqlite)
+│   │   ├── storage/
+│   │   │   ├── git_vault.py            # GitPython commit, merge & diff engine
+│   │   │   ├── lancedb_store.py        # Embedded vector index (Phase 3)
+│   │   │   └── file_parser.py          # Whisper & document text extraction
+│   │   ├── agents/                     # Friday AI Brain & Multi-Agent Orchestrator (Phase 3)
+│   │   │   ├── orchestrator.py         # Friday assistant core logic
+│   │   │   ├── intake_agent.py         # Ask-Before-Write ambiguity gate
+│   │   │   ├── onboarding_agent.py     # Interactive discovery interview
+│   │   │   └── scheduler.py            # Daily briefings & memory consolidation
+│   │   └── memory/                     # 4-Layer Cognitive Memory (Phase 3)
+│   │       ├── layer1_identity.py      # Core Identity & Always-Active Index
+│   │       ├── layer2_vault.py         # Git Markdown Vault + LanceDB + Graph
+│   │       ├── layer3_temporal.py      # Bi-temporal "Versions of Me" & Task Logs
+│   │       └── layer4_learner.py       # Behavioral Ledger & Manual Git Diff Learner
 │   ├── data/                           # Mounted persistent NVMe volume on VPS
-│   │   ├── vault/                      # Git-backed Markdown Context Files
+│   │   ├── vault/                      # Git-backed Markdown context files (mirroring folders)
 │   │   ├── sqlite/                     # scribex_core.db
 │   │   └── lancedb/                    # Embedded vector index
 │   ├── Dockerfile
 │   └── pyproject.toml
 │
-├── pc-agent-bridge/                    # Lightweight Daemon installed on Personal PC
+├── pc-agent-bridge/                    # Lightweight Daemon installed on Personal PC (Phase 4)
 │   ├── bridge/
 │   │   ├── daemon.py                   # Outbound WebSocket client & heartbeat
 │   │   ├── cli_adapter.py              # Pluggable CLI runner (Claude, Gemini, etc.)
@@ -380,11 +423,15 @@ scribex/
 
 ## 9. Recommended Implementation Phases for Your Coding Assistant
 
-To build and test this systematically without getting overwhelmed, instruct your AI coding assistant to follow these phases:
+To build and test this systematically without getting overwhelmed, instruct your AI coding assistant to follow these phases starting from the **user's core journey first**:
 
-* **Phase 1: FastAPI Core + Operational SQLite + Git Vault Projection (VPS Backend) — `[x] COMPLETED`:** Set up the FastAPI server, embedded SQLite WAL operational tables (`sync_changelog`, `entity_edges`, `identity_timeline`, `staging_intake`), the Git-backed Markdown Vault projector (`GitPython`), LanceDB vector store, interactive onboarding flow, and Universal Intake endpoint with Ask-Before-Write clarification. *See [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md).*
-* **Phase 2: Universal Expo App + Resilient Delta Sync — `[x] COMPLETED`:** Build the Expo app (`iOS`, `Android`, `Web`) with `expo-sqlite` local caching, pastel tile UI design system, block editor canvas, and the resilient delta sync engine (WebSocket doorbell push + revision catch-up handshake + HTTP fallback). *See [Phase_2_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_2_Implementation_Plan.md).*
-* **Phase 3: Comprehensive Manual Note Input, Block Manipulation & Relations Engine — `[ ] ACTIVE`:** Complete all manual note entry, block manipulation (insert, reorder, delete, split/merge), structured data blocks (tables, code, LaTeX, callouts), multi-modal viewers (audio, attachments, bookmarks), folder hierarchies, multi-tags, favorites, archive/trash, and bidirectional `[[Note]]` knowledge graph links. *See [Phase_3_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_3_Implementation_Plan.md) and [Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md).*
-* **Phase 4: Manual Edit Diff Learner + Temporal "Versions of Me" (AI Cognitive Learning Loop):** Enable the background Git diff analyzer that compares `user_manual` commits against `ai_assistant` commits across the rich manual blocks, folders, and tags to populate Layer 4 (Behavioral Ledger) and Layer 3 (Identity Evolution Timeline).
-* **Phase 5: Remote PC Bridge Daemon + Pluggable CLI Verification Loop:** Deploy the `pc-agent-bridge` script on your personal PC, connect it via WebSocket to FastAPI, configure `cli_agents.yaml`, and activate the 3-stage verification pipeline.
-* **Phase 6 & 7 (Commercial SaaS Scaling):** When transitioning to commercial SaaS, attach the multi-tenant isolation, authentication provider (Clerk / Supabase Auth), Stripe billing webhooks, and LiteLLM token spend quotas as specified in `docs/SaaS_Architecture_and_Integration_Plan.md`.
+* **Phase 1: Universal Manual Note Engine & Local-First Canvas (Core User Journey) — `[ ] ACTIVE FOUNDATION`:**  
+  Build the client-side universal note application with sub-5ms local SQLite storage (`expo-sqlite` / OPFS), soft minimalist pastel design tokens (strictly avoiding generic cards or boxy layouts), composable block editor engine supporting all 20 content blocks and 42 manual input methods, hierarchical folders (with physical vault directory mirroring), multi-tags, starred favorites, pinning, 30-day recoverable trash, bidirectional cross-note links (`[[Note Title]]`), unified task engine (note checklist $\leftrightarrow$ global task board), and fast local full-text search (< 5ms via FTS5). *See [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md) and [Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md).*
+* **Phase 2: Resilient Client-Server Delta Sync & Multi-Device Vault Mirroring — `[ ] NEXT`:**  
+  Set up the 24/7 Cloud VPS FastAPI core with SQLite WAL operational tables (`sync_changelog`, `folders`, `tags`, `notes`, `tasks`, `assets`, `entity_relations`), real-time WebSocket doorbell push (< 50ms) with reconnection catch-up and HTTP REST fallback (`/push`, `/pull`), binary asset upload pipeline (`/api/v1/assets/upload`), and asynchronous Git Markdown Vault projection. *See [Phase_2_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_2_Implementation_Plan.md).*
+* **Phase 3: Cognitive Memory & Friday AI Assistant Integration — `[ ] PENDING`:**  
+  Integrate the Friday conversational assistant, interactive discovery onboarding interview, Ask-Before-Write Ambiguity Gate with universal multi-modal intake router, LanceDB embedded vector semantic search, and the 4-layer cognitive memory architecture (Layer 1 Identity, Layer 2 Living Notes & Graph, Layer 3 Temporal "Versions of Me", Layer 4 Behavioral Ledger & noise-filtered Git manual diff learner). *See [Phase_3_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_3_Implementation_Plan.md).*
+* **Phase 4: Remote PC Agent Bridge Daemon & Pluggable CLI Execution — `[ ] PENDING`:**  
+  Deploy the `pc-agent-bridge` daemon on the user's personal PC with outbound WebSocket tunnel, configure `cli_agents.yaml` supporting any local CLI AI agent (Claude Code, Gemini CLI, Codex, Aider), and activate the 3-stage independent verification & self-correction loop.
+* **Phase 5: SaaS Multi-Tenancy, Commercial Billing & Production Scaling — `[ ] PENDING`:**  
+  Attach multi-tenant parameterized `user_id` security boundaries, production authentication (Clerk / Supabase Auth), Stripe billing webhooks, LiteLLM token spend quotas, and Docker Compose deployment with automated Caddy HTTPS. *See [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md).*

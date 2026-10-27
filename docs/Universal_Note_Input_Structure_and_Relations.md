@@ -407,17 +407,23 @@ sequenceDiagram
 /** Core Note Container */
 export interface Note {
   id: string;
+  user_id: string; // Multi-tenant Day-1 SaaS convention (defaults to 'default_user')
   title: string;
-  folder_id?: string;
-  group_name: string;
+  folder_id?: string; // Optional folder path ID
+  group_name: string; // High-level functional domain (e.g. 'Work', 'Personal', 'General')
   tag_ids: string[];
   block_ids: string[];
   color_token: 'apricot' | 'coral' | 'lime' | 'lavender' | 'cyan' | 'pink' | 'sky';
   is_favorite: boolean;
+  is_pinned: boolean;
   status: 'inbox' | 'active' | 'archived' | 'trashed';
+  content_markdown: string; // Canonical Extended Markdown AST representation
+  blocks_json: string; // Serialized NoteBlock[] AST for instant atomic UI rendering
+  priority_score: number; // 0.0 to 1.0
   sync_rev: number;
   created_at: string; // ISO 8601
   updated_at: string; // ISO 8601
+  trashed_at?: string; // ISO 8601 for 30-day recovery window
 }
 
 /** Composable Content Block */
@@ -452,23 +458,55 @@ export interface NoteBlock {
   updated_at: string;
 }
 
-/** Unified Task Entity (Shared between embedded note checklists & global Kanban) */
+/** Hierarchical Folder */
+export interface Folder {
+  id: string;
+  user_id: string;
+  name: string;
+  parent_id?: string; // Nullable recursive parent for nested hierarchies
+  path: string; // Full physical vault directory mirror, e.g. 'Work/Projects/ScribeX'
+  color_token?: 'apricot' | 'coral' | 'lime' | 'lavender' | 'cyan' | 'pink' | 'sky';
+  icon?: string;
+  sync_rev: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Multi-Dimensional Tag */
+export interface Tag {
+  id: string;
+  user_id: string;
+  name: string; // Tag name without '#', e.g. 'architecture'
+  color_token?: string;
+  created_at: string;
+}
+
+/** Note-Tag Relation */
+export interface NoteTag {
+  note_id: string;
+  tag_id: string;
+}
+
+/** Unified Task Entity (Shared between embedded note checklists & global task engine) */
 export interface UnifiedTask {
   id: string;
-  note_id?: string;
-  block_id?: string;
+  user_id: string;
+  note_id?: string; // Nullable: tasks can exist globally or inside a note
+  block_id?: string; // Nullable: links directly to the embedded checklist block
   title: string;
   is_completed: boolean;
   priority: 'low' | 'medium' | 'high' | 'urgent';
   due_date?: string; // ISO 8601
   sync_rev: number;
+  created_at: string;
   updated_at: string;
 }
 
 /** Binary Asset Storage */
 export interface Asset {
   id: string;
-  storage_key: string;
+  user_id: string;
+  storage_key: string; // Relative path in vault/_assets/
   file_name: string;
   mime_type: string;
   size_bytes: number;
@@ -479,9 +517,10 @@ export interface Asset {
   created_at: string;
 }
 
-/** Explicit Knowledge Graph Relationship */
+/** Explicit Knowledge Graph Relationship (Layer 2 Memory Edges) */
 export interface EntityRelation {
   id: string;
+  user_id: string;
   source_id: string; // Note ID or Entity ID
   target_id: string; // Note ID or Entity ID
   relation_type: 
@@ -494,6 +533,18 @@ export interface EntityRelation {
   confidence_score: number; // 0.0 to 1.0
   created_at: string;
 }
+
+/** Event-Sourced Delta Sync Ledger */
+export interface SyncChangelogRecord {
+  id: number;
+  user_id: string;
+  sync_rev: number;
+  entity_type: 'note' | 'folder' | 'tag' | 'task' | 'relation' | 'asset';
+  entity_id: string;
+  change_type: 'INSERT' | 'UPDATE' | 'DELETE';
+  delta_payload: Record<string, unknown>;
+  created_at: string;
+}
 ```
 
 ---
@@ -503,29 +554,76 @@ export interface EntityRelation {
 To guarantee sub-5ms local reads and concurrent multi-device sync, the backend and client SQLite replicas implement the following operational tables:
 
 ```sql
--- 1. Notes Core Table
+-- 1. Hierarchical Folders Table (Physical Vault Directory Mirror)
+CREATE TABLE IF NOT EXISTS folders (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    parent_id TEXT,                    -- Recursive parent for nested subfolders
+    path TEXT NOT NULL,                -- Full mirror path, e.g. 'Work/Projects/ScribeX'
+    color_token TEXT DEFAULT 'apricot',
+    icon TEXT,
+    sync_rev INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(parent_id) REFERENCES folders(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
+CREATE INDEX IF NOT EXISTS idx_folders_parent ON folders(parent_id);
+
+-- 2. Multi-Dimensional Tags Table
+CREATE TABLE IF NOT EXISTS tags (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,                -- Tag name without '#', e.g. 'architecture'
+    color_token TEXT DEFAULT 'cyan',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tags_user ON tags(user_id);
+
+-- 3. Notes Core Table
 CREATE TABLE IF NOT EXISTS notes (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
-    folder_id TEXT,                    -- Optional folder path, e.g. 'Work/ScribeX'
+    folder_id TEXT,                    -- Foreign key to folders.id
     group_name TEXT NOT NULL,          -- High-level functional domain
     title TEXT NOT NULL,
     content_markdown TEXT NOT NULL,    -- Canonical rendered markdown representation
-    blocks_json TEXT,                  -- Serialized NoteBlock[] AST for instant UI rendering
+    blocks_json TEXT NOT NULL,         -- Serialized NoteBlock[] AST for instant atomic UI rendering
     color_token TEXT DEFAULT 'apricot',
     is_favorite INTEGER DEFAULT 0,
+    is_pinned INTEGER DEFAULT 0,
     status TEXT DEFAULT 'active',      -- 'inbox', 'active', 'archived', 'trashed'
     priority_score REAL DEFAULT 0.5,
     sync_rev INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    trashed_at TIMESTAMP,
+    FOREIGN KEY(folder_id) REFERENCES folders(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_notes_user_status ON notes(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_notes_user_folder ON notes(user_id, folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_user_rev ON notes(user_id, sync_rev);
+CREATE INDEX IF NOT EXISTS idx_notes_user_favorite ON notes(user_id, is_favorite);
+CREATE INDEX IF NOT EXISTS idx_notes_user_pinned ON notes(user_id, is_pinned);
 
--- 2. Unified Tasks Table (Single-source-of-truth across notes & global task board)
+-- 4. Note Tags Mapping Table (Many-to-Many)
+CREATE TABLE IF NOT EXISTS note_tags (
+    note_id TEXT NOT NULL,
+    tag_id TEXT NOT NULL,
+    PRIMARY KEY (note_id, tag_id),
+    FOREIGN KEY(note_id) REFERENCES notes(id) ON DELETE CASCADE,
+    FOREIGN KEY(tag_id) REFERENCES tags(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notetags_note ON note_tags(note_id);
+CREATE INDEX IF NOT EXISTS idx_notetags_tag ON note_tags(tag_id);
+
+-- 5. Unified Tasks Table (Single-source-of-truth across notes & global task board)
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -543,8 +641,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 
 CREATE INDEX IF NOT EXISTS idx_tasks_user_status ON tasks(user_id, is_completed);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_rev ON tasks(user_id, sync_rev);
+CREATE INDEX IF NOT EXISTS idx_tasks_user_note ON tasks(user_id, note_id);
 
--- 3. Binary Asset Ledger
+-- 6. Binary Asset Ledger
 CREATE TABLE IF NOT EXISTS assets (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -560,7 +659,7 @@ CREATE TABLE IF NOT EXISTS assets (
 
 CREATE INDEX IF NOT EXISTS idx_assets_user_status ON assets(user_id, processing_status);
 
--- 4. Knowledge Graph Relations (Layer 2 Memory Edges)
+-- 7. Knowledge Graph Relations (Layer 2 Memory Edges)
 CREATE TABLE IF NOT EXISTS entity_relations (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -569,12 +668,26 @@ CREATE TABLE IF NOT EXISTS entity_relations (
     target_id TEXT NOT NULL,
     created_by TEXT DEFAULT 'user',    -- 'user' | 'ai'
     confidence_score REAL DEFAULT 1.0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(source_id) REFERENCES notes(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_rel_user_src ON entity_relations(user_id, source_id);
 CREATE INDEX IF NOT EXISTS idx_rel_user_tgt ON entity_relations(user_id, target_id);
-```
+
+-- 8. Event-Sourced Delta Sync Ledger (Multi-Entity Device Sync)
+CREATE TABLE IF NOT EXISTS sync_changelog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    sync_rev INTEGER NOT NULL,
+    entity_type TEXT NOT NULL,         -- 'note', 'folder', 'tag', 'task', 'relation', 'asset'
+    entity_id TEXT NOT NULL,
+    change_type TEXT NOT NULL,         -- 'INSERT', 'UPDATE', 'DELETE'
+    delta_payload TEXT NOT NULL,       -- Serialized JSON delta
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_changelog_user_rev ON sync_changelog(user_id, sync_rev);
 
 ---
 
@@ -705,47 +818,47 @@ When raw input contains ambiguity or contradictions:
 ## 6. Phased Implementation Roadmap
 
 ```
-Phase 1: Core VPS Backend & 4-Layer Memory Foundation (COMPLETED)
-├── [x] FastAPI operational core & SQLite WAL schemas
-├── [x] Git-backed Markdown Vault projection
-├── [x] Embedded LanceDB vector store
-├── [x] Conversational onboarding flow
-└── [x] Ask-Before-Write Ambiguity Gate & Universal Intake
+Phase 1: Universal Manual Note Engine & Local-First Canvas (ACTIVE FOUNDATION)
+├── [ ] NativeWind v4 & Soft Minimalist Pastel Design Tokens (Strict non-generic layout)
+├── [ ] Local-first client SQLite WAL database (expo-sqlite / OPFS) with full schemas
+├── [ ] Composable block editor engine & AST renderer for all 20 content block types
+├── [ ] Complete support for 42 manual input methods (Text, Tables, Code, LaTeX, Media, Files)
+├── [ ] Hierarchical folders & physical Git Vault directory mirroring
+├── [ ] Multi-dimensional tags (#tags), starred favorites, pinning & 30-day trash
+├── [ ] Bidirectional cross-note links ([[Note Title]]), Backlinks drawer & entity_relations
+├── [ ] Unified task engine (single source of truth: note checklist <-> global task board)
+├── [ ] Fast local full-text search (< 5ms via FTS5) & dynamic Smart Collections
+└── [ ] Phase 1 master test & verification suite
 
-Phase 2: Universal Expo App, Pastel Tile UI & Resilient Delta Sync (COMPLETED)
-├── [x] Universal Expo scaffolding (iOS, Android, Web)
-├── [x] Pastel tile UI design system & WCAG AA contrast tokens
-├── [x] Client offline-first SQLite engine (expo-sqlite / OPFS)
-├── [x] Real-time delta sync state machine (WebSocket doorbell + REST catch-up)
-├── [x] Universal Intake Bar with multi-modal attachment picker
-└── [x] Basic block editor canvas & AST serialization
+Phase 2: Resilient Client-Server Delta Sync & Multi-Device Vault Mirroring
+├── [ ] 24/7 Cloud VPS FastAPI operational core & SQLite WAL multi-tenant database
+├── [ ] Event-sourced delta sync engine (sync_changelog with monotonic sync_rev)
+├── [ ] Real-time WebSocket doorbell push (< 50ms) + reconnection catch-up + REST fallback
+├── [ ] Binary asset upload API (/assets/upload) with local vault disk storage
+└── [ ] Multi-device real-time state reconciliation & offline synchronization
 
-Phase 3: Comprehensive Manual Note Input, Block Manipulation & Relations Engine (ACTIVE)
-├── [ ] Universal block manipulation & reordering engine (insert, reorder, delete, split/merge)
-├── [ ] Rich manual content blocks (interactive tables, monospace code with copy, KaTeX, callouts)
-├── [ ] Multi-modal media ingestion & viewers (audio player, file/PDF attachments, web bookmarks, lightbox)
-├── [ ] Folder hierarchy & physical Git Vault directory mirroring
-├── [ ] Multi-tags (#tags), starred favorites, archive & recoverable 30-day trash
-├── [ ] Bidirectional cross-note links ([[Note]]) & SQLite knowledge graph (entity_relations)
-├── [ ] Fast local full-text search (< 5ms) & dynamic smart collections
-└── [ ] Phase 3 master cross-platform verification suite (automated test runner)
+Phase 3: Cognitive Memory & Friday AI Assistant Integration
+├── [ ] Friday conversational assistant interface & proactive daily briefings
+├── [ ] Interactive user onboarding interview (capturing baseline goals & identity)
+├── [ ] Ask-Before-Write Ambiguity Gate & universal multi-modal intake router
+├── [ ] 4-layer cognitive memory architecture:
+│   ├── Layer 1: Core Identity & Always-Active Index
+│   ├── Layer 2: Living Notes & LanceDB vector semantic search
+│   ├── Layer 3: Temporal Identity Timeline ("Versions of Me") & Task Execution History
+│   └── Layer 4: Behavioral & Preference Ledger
+└── [ ] Automated Git manual edit diff learner (learning user habits from edits)
 
-Phase 4: Manual Edit Diff Learner + Temporal "Versions of Me" (AI Cognitive Loop)
-├── [ ] Background Git diff analyzer (user_manual vs. ai_assistant commits)
-├── [ ] Noise-filtered semantic preference extraction (tone, formatting, filing habits)
-├── [ ] Layer 4 Behavioral Ledger auto-updating (_core/behavioral_ledger.md)
-└── [ ] Layer 3 Temporal Identity timeline ("Versions of Me" profile history)
+Phase 4: Remote PC Agent Orchestration & Pluggable CLI Daemon
+├── [ ] Outbound persistent WebSocket PC bridge daemon (pc-agent-bridge, zero open ports)
+├── [ ] Universal CLI agent adapter registry (cli_agents.yaml: Claude Code, Gemini CLI, Codex, Aider)
+├── [ ] 3-stage independent verification & self-correction loop (telemetry, git diff, AI review)
+└── [ ] Local Git vault mirroring & safety rollback checkpoints
 
-Phase 5: Remote PC Agent Orchestration & Pluggable CLI Daemon
-├── [ ] Outbound WebSocket PC bridge (zero open ports)
-├── [ ] Universal CLI agent adapter (Claude Code, Gemini CLI, Codex)
-└── [ ] Automated 3-stage execution verification pipeline
-
-Phase 6 & 7: SaaS Multi-Tenancy, Cloud Deployment & Commercial Scaling
-├── [ ] Multi-tenant isolated vaults & SQLite DBs
-├── [ ] Production authentication (Clerk / Supabase Auth)
+Phase 5: SaaS Multi-Tenancy, Cloud Deployment & Commercial Scaling
+├── [ ] Multi-tenant isolated vaults & parameterized user_id security boundaries
+├── [ ] Production authentication (Clerk / Supabase Auth) & device pairing
 ├── [ ] Stripe billing webhooks & LiteLLM token spend quotas
-└── [ ] Dockerized VPS deployment with Caddy reverse proxy
+└── [ ] Production Dockerized VPS deployment with Caddy HTTPS reverse proxy
 ```
 
 ---

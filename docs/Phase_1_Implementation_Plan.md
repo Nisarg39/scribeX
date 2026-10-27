@@ -1,232 +1,201 @@
 # Phase 1: Step-by-Step Implementation Plan
-## ScribeX VPS Backend Core, Operational Storage & 4-Layer Memory Engine
+## Universal Manual Note Engine & Local-First Canvas (Core User Journey)
 
-> **Document Status:** Complete (100% Implemented & Verified)  
-> **Target Directory:** `backend/`  
-> **Architecture Alignment:** Fully adheres to [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md) and [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md).
+> **Document Status:** Active Implementation Blueprint  
+> **Target Directory:** `frontend/`  
+> **Source of Truth Specifications:**  
+> - [Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md)  
+> - [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md)  
+> - [ScribeX-Pastel-Tile-UI-Design-System.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/ScribeX-Pastel-Tile-UI-Design-System.md)  
+> - [Master_Tasks_Tracker.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Master_Tasks_Tracker.md)  
+> **Critical Design Constraint:** Strictly avoid generic card grids, boxy SaaS widgets, and cookie-cutter dashboards. Adhere to `<RULE[user_global]>`: Deliver a serene, soft minimalist editorial canvas with vivid pastel note accents, generous whitespace, and restrained circular controls.
 
 ---
 
 ## 1. Master Progress Tracker
 
-Use this checklist to track execution. Every step must be implemented, tested, and verified before marking as completed and moving to the next step.
+Use this checklist to track execution. Every step must be implemented, tested, and verified before marking as completed and advancing to the next step.
 
 | Step | Milestone / Component | Primary Files | Status |
 | :---: | :--- | :--- | :---: |
-| **1** | [Backend Scaffolding, Config & SaaS Path Resolver](#step-1-backend-scaffolding-environment--saas-path-resolver) | `pyproject.toml`, `app/core/config.py`, `app/storage/paths.py`, `app/main.py` | `[x] COMPLETED` |
-| **2** | [Operational SQLite Engine (WAL Mode + Core Schemas)](#step-2-operational-sqlite-engine-wal-mode--core-schemas) | `app/storage/sqlite_db.py`, `app/db/schemas.sql` | `[x] COMPLETED` |
-| **3** | [Git-Backed Markdown Vault Projector (`GitPython`)](#step-3-git-backed-markdown-vault-projector-gitpython) | `app/storage/git_vault.py` | `[x] COMPLETED` |
-| **4** | [Embedded LanceDB Vector Engine & Document Parser](#step-4-embedded-lancedb-vector-engine--file-parser) | `app/storage/lancedb_store.py`, `app/storage/file_parser.py` | `[x] COMPLETED` |
-| **5** | [Cognitive Memory Layers (Layer 1 Identity & Layer 2 Graph)](#step-5-cognitive-memory-engine-layers-1--2) | `app/memory/layer1_identity.py`, `app/memory/layer2_vault.py` | `[x] COMPLETED` |
-| **6** | [Universal Intake Router & Ask-Before-Write Ambiguity Gate](#step-6-universal-intake--ask-before-write-gate) | `app/api/intake.py`, `app/agents/intake_agent.py` | `[x] COMPLETED` |
-| **7** | [Interactive Onboarding Interview Flow API](#step-7-interactive-onboarding-interview-flow-api) | `app/api/onboarding.py`, `app/agents/onboarding_agent.py` | `[x] COMPLETED` |
-| **8** | [Phase 1 Integration Test Suite & Verification](#step-8-phase-1-integration-test-suite--verification) | `tests/test_storage.py`, `tests/test_vault.py`, `tests/test_intake.py`, `tests/test_e2e_integration.py` | `[x] COMPLETED` |
+| **1** | [Universal Expo Scaffolding, NativeWind v4 & Design Tokens](#step-1-universal-expo-scaffolding-nativewind-v4--design-tokens) | `frontend/package.json`, `frontend/tailwind.config.js`, `frontend/src/theme/tokens.ts`, `frontend/app/_layout.tsx` | `[ ] PENDING` |
+| **2** | [Local-First Client SQLite Engine (`expo-sqlite` / OPFS)](#step-2-local-first-client-sqlite-engine-expo-sqlite--opfs) | `frontend/src/db/schema.ts`, `frontend/src/db/client.ts`, `frontend/src/db/types.ts` | `[ ] PENDING` |
+| **3** | [Core Data Repositories (Notes, Blocks, Folders, Tags)](#step-3-core-data-repositories-notes-blocks-folders-tags) | `frontend/src/db/notesRepo.ts`, `frontend/src/db/foldersRepo.ts`, `frontend/src/db/tagsRepo.ts` | `[ ] PENDING` |
+| **4** | [Composable Block Editor Engine & Standard AST Renderers](#step-4-composable-block-editor-engine--standard-ast-renderers) | `frontend/src/components/editor/BlockEditor.tsx`, `frontend/src/components/editor/BlockRenderer.tsx`, `frontend/src/core/astSerializer.ts` | `[ ] PENDING` |
+| **5** | [Structured Data Blocks: Tables, Code Blocks, LaTeX & Callouts](#step-5-structured-data-blocks-tables-code-blocks-latex--callouts) | `frontend/src/components/editor/blocks/TableBlock.tsx`, `CodeBlock.tsx`, `EquationBlock.tsx`, `CalloutBlock.tsx` | `[ ] PENDING` |
+| **6** | [Multi-Modal Media & File Capture (Drawing, Audio, Attachments, Links)](#step-6-multi-modal-media--file-capture) | `frontend/src/components/editor/blocks/DrawingBlock.tsx`, `AudioBlock.tsx`, `FileBlock.tsx`, `BookmarkBlock.tsx` | `[ ] PENDING` |
+| **7** | [Unified Task Engine (Embedded Checklists $\leftrightarrow$ Global Task View)](#step-7-unified-task-engine-embedded-checklists--global-task-view) | `frontend/src/db/tasksRepo.ts`, `frontend/src/components/editor/blocks/ChecklistBlock.tsx`, `frontend/src/screens/TasksScreen.tsx` | `[ ] PENDING` |
+| **8** | [Folder Hierarchy & Physical Vault Directory Mirroring](#step-8-folder-hierarchy--physical-vault-directory-mirroring) | `frontend/src/components/navigation/FolderTree.tsx`, `frontend/src/screens/FoldersScreen.tsx` | `[ ] PENDING` |
+| **9** | [Multi-Tags, Starred Favorites, Pinning, Archive & 30-Day Trash](#step-9-multi-tags-starred-favorites-pinning-archive--30-day-trash) | `frontend/src/components/ui/TagChips.tsx`, `frontend/src/screens/ArchiveTrashScreen.tsx` | `[ ] PENDING` |
+| **10** | [Bidirectional Cross-Note Links (`[[Note Title]]`) & Relational Graph](#step-10-bidirectional-cross-note-links--relational-graph) | `frontend/src/components/editor/LinkAutocomplete.tsx`, `frontend/src/components/relations/BacklinksDrawer.tsx`, `frontend/src/db/relationsRepo.ts` | `[ ] PENDING` |
+| **11** | [Fast Local Search (< 5ms via FTS5) & Dynamic Smart Collections](#step-11-fast-local-search--dynamic-smart-collections) | `frontend/src/db/searchRepo.ts`, `frontend/src/screens/SearchScreen.tsx` | `[ ] PENDING` |
+| **12** | [Phase 1 Master Verification Suite & E2E Canvas Testing](#step-12-phase-1-master-verification-suite--e2e-canvas-testing) | `frontend/src/core/__tests__/manual_notes_suite.test.ts` | `[ ] PENDING` |
 
 ---
 
 ## 2. Detailed Step-by-Step Milestones
 
----
-
-### Step 1: Backend Scaffolding, Environment & SaaS Path Resolver
-* **Objective:** Establish the Python project structure, package dependencies, environment settings, and tenant-isolated directory resolver so all storage is SaaS-ready from Day 1.
-* **Deliverables:**
-  * `backend/pyproject.toml`: Modern packaging with dependencies:
-    * `fastapi`, `uvicorn[standard]`, `pydantic`, `pydantic-settings`
-    * `aiosqlite`, `GitPython`, `lancedb`, `pyarrow`
-    * `litellm`, `pydantic-ai`
-    * `markitdown`, `pymupdf`
-    * `pytest`, `pytest-asyncio`, `httpx`
-  * `backend/app/core/config.py`: Central settings managing API keys, data directories, default model IDs, and environment variables.
-  * `backend/app/storage/paths.py`: Tenant path resolver implementing:
-    * `get_tenant_dir(user_id: str = "default_user") -> Path`
-    * `get_vault_path(user_id: str = "default_user") -> Path`
-    * `get_sqlite_path(user_id: str = "default_user") -> Path`
-    * `get_lancedb_path(user_id: str = "default_user") -> Path`
-  * `backend/app/api/deps.py`: `get_current_user_id()` dependency defaulting to `"default_user"` for Phase 1.
-  * `backend/app/main.py`: FastAPI application entry point with lifespan event handling directory creation and healthcheck endpoint (`GET /health`).
-* **Verification Criteria:**
-  * Running `uvicorn app.main:app` boots cleanly with zero errors.
-  * `GET /health` returns `{"status": "healthy", "service": "ScribeX Core VPS"}`.
-  * Test verifies `/data/tenants/default_user/{vault,sqlite,lancedb}` directories are created automatically.
+### Step 1: Universal Expo Scaffolding, NativeWind v4 & Design Tokens
+* **Objective:** Initialize a clean, robust Expo SDK 52 universal app at `frontend/` supporting iOS, Android, and Desktop Web, configured with NativeWind v4 and design tokens.
+* **Design Philosophy:**
+  * **Strict Non-Generic UI:** Absolutely avoid cookie-cutter card grids, boxy outlines, and generic dashboard widgets.
+  * **Soft Minimalism:** Editorial canvas with generous whitespace, high-contrast typography, vivid pastel accents (`apricot`, `coral`, `lime`, `lavender`, `cyan`, `pink`, `sky`), and restrained circular action controls.
+* **Key Deliverables:**
+  * `frontend/package.json`: Expo SDK 52+, React 18, React Native 0.76+, `expo-router`, `nativewind@^4.0.1`, `tailwindcss@^3.4.0`, `react-native-reanimated@~3.16.1`, `react-native-worklets`, `expo-sqlite@~15.0.0`.
+  * `frontend/tailwind.config.js`: Preset with `nativewind/preset`, custom theme colors matching ScribeX tokens.
+  * `frontend/global.css`: CSS root variables for light/dark pastel themes and reset styles.
+  * `frontend/babel.config.js`: Configured with `nativewind/babel` and `react-native-worklets/plugin`.
+  * `frontend/src/theme/tokens.ts`: Semantic color tokens, pastel note palettes, spacing scales, and typography hierarchies.
+  * `frontend/src/theme/ThemeProvider.tsx`: Theme context provider supporting light/dark mode transitions without layout shift.
+* **Verification Command:**
+  ```bash
+  cd frontend && npx expo start -c
+  ```
 
 ---
 
-### Step 2: Operational SQLite Engine (WAL Mode + Core Schemas)
-* **Objective:** Create the central high-performance operational database engine in WAL mode with complete tables for notes, sync deltas, graph edges, and timelines.
-* **Deliverables:**
-  * `backend/app/storage/sqlite_db.py`: Async connection manager (`aiosqlite`) enforcing:
-    * `PRAGMA journal_mode = WAL;`
-    * `PRAGMA synchronous = NORMAL;`
-    * `PRAGMA foreign_keys = ON;`
-    * `PRAGMA busy_timeout = 5000;`
-  * Core Schemas created in `app/db/schemas.sql`:
-    1. `notes`: `id`, `user_id`, `group_name`, `title`, `content_markdown`, `priority_score`, `sync_rev`, `created_at`, `updated_at`.
-    2. `user_sync_meta`: `user_id`, `current_sync_rev`, `updated_at`.
-    3. `sync_changelog`: `id`, `user_id`, `sync_rev`, `entity_type`, `entity_id`, `change_type`, `delta_payload` (JSON), `created_at`.
-    4. `entity_edges`: `id`, `user_id`, `source_id`, `relation_type`, `target_id`, `created_at`.
-    5. `identity_timeline`: `id`, `user_id`, `attribute`, `old_value`, `new_value`, `change_reason`, `git_commit_sha`, `valid_from`, `valid_to`.
-    6. `learned_preferences`: `id`, `user_id`, `category`, `preference_rule`, `confidence_score`, `source_diff_sha`, `created_at`.
-    7. `staging_intake`: `id`, `user_id`, `raw_input`, `clarity_score`, `clarifying_questions` (JSON), `proposed_action`, `status`, `created_at`.
-    8. `notes_fts`: FTS5 full-text search virtual table synchronized via automated SQLite database triggers.
-  * Helper functions for atomic note transactions, delta sync changelogs, staging resolution, and incrementing `sync_rev`.
-
-> [!NOTE]
-> **Schema Evolution & Flexibility Architecture:**
-> SQLite serves strictly as a high-speed operational index and query cache; the **Git-Backed Markdown Vault** remains the ultimate source of truth. Because of this:
-> 1. Fields and tables can be added, removed, or altered at any time in `schemas.sql` and `sqlite_db.py`.
-> 2. The operational SQLite database can be wiped and completely reconstructed from the physical Markdown `.md` vault files without losing a single character of notes or identity history.
-> 3. `sync_changelog` stores deltas in flexible JSON (`delta_payload`), allowing new custom fields to sync without requiring changelog table migrations.
-* **Verification Criteria:**
-  * SQLite WAL files (`-wal`, `-shm`) initialize properly on startup.
-  * Note insert/update atomic transaction increments `sync_rev` monotonically.
-  * Multi-concurrent async reads and writes pass under stress test with 0 database lock errors.
+### Step 2: Local-First Client SQLite Engine (`expo-sqlite` / OPFS)
+* **Objective:** Establish the high-throughput local SQLite database running in WAL mode on native devices and OPFS (Origin Private File System) on Web, guaranteeing sub-5ms local reads and writes.
+* **Core Schemas (`frontend/src/db/schema.ts`):**
+  1. `folders`: Hierarchical project containers (`id`, `user_id`, `name`, `parent_id`, `path`, `color_token`, `icon`, `sync_rev`, `created_at`, `updated_at`).
+  2. `tags`: Classification tags (`id`, `user_id`, `name`, `color_token`, `created_at`).
+  3. `notes`: Core note documents (`id`, `user_id`, `folder_id`, `group_name`, `title`, `content_markdown`, `blocks_json`, `color_token`, `is_favorite`, `is_pinned`, `status`, `priority_score`, `sync_rev`, `created_at`, `updated_at`, `trashed_at`).
+  4. `note_tags`: Many-to-many note-tag mapping (`note_id`, `tag_id`).
+  5. `tasks`: Single-source-of-truth task entities (`id`, `user_id`, `note_id`, `block_id`, `title`, `is_completed`, `priority`, `due_date`, `sync_rev`, `created_at`, `updated_at`).
+  6. `assets`: Binary attachments ledger (`id`, `user_id`, `storage_key`, `file_name`, `mime_type`, `size_bytes`, `sha256_hash`, `processing_status`, `extracted_text`, `created_at`).
+  7. `entity_relations`: Knowledge graph edges (`id`, `user_id`, `source_id`, `relation_type`, `target_id`, `created_by`, `confidence_score`, `created_at`).
+  8. `sync_changelog`: Event-sourced change tracking (`id`, `user_id`, `sync_rev`, `entity_type`, `entity_id`, `change_type`, `delta_payload`, `created_at`).
+* **Key Deliverables:**
+  * `frontend/src/db/client.ts`: Connection singleton managing database migration, WAL mode activation (`PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;`), and transaction helpers.
+  * `frontend/src/db/types.ts`: TypeScript interfaces matching database schemas.
 
 ---
 
-### Step 3: Git-Backed Markdown Vault Projector (`GitPython`)
-* **Objective:** Build the projection engine that watches or accepts SQLite note commits and asynchronously writes them out as physical `.md` files in a local Git repository, with author attribution for diff learning.
-* **Deliverables:**
-  * `backend/app/storage/git_vault.py`:
-    * Initializes Git repo in tenant vault directory if `.git` does not exist.
-    * Method `project_note_to_vault(user_id, note_id, group, title, content, priority, tags, author_type)`:
-      * Formats file with YAML frontmatter:
-        ```markdown
-        ---
-        id: note_123
-        group: Projects
-        priority: 0.8
-        tags: [frontend, ai]
-        ---
-        # Note Title
-        Note content...
-        ```
-      * Writes to `{vault_dir}/{group}/{sanitized_title}.md`.
-      * Stages and commits with author:
-        * If `author_type == "ai"`: `ScribeX-AI <ai@assistant.local>`
-        * If `author_type == "user"`: `User <user@assistant.local>`
-    * Method `get_git_diff(user_id, commit_sha)` returning exact line-by-line diff.
-    * Method `get_file_history(user_id, file_path)` returning historical commits for that note.
-* **Verification Criteria:**
-  * Projecting a note creates physical `.md` file on disk.
-  * Git commit log registers the commit with exact author attribution.
-  * Subsequent edit produces accurate `git diff` output through Python API.
+### Step 3: Core Data Repositories (Notes, Blocks, Folders, Tags)
+* **Objective:** Provide clean, strongly typed repository classes for local CRUD operations and atomic multi-entity transactions.
+* **Key Deliverables:**
+  * `frontend/src/db/notesRepo.ts`:
+    * `createNote(note: Partial<Note>): Promise<Note>`
+    * `getNoteById(id: string): Promise<Note | null>`
+    * `listNotes(filter?: NoteFilter): Promise<Note[]>`
+    * `updateNoteBlocks(noteId: string, blocks: NoteBlock[]): Promise<Note>`
+    * `softDeleteNote(id: string): Promise<void>` (sets `status = 'trashed'`, `trashed_at = now`)
+    * `restoreNote(id: string): Promise<void>`
+    * `permanentlyDeleteNote(id: string): Promise<void>`
+  * `frontend/src/db/foldersRepo.ts`:
+    * `createFolder(name: string, parentId?: string): Promise<Folder>`
+    * `listFolders(): Promise<Folder[]>`
+    * `getFolderHierarchy(): Promise<FolderTreeNode[]>`
+    * `renameFolder(id: string, newName: string): Promise<void>`
+  * `frontend/src/db/tagsRepo.ts`:
+    * `createTag(name: string, color?: string): Promise<Tag>`
+    * `listTags(): Promise<Tag[]>`
+    * `setNoteTags(noteId: string, tagNames: string[]): Promise<void>`
 
 ---
 
-### Step 4: Embedded LanceDB Vector Engine & File Parser
-* **Objective:** Establish serverless on-disk vector search using LanceDB for semantic note search, plus file ingestion utilities.
-* **Deliverables:**
-  * `backend/app/storage/lancedb_store.py`:
-    * Embedded LanceDB connection to tenant lancedb directory.
-    * Vector table `note_chunks`: `chunk_id`, `user_id`, `note_id`, `text`, `vector`, `metadata`.
-    * Methods:
-      * `index_note_chunks(user_id, note_id, text_chunks, embeddings)`
-      * `delete_note_chunks(user_id, note_id)`
-      * `vector_search(user_id, query_vector, limit=5)`
-  * `backend/app/storage/file_parser.py`:
-    * Integration with `MarkItDown` / `PyMuPDF` to parse PDF, DOCX, TXT, and Markdown uploads into clean structured text.
-* **Verification Criteria:**
-  * Inserting 5 text chunks into LanceDB and running a cosine similarity search returns the correct top-ranking chunk in $< 5\text{ ms}$.
-  * Parsing a sample PDF returns clean markdown text.
+### Step 4: Composable Block Editor Engine & Standard AST Renderers
+* **Objective:** Implement the polymorphic, block-based editor canvas allowing frictionless typing, block reordering, inserting, deleting, and AST serialization.
+* **Core Block Types Handled in Step 4:**
+  * `paragraph`: Rich text paragraph with inline bold, italic, strikethrough, inline code, and links.
+  * `heading`: Levels H1, H2, H3, H4 with collapsible section disclosure toggles.
+  * `bulleted_list`: Unordered bulleted lists with tab/shift-tab nesting.
+  * `numbered_list`: Ordered procedural lists with automatic incrementing.
+  * `divider`: Subtle horizontal section separators.
+* **Key Deliverables:**
+  * `frontend/src/components/editor/BlockEditor.tsx`: Main canvas manager handling keyboard shortcuts (Enter to split block, Backspace on empty block to merge with previous, `/` command palette to insert block).
+  * `frontend/src/components/editor/BlockRenderer.tsx`: Polymorphic dispatcher rendering each block according to `block_type`.
+  * `frontend/src/components/editor/BlockGutter.tsx`: Subtle hover/touch controls (drag handle, add block, block type selector).
+  * `frontend/src/core/astSerializer.ts`: Bidirectional converter between `NoteBlock[]` AST and Extended Markdown (`.md`) format.
 
 ---
 
-### Step 5: Cognitive Memory Engine (Layers 1 & 2)
-* **Objective:** Implement Layer 1 (Always-Active Core Identity cached in RAM) and Layer 2 (Living Notes & Relationship Graph retrieval).
-* **Deliverables:**
-  * `backend/app/memory/layer1_identity.py`:
-    * Reads `_core/identity.md` from the Git Vault.
-    * Generates a compact system prompt injection ($\sim 1,500$ tokens) summarizing:
-      * User identity & values
-      * Current top 3 priorities & short-term goals
-      * Directory map of all active note groups
-    * Caches result in memory with an invalidation trigger on identity updates.
-  * `backend/app/memory/layer2_vault.py`:
-    * Hybrid Context Retriever:
-      1. Keyword/Exact match (SQLite FTS5)
-      2. Semantic match (LanceDB vector search)
-      3. Graph connection expansion (pulling connected goals/projects from `entity_edges`)
-* **Verification Criteria:**
-  * Layer 1 generates a clean, token-bounded prompt string.
-  * Layer 2 queries return synthesized context merging direct note content and connected graph relations.
+### Step 5: Structured Data Blocks: Tables, Code Blocks, LaTeX & Callouts
+* **Objective:** Support developer, scientific, and structured data input methods inside notes.
+* **Content Blocks:**
+  * `table`: Interactive tabular data grid with column/row add/delete, CSV paste parsing, and cell editing.
+  * `code`: Monospace syntax-highlighted code editor supporting 50+ languages, line numbers, and one-click copy.
+  * `equation`: KaTeX-powered LaTeX mathematical equation rendering (inline and block display).
+  * `callout`: Visual alert blocks (`info`, `warning`, `success`, `quote`) with pastel background tints and accent icons.
+* **Key Deliverables:**
+  * `frontend/src/components/editor/blocks/TableBlock.tsx`
+  * `frontend/src/components/editor/blocks/CodeBlock.tsx`
+  * `frontend/src/components/editor/blocks/EquationBlock.tsx`
+  * `frontend/src/components/editor/blocks/CalloutBlock.tsx`
 
 ---
 
-### Step 6: Universal Intake & Ask-Before-Write Gate
-* **Objective:** Build the single universal entry point endpoint (`POST /api/v1/intake`) that analyzes raw input against memory, evaluates ambiguity, and enforces the "Clarification Over Assumption" rule.
-* **Deliverables:**
-  * `backend/app/agents/intake_agent.py`:
-    * Pydantic schemas:
-      ```python
-      class IntakeAnalysis(BaseModel):
-          clarity_score: float  # 0.0 to 1.0
-          ambiguity_detected: bool
-          clarifying_questions: list[str]
-          proposed_action: Literal["create_new_note", "update_existing_note", "add_task", "clarify"]
-          target_note_id: str | None
-          suggested_group: str
-          extracted_title: str
-          refined_content: str
-          priority_score: float
-          linked_goal_ids: list[str]
-      ```
-    * LiteLLM prompt orchestrator comparing input against Layer 1 & 2 context.
-  * `backend/app/api/intake.py`:
-    * `POST /api/v1/intake` (accepts raw text, voice transcript, or file upload).
-    * Gate logic:
-      * If `clarity_score < 0.85` or `ambiguity_detected == True`:
-        * Stores raw input in `staging_intake` table.
-        * Returns `status: "NEEDS_CLARIFICATION"` with `clarifying_questions`.
-      * If clear (`clarity_score >= 0.85`):
-        * Executes atomic write: SQLite commit $\rightarrow$ Git Vault projection $\rightarrow$ LanceDB vector indexing.
-        * Returns `status: "PROCESSED"` with note details and suggested next actions.
-* **Verification Criteria:**
-  * Sending an ambiguous prompt (e.g. *"Update the project specs"*) triggers a clarifying question without touching the vault.
-  * Sending an unambiguous note (e.g. *"Finished client onboarding checklist for Acme Corp"*) cleanly updates the right note and commits to Git.
+### Step 6: Multi-Modal Media & File Capture (Drawing, Audio, Attachments, Links)
+* **Objective:** Support multimedia and external asset capture directly into composable content blocks.
+* **Content Blocks:**
+  * `drawing`: Vector sketch canvas supporting freehand pen, highlighter, eraser, color palette, undo/redo, and SVG path persistence.
+  * `audio`: Audio voice recorder and playback player with waveform visualizer, playback speed controls, and scrub bar.
+  * `file`: Binary document attachment cards (PDF, DOCX, CSV) with file size, icon, and embedded viewer.
+  * `image`: High-resolution image block with caption, lightbox zoom, and aspect ratio controls.
+  * `bookmark`: Rich web bookmark preview cards with OpenGraph title, description, thumbnail, and favicon.
+* **Key Deliverables:**
+  * `frontend/src/components/editor/blocks/DrawingBlock.tsx`
+  * `frontend/src/components/editor/blocks/AudioBlock.tsx`
+  * `frontend/src/components/editor/blocks/FileBlock.tsx`
+  * `frontend/src/components/editor/blocks/ImageBlock.tsx`
+  * `frontend/src/components/editor/blocks/BookmarkBlock.tsx`
 
 ---
 
-### Step 7: Interactive Onboarding Interview Flow API
-* **Objective:** Implement the multi-turn conversational interview engine that gathers the foundational personal profile for a new user.
-* **Deliverables:**
-  * `backend/app/agents/onboarding_agent.py`:
-    * Guides user through the 6 profile pillars:
-      1. Personal Identity & routines
-      2. Career journey & past milestones
-      3. Long-term life vision
-      4. Short-term active goals
-      5. Current active projects & obligations
-      6. Daily checklists & habits
-    * Synthesis engine that compiles conversation history into:
-      * `_core/identity.md` (for Layer 1)
-      * Initial note entries in SQLite (for Layer 2)
-  * `backend/app/api/onboarding.py`:
-    * `POST /api/v1/onboarding/start`: Initializes session.
-    * `POST /api/v1/onboarding/message`: Accepts user turn, returns next intelligent question.
-    * `POST /api/v1/onboarding/finalize`: Generates profile files, commits initial Git state, and activates the assistant.
-* **Verification Criteria:**
-  * Simulated multi-turn dialogue successfully produces a comprehensive `_core/identity.md` file.
-  * Git vault receives initial onboarding commit authored by `ScribeX-AI`.
+### Step 7: Unified Task Engine (Embedded Checklists $\leftrightarrow$ Global Task View)
+* **Objective:** Unify note checklist blocks with the global task engine so completing a task in either place updates both instantly.
+* **Key Architectural Rules:**
+  * Every checklist item embedded in a note receives a unique `taskId`.
+  * The task record is synchronized in the `tasks` SQLite table with `is_completed`, `priority`, and `due_date`.
+  * Toggling a checkbox inside a note immediately updates the `tasks` table and emits a task change event.
+  * Toggling a task in the Global Task View immediately reflects in the note's AST blocks and rendered markdown.
+* **Key Deliverables:**
+  * `frontend/src/db/tasksRepo.ts`: Task CRUD and sync methods.
+  * `frontend/src/components/editor/blocks/ChecklistBlock.tsx`: Interactive checklist block with drag-to-reorder.
+  * `frontend/src/screens/TasksScreen.tsx`: Unified global task manager with priority filtering (`urgent`, `high`, `medium`, `low`) and due date grouping.
 
 ---
 
-### Step 8: Phase 1 Integration Test Suite & Verification
-* **Objective:** Run a full automated end-to-end test suite confirming all backend subsystems work together reliably.
-* **Deliverables:**
-  * `backend/tests/test_storage.py`: SQLite WAL operations, concurrent writes, `sync_rev` increments.
-  * `backend/tests/test_vault.py`: Git projection, commit logs, author tagging, and diff extraction.
-  * `backend/tests/test_memory.py`: Layer 1 prompt generation and Layer 2 hybrid context retrieval.
-  * `backend/tests/test_intake.py`: Ambiguity gate triggers, clarifying questions, and clean note updates.
-  * `backend/tests/test_onboarding.py`: Full onboarding flow synthesis.
-* **Verification Criteria:**
-  * `pytest` runs and all tests pass with $100\%$ green status.
+### Step 8: Folder Hierarchy & Physical Vault Directory Mirroring
+* **Objective:** Allow users to organize notes into nested folders that directly mirror the physical directory layout of the Git vault (`folders/Work/ScribeX/architecture.md`).
+* **Key Deliverables:**
+  * `frontend/src/components/navigation/FolderTree.tsx`: Recursive folder tree navigator with expand/collapse states and note counts.
+  * `frontend/src/screens/FoldersScreen.tsx`: Dedicated folder browser with folder creation, nested subfolders, note drag-and-drop moving, and breadcrumb navigation.
 
 ---
 
-## 3. How We Track and Execute
+### Step 9: Multi-Tags, Starred Favorites, Pinning, Archive & 30-Day Trash
+* **Objective:** Deliver multi-dimensional, non-exclusive organization that crosses folder boundaries freely.
+* **Key Deliverables:**
+  * `frontend/src/components/ui/TagChips.tsx`: Visual tag pills with one-click filtering.
+  * Note pinning (`is_pinned = 1`) that anchors critical notes to the top of the canvas.
+  * Starred favorites (`is_favorite = 1`) for quick access.
+  * Archive view (`status = 'archived'`) preserving historical context outside the main view.
+  * 30-day recoverable trash (`status = 'trashed'`) with auto-purge calculation.
 
-1. We work on **one step at a time**.
-2. Before starting a step, we mark its status as `[ ] IN_PROGRESS` in this document.
-3. Once the step's code is written and verified against its test criteria, we mark it as `[x] COMPLETED` and move to the next step.
-4. Git commits will reference the specific step (e.g., `feat(phase1): step 1 - backend scaffolding and path resolver`).
+---
+
+### Step 10: Bidirectional Cross-Note Links (`[[Note Title]]`) & Relational Graph
+* **Objective:** Enable seamless knowledge interconnectivity without forcing arbitrary folder duplication.
+* **Key Deliverables:**
+  * `frontend/src/components/editor/LinkAutocomplete.tsx`: Typing `[[` triggers an instant fuzzy-search modal over all existing note titles. Selecting a title inserts `[[Note Title]]`.
+  * `frontend/src/components/relations/BacklinksDrawer.tsx`: Expandable drawer showing all notes that link to the currently active note.
+  * `frontend/src/db/relationsRepo.ts`: SQLite queries tracking `entity_relations` (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`).
+
+---
+
+### Step 11: Fast Local Search (< 5ms via FTS5) & Dynamic Smart Collections
+* **Objective:** Sub-5ms instant local search across all notes, blocks, tags, and tasks using SQLite FTS5 (Full-Text Search).
+* **Key Deliverables:**
+  * `frontend/src/db/searchRepo.ts`: FTS5 virtual table queries with snippet highlights and rank scoring.
+  * Dynamic Smart Collections: Virtual saved queries (e.g., `Show all notes tagged #urgent updated in the last 7 days`).
+  * `frontend/src/screens/SearchScreen.tsx`: Instant search modal with instant keystroke results.
+
+---
+
+### Step 12: Phase 1 Master Verification Suite & E2E Canvas Testing
+* **Objective:** Comprehensive automated test suite validating local database integrity, block manipulation, task synchronization, markdown AST round-tripping, and UI performance.
+* **Key Deliverables:**
+  * `frontend/src/core/__tests__/astSerializer.test.ts`: 100% round-trip fidelity between `NoteBlock[]` and Extended Markdown AST.
+  * `frontend/src/core/__tests__/sqlite_integrity.test.ts`: Validates WAL mode, foreign key cascades, task sync, and FTS5 search speed (< 5ms).
+  * `frontend/src/core/__tests__/manual_notes_suite.test.ts`: Master automated test runner covering all Phase 1 capabilities.

@@ -2,17 +2,23 @@
 
 ## 1. Product Vision & Core Philosophy
 
-The platform, ScribeX, is an intelligent, self-organizing universal note-taking system and proactive personal assistant - inspired by Friday (Iron man style Personal Assistant). The core objective is to drastically reduce manual organization while keeping the user in complete control. The user can simply provide raw inputs—thoughts, notes, tasks, updates, or files—and the AI assistant autonomously organizes, updates, links, prioritizes, and manages everything while maintaining a complete, evolving understanding of the user's life, past, present, and future goals. At the same time, the user retains full manual control over all context files and notes, with every manual edit logged in a history log so the AI can learn from the user's adjustments and continuously improve itself. Furthermore, the platform extends beyond passive note management into an active, agentic assistant capable of executing real-world tasks on the user's personal computer by orchestrating and verifying local CLI-based AI agents.
+The platform, **ScribeX**, is a modern, high-performance universal note-taking system and proactive personal assistant—inspired by Friday (Iron Man-style Personal Assistant). 
+
+### Foundational User Journey Axiom: Manual Notes First, AI Assistant Second
+The system is built from the **user's immediate journey first**:
+1. **The Instant Manual Canvas:** When the user opens ScribeX, their initial experience is entering an uncluttered, fluid, non-generic personal knowledge canvas. They can immediately capture notes, format code, record audio, sketch ideas, embed documents, manage nested folders, tag items, and track tasks across all **42 planned input methods** (detailed in `Universal_Note_Input_Structure_and_Relations.md`) with sub-5ms local-first speed (`expo-sqlite`). There is zero forced onboarding friction or AI gating.
+2. **The Intelligent Force Multiplier (Friday):** Once the user's manual note foundation is active, the AI assistant ("Friday") seamlessly connects to this living knowledge base. Friday acts as an autonomous force multiplier: handling proactive organization, cross-note connections, goal alignment, task tracking, daily briefings, and Remote PC CLI agent execution—all while strictly respecting the user's manual control and learning from every user edit.
 
 ---
 
 ## 2. Core Functional Requirements
 
-### 2.1. Frictionless Universal Input & User Control (Reduced Manual Organization)
-* **Single Point of Entry:** The user must be able to input any type of information (quick thoughts, meeting notes, daily tasks, life updates, documents, or media files) into a single, unified input space without needing to manually choose a folder, category, tag, or destination note every time.
-* **Reduced Manual Categorization:** The assistant should handle the heavy lifting of organizing, categorizing, and placing information automatically so the user's manual effort is minimized.
-* **Full User Control Over Context Files:** The user must have complete access and authority to manually view, edit, reorganize, move, or delete any context file, note, group, or priority mapping at any time.
-* **Manual Change History Log for AI Learning:** Whenever the user manually edits a note, reorganizes a group, or modifies a context file, the platform must record a detailed history log of those manual changes. The AI assistant must analyze these manual adjustments to understand the user's preferences, correct its own organizational habits, and improve future automated placements and updates.
+### 2.1. Frictionless Universal Input & Manual Note Foundation
+* **Frictionless Capture Canvas:** The user can instantly open a note canvas and write with zero delay. No network spinner, no mandatory categorization, and no AI interrogation before writing.
+* **42 Comprehensive Manual Input Methods:** Full native support for rich text, markdown, collapsible outlines, interactive tables, syntax-highlighted code blocks with copy, KaTeX equations, callouts, vector sketch pads, audio voice recordings, document attachments (PDFs, spreadsheets), and web bookmarks.
+* **Fluid Non-Generic UI Aesthetics:** The interface strictly avoids generic card grids, boxy SaaS widgets, or cookie-cutter dashboard templates. It delivers a serene, soft minimalist editorial canvas with vivid pastel note accents, compact circular controls, and generous breathing room.
+* **Full User Sovereignty Over Context Files:** The user retains 100% manual authority to create, edit, rename, reorganize, move, or delete any note, folder, tag, or relation at any time.
+* **Manual Change History Log for AI Learning:** Every manual edit the user makes is recorded as a versioned diff in the Git vault. The AI assistant analyzes these manual adjustments to learn the user's organizational preferences and filing habits without disturbing the user's manual workflow.
 
 ### 2.2. Autonomous Note Creation, Editing, and Merging
 * **Intelligent Content Routing:** Whenever the user inputs new information, the assistant must analyze its meaning and context against all existing notes.
@@ -38,9 +44,9 @@ The platform, ScribeX, is an intelligent, self-organizing universal note-taking 
 
 ## 3. Personal Knowledge Architecture ("Everything About Me")
 
-### 3.1. Comprehensive Interactive Onboarding
-* **Initial Discovery Interview:** When the platform is first used, the assistant must guide the user through a conversational onboarding process.
-* **Foundational Profile Creation:** During onboarding, the assistant must proactively ask questions to capture all essential baseline information about the user, including:
+### 3.1. Interactive Personalization & Onboarding (User-Initiated)
+* **User-Initiated Discovery Interview:** When the user is ready to introduce themselves to Friday and personalize their AI companion, they can trigger the conversational onboarding interview. It does NOT block or lock the user out of the manual note-taking canvas.
+* **Foundational Profile Creation:** During onboarding, the assistant proactively asks thoughtful questions to capture baseline information about the user, including:
   * Full name and personal identity details.
   * Current daily responsibilities, routines, and activities.
   * Complete career journey (past roles, skills, milestones, and transitions).
@@ -117,8 +123,9 @@ The platform, ScribeX, is an intelligent, self-organizing universal note-taking 
 
 ## 6. Core User Workflows to Support
 
-* **Onboarding Flow:** The assistant interviews the user, builds the initial "Everything About Me" profile, sets up initial note groups, and establishes the first daily checklist and goal hierarchy.
-* **Quick Capture Flow:** The user drops a raw thought, update, or file into the assistant. The assistant checks if clarification is needed; if clear, it updates/creates the right notes, adjusts priorities, logs any personal evolution, and suggests actionable next steps.
-* **Daily Review & Update Flow:** The assistant presents the user with their prioritized daily checklist, highlights updates or neglected goals, and adjusts the day's plan based on the user's feedback.
-* **Deep Retrieval & Reflection Flow:** The user asks about a topic, file, past task, or their own personal/career growth, and the assistant synthesizes a complete, accurate response drawing from the user's entire historical timeline and current notes.
-* **Remote PC Agentic Execution Flow:** The user assigns a practical task from the web or mobile app to be executed on their personal PC. The Main AI Assistant pulls the full context from the user's notes, dispatches instructions to the user's configured CLI AI agent on the remote PC, monitors and independently verifies that the work was completed properly, triggers corrections if needed, and updates the user's notes and task history upon verified completion.
+* **Instant Note-Taking & Organization Flow (Foundation):** The user opens the app to an immediate, fluid notes canvas. They create, format, and structure notes using 20 composable block types (text, checklists, code, KaTeX, tables, drawings, audio, PDFs, bookmarks), organize via nested folders and multi-tags, connect notes with bidirectional `[[Note Title]]` links, and track unified tasks with instant sub-5ms local SQLite persistence.
+* **User-Initiated Onboarding Flow:** When ready, the user initiates a conversation with Friday. Friday interviews the user, builds the foundational Layer 1 profile ("Everything About Me"), and aligns active short- and long-term goals with their existing notes.
+* **Quick Capture & Intake Flow:** The user drops a thought, link, or media file into the universal intake. Friday analyzes the context, prompts for clarification if ambiguous, updates/creates relevant notes, logs any personal evolution, and suggests actionable next steps.
+* **Daily Review & Proactive Update Flow:** Friday presents the user with their prioritized daily checklist, highlights neglected goals or upcoming deadlines, and dynamically recalibrates based on feedback.
+* **Deep Retrieval & Life Reflection Flow:** The user asks about a past project, document, task, or personal evolution, and Friday synthesizes a rich answer spanning the historical timeline ("Versions of Me") and current living notes.
+* **Remote PC Agentic Execution Flow:** The user assigns a technical or operational task from mobile or web. Friday enriches the task with context from the user's notes, dispatches it to the user's configured CLI agent (Claude Code, Gemini CLI, etc.) on their PC, monitors progress, independently verifies the output with tests/git diffs, and updates notes upon verified completion.

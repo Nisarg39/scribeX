@@ -1,10 +1,12 @@
 # Phase 2: Step-by-Step Implementation Plan
-## Universal Expo App, Pastel Tile UI & Resilient Delta Sync
+## Resilient Client-Server Delta Sync & Multi-Device Vault Mirroring
 
-> **Document Status:** Active Tracking Document  
-> **Target Directories:** `frontend/` (Expo App) & `backend/app/api/` (Sync Endpoints)  
-> **UI Design System Source of Truth:** [ScribeX-Pastel-Tile-UI-Design-System.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/ScribeX-Pastel-Tile-UI-Design-System.md)  
-> **Architecture Alignment:** [Technical_System_Architecture.md (Sections 3 & 4)](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md#4-bidirectional-synchronization-engine-delta-sync) and [Master_Tasks_Tracker.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Master_Tasks_Tracker.md).
+> **Document Status:** Architectural Implementation Blueprint  
+> **Target Directories:** `backend/` (FastAPI VPS Core) & `frontend/src/sync/` (Sync Engine Client)  
+> **Source of Truth Specifications:**  
+> - [Technical_System_Architecture.md (Sections 4 & 5)](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md)  
+> - [Universal_Note_Input_Structure_and_Relations.md (Section 5)](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md)  
+> - [Master_Tasks_Tracker.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Master_Tasks_Tracker.md)  
 
 ---
 
@@ -14,193 +16,95 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 
 | Step | Milestone / Component | Primary Files | Status |
 | :---: | :--- | :--- | :---: |
-| **1** | [Expo Scaffolding & Pastel Tile Design System Tokens](#step-1-expo-universal-scaffolding--pastel-tile-design-system-tokens) | `frontend/package.json`, `frontend/src/theme/tokens.ts`, `frontend/src/theme/ThemeProvider.tsx` | `[x] COMPLETED` |
-| **2** | [Backend Delta Sync Endpoints (WebSocket Doorbell + REST Catch-up)](#step-2-backend-delta-sync-endpoints-websocket-doorbell--rest-catch-up) | `backend/app/api/sync_ws.py`, `backend/app/api/sync_http.py`, `backend/tests/test_sync.py` | `[x] COMPLETED` |
-| **3** | [Client Offline-First SQLite Engine (`expo-sqlite`)](#step-3-client-offline-first-sqlite-engine-expo-sqlite) | `frontend/src/db/sqliteClient.ts`, `frontend/src/db/schema.ts`, `frontend/src/db/notesRepo.ts` | `[x] COMPLETED` |
-| **4** | [Real-Time Delta Sync Engine & Client State Machine](#step-4-real-time-delta-sync-engine--client-state-machine) | `frontend/src/sync/syncEngine.ts`, `frontend/src/sync/useSync.ts` | `[x] COMPLETED` |
-| **5** | [Scalable Architecture & Folder Structure + Central User & Auth State Management](#step-5-scalable-architecture--folder-structure--central-user--auth-state-management) | `frontend/src/auth/`, `frontend/src/navigation/`, `frontend/src/core/`, `frontend/src/services/` | `[x] COMPLETED` |
-| **6** | [Universal Intake Bar & Minimalist Workspace Canvas](#step-6-universal-intake-bar--minimalist-workspace-canvas) | `frontend/src/screens/notes/NotesHomeScreen.tsx`, `frontend/src/components/intake/` | `[x] COMPLETED` |
-| **7** | [Composable Block-Based Note Surface & AST Engine](#step-7-composable-block-based-note-surface--ast-engine) | `frontend/src/components/editor/BlockEditor.tsx`, `frontend/src/core/astSerializer.ts` | `[x] COMPLETED` |
-| **8** | [Ask-Before-Write Ambiguity Gate & Multi-Modal Asset Pipeline](#step-8-ask-before-write-ambiguity-gate--multi-modal-asset-pipeline) | `frontend/src/components/intake/ClarificationModal.tsx`, `frontend/src/services/assetService.ts` | `[x] COMPLETED` |
-| **9** | [Conversational Onboarding Flow & Layer 1 Profile Screen](#step-9-conversational-onboarding-flow--layer-1-profile-screen) | `frontend/src/screens/OnboardingScreen.tsx`, `ProfileScreen.tsx` | `[x] COMPLETED` |
-| **10** | [Phase 2 Cross-Platform Verification & E2E Sync Testing](#step-10-phase-2-cross-platform-verification--e2e-sync-testing) | `frontend/__tests__/`, `backend/tests/test_sync.py` | `[x] COMPLETED` |
+| **1** | [FastAPI Core VPS Scaffolding, Config & SQLite WAL Schemas](#step-1-fastapi-core-vps-scaffolding-config--sqlite-wal-schemas) | `backend/pyproject.toml`, `backend/app/main.py`, `backend/app/db/schemas.sql`, `backend/app/db/sqlite_db.py` | `[ ] PENDING` |
+| **2** | [Event-Sourced Delta Sync Ledger (`sync_changelog` & Monotonic `sync_rev`)](#step-2-event-sourced-delta-sync-ledger) | `backend/app/api/sync_ws.py`, `backend/app/db/sqlite_db.py` | `[ ] PENDING` |
+| **3** | [Real-Time WebSocket Doorbell Hub (`/api/v1/ws/sync`)](#step-3-real-time-websocket-doorbell-hub) | `backend/app/api/sync_ws.py`, `frontend/src/sync/syncClient.ts` | `[ ] PENDING` |
+| **4** | [Guaranteed Reconnection Catch-Up & Handshake State Reconciliation](#step-4-guaranteed-reconnection-catch-up--handshake-state-reconciliation) | `backend/app/api/sync_ws.py`, `frontend/src/sync/syncEngine.ts` | `[ ] PENDING` |
+| **5** | [HTTP REST Sync Fallback Endpoints (`/push`, `/pull`)](#step-5-http-rest-sync-fallback-endpoints) | `backend/app/api/sync_http.py`, `frontend/src/sync/syncClient.ts` | `[ ] PENDING` |
+| **6** | [Binary Asset Ingestion API & Storage (`/api/v1/assets/upload`)](#step-6-binary-asset-ingestion-api--storage) | `backend/app/api/assets.py`, `frontend/src/services/assetService.ts` | `[ ] PENDING` |
+| **7** | [Asynchronous Git Markdown Vault Projector (`GitPython`)](#step-7-asynchronous-git-markdown-vault-projector) | `backend/app/storage/git_vault.py` | `[ ] PENDING` |
+| **8** | [Multi-Device Concurrency & Conflict Resolution Strategy](#step-8-multi-device-concurrency--conflict-resolution-strategy) | `backend/app/db/sqlite_db.py`, `frontend/src/sync/syncEngine.ts` | `[ ] PENDING` |
+| **9** | [Phase 2 Master Verification Suite & Multi-Device Sync Testing](#step-9-phase-2-master-verification-suite--multi-device-sync-testing) | `backend/tests/test_sync.py`, `frontend/src/sync/__tests__/sync.test.ts` | `[ ] PENDING` |
 
 ---
 
 ## 2. Detailed Step-by-Step Milestones
 
----
-
-### Step 1: Expo Universal Scaffolding & Pastel Tile Design System Tokens
-* **Objective:** Scaffold the cross-platform Expo application targeting iOS, Android, and Web from a single codebase, establishing the complete semantic token hierarchy defined in [ScribeX-Pastel-Tile-UI-Design-System.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/ScribeX-Pastel-Tile-UI-Design-System.md).
-* **Deliverables:**
-  * `frontend/`:
-    * Initialized Expo project (`expo`, `expo-router`, `react-native`, `react-native-web`, `lucide-react-native`).
-    * Configured TypeScript (`tsconfig.json`) and path aliases (`@/*`).
-  * `frontend/src/theme/tokens.ts`:
-    * **Light Theme Tokens:**
-      * Outer canvas: `--color-app-bg: #E8ECF5`
-      * Main workspace: `--color-surface: #FFFFFF`
-      * Primary text: `--color-text-primary: #171717`
-      * Secondary text: `--color-text-secondary: #626262`
-      * Muted text: `--color-text-muted: #929292`
-      * Subtle divider: `--color-border-subtle: #E8E8E8`
-      * Circular actions: `--color-icon-bg: #111111`, icon: `--color-icon-fg: #FFFFFF`
-    * **Dark Theme Tokens (Charcoal Canvas):**
-      * Outer & main workspace: `--color-app-bg: #242424`, `--color-surface: #242424`
-      * Raised action surfaces: `--color-surface-raised: #303030`
-      * Primary text: `--color-text-primary: #F7F7F7`
-      * Secondary text: `--color-text-secondary: #B5B5B5`
-      * Muted text: `--color-text-muted: #858585`
-      * Subtle divider: `--color-border-subtle: #3A3A3A`
-      * Raised icon controls: `--color-icon-bg: #383838`, icon: `--color-icon-fg: #FFFFFF`
-    * **Shared Pastel Palette Tokens:**
-      * Apricot: `--note-apricot: #FFC96F`, Coral: `--note-coral: #FF9277`, Lime: `--note-lime: #E5F28B`
-      * Lavender: `--note-lavender: #B18AF3`, Cyan: `--note-cyan: #08C4E5`, Pink: `--note-pink: #F5A4C6`, Sky: `--note-sky: #8EDCEB`
-      * **CRITICAL RULE:** Avoid creating generic UI layouts like cards and standard box components. Use clean typography, open space, and bespoke layout rhythms.
-  * `frontend/src/theme/ThemeProvider.tsx`:
-    * Theme context supporting light, dark, and system preference with persistent local storage.
-* **Verification Criteria:**
-  * `npx expo start` boots cleanly for Web, iOS, and Android.
-  * Switching between light and dark themes transitions smoothly without page reloads.
+### Step 1: FastAPI Core VPS Scaffolding, Config & SQLite WAL Schemas
+* **Objective:** Scaffold the 24/7 Cloud VPS backend using FastAPI, configured with multi-tenant parameterized `user_id` convention (defaulting to `'default_user'`) and embedded SQLite WAL operational storage.
+* **Key Deliverables:**
+  * `backend/pyproject.toml`: FastAPI, Uvicorn, `aiosqlite`, `pydantic`, `GitPython`, `python-multipart`.
+  * `backend/app/db/schemas.sql`: Complete DDL for `folders`, `tags`, `notes`, `note_tags`, `tasks`, `assets`, `entity_relations`, `sync_changelog`.
+  * `backend/app/db/sqlite_db.py`: Async SQLite connection manager with WAL mode and transaction rollback support.
 
 ---
 
-### Step 2: Backend Delta Sync Endpoints (WebSocket Doorbell + REST Catch-up)
-* **Objective:** Implement the real-time server-side synchronization layer in FastAPI to support multi-device instant catch-up and push notifications.
-* **Deliverables:**
-  * `backend/app/api/sync_ws.py`:
-    * Persistent WebSocket endpoint (`/ws/sync`).
-    * In-memory connection manager tracking active client connections per `user_id`.
-    * Doorbell broadcast trigger: whenever a note or entity is inserted/updated/deleted, broadcasts lightweight `{"type": "SYNC_PING", "latest_sync_rev": N}` to all active devices of that tenant.
-  * `backend/app/api/sync_http.py`:
-    * `GET /api/v1/sync/deltas?since_rev=X`: Returns ordered array of changelog deltas from `sync_changelog` where `sync_rev > X`.
-    * `POST /api/v1/sync/push`: Accepts client-originated offline mutations, executes atomic SQLite commit $\rightarrow$ Git Vault projection $\rightarrow$ LanceDB indexing, and broadcasts `SYNC_PING`.
-  * `backend/tests/test_sync.py`:
-    * Automated test verifying WebSocket doorbell ping dispatch upon note save.
-    * Automated test verifying delta retrieval catch-up handshake (`since_rev=0` vs `since_rev=N`).
-* **Verification Criteria:**
-  * Calling `/api/v1/sync/deltas?since_rev=0` returns valid serialized changelog entries.
-  * Saving a note fires a WebSocket message to connected test clients in $< 20\text{ ms}$.
+### Step 2: Event-Sourced Delta Sync Ledger (`sync_changelog` & Monotonic `sync_rev`)
+* **Objective:** Ensure every insert, update, or delete across all 6 operational entities produces an immutable changelog entry with an auto-incrementing integer revision counter (`sync_rev`).
+* **Supported Entity Types:**
+  * `note`: Markdown content and `blocks_json` AST.
+  * `folder`: Hierarchical structure and physical mirror paths.
+  * `tag`: Classification labels.
+  * `task`: Unified task state and priority weights.
+  * `relation`: Knowledge graph edges.
+  * `asset`: Binary attachment metadata and processing state.
 
 ---
 
-### Step 3: Client Offline-First SQLite Engine (`expo-sqlite`)
-* **Objective:** Establish the local on-device SQLite database replica so that all reads occur instantly with sub-5ms latency and zero network spinners.
-* **Deliverables:**
-  * `frontend/src/db/sqliteClient.ts`:
-    * Embedded SQLite connection manager using `expo-sqlite`.
-    * Local schema initialization matching server core (`notes`, `local_sync_meta`, `pending_mutations`).
-  * `frontend/src/db/notesRepo.ts`:
-    * Local CRUD queries: `getLocalNotes()`, `getLocalNoteById()`, `saveLocalNote()`, `deleteLocalNote()`, and `applyServerDeltas()`.
-* **Verification Criteria:**
-  * Local database boots and inserts 100 sample notes with query latency $< 5\text{ ms}$.
-  * App operates with complete read/write capability while offline (airplane mode).
+### Step 3: Real-Time WebSocket Doorbell Hub (`/api/v1/ws/sync`)
+* **Objective:** Sub-50ms instant push notifications across all active client devices whenever an entity changes.
+* **Architecture:**
+  * The WebSocket acts as an instant "doorbell" push notification rather than a fragile stateful pipeline.
+  * When Device A pushes a change, FastAPI commits the change, increments `sync_rev`, and immediately broadcasts `{ type: "SYNC_PING", latest_rev: 42 }` to all connected tenant devices.
 
 ---
 
-### Step 4: Real-Time Delta Sync Engine & Client State Machine
-* **Objective:** Build the bidirectional synchronization engine on the client that combines WebSocket doorbell push, HTTP catch-up handshake, and offline mutation drain.
-* **Deliverables:**
-  * `frontend/src/sync/syncEngine.ts`: Doorbell listener, catch-up handshake, and mutation queue drain.
-  * `frontend/src/sync/useSync.ts`: React hook exposing sync status (`synced`, `syncing`, `offline`, `error`).
-* **Verification Criteria:**
-  * Editing a note on Device A triggers WebSocket doorbell ping $\rightarrow$ Device B applies delta and updates UI in $< 100\text{ ms}$.
-  * Reconnecting cleanly flushes offline mutations without conflict.
+### Step 4: Guaranteed Reconnection Catch-Up & Handshake State Reconciliation
+* **Objective:** Ensure devices that were offline, asleep, or disconnected gracefully catch up on all missed revisions without data loss.
+* **Handshake Protocol:**
+  1. Client sends `{ type: "CLIENT_HANDSHAKE", local_sync_rev: 30 }`.
+  2. Server queries `sync_changelog WHERE sync_rev > 30 ORDER BY sync_rev ASC`.
+  3. Server streams the missing deltas to the client.
+  4. Client applies deltas inside a single local SQLite transaction, then pushes any pending local changes.
 
 ---
 
-### Step 5: Scalable Architecture & Folder Structure + Central User & Auth State Management
-* **Objective:** Establish modular directory architecture, implement central authentication (`AuthContext`), and integrate dynamic multi-tenant session binding for the sync engine and local database.
-* **Deliverables:**
-  * Scalable directory architecture (`frontend/src/core/`, `theme/`, `db/`, `sync/`, `auth/`, `navigation/`, `screens/`, `services/`).
-  * Central auth state management (`AuthContext.tsx`, `useAuth.ts`, `sessionStorage.ts`).
-  * Dynamic multi-tenant sync & database binding with token handling.
-* **Verification Criteria:**
-  * Clean build with 0 TypeScript errors.
-  * Sign-In / Sign-Out transitions immediately switch between the Auth Screen and the main Notes workspace.
+### Step 5: HTTP REST Sync Fallback Endpoints (`/push`, `/pull`)
+* **Objective:** Guarantee 100% sync reliability in restrictive network environments (corporate firewalls, public Wi-Fi) where WebSockets may be blocked.
+* **Endpoints:**
+  * `POST /api/v1/sync/push`: Accepts array of local mutation deltas.
+  * `POST /api/v1/sync/pull`: Returns server deltas since `client_sync_rev`.
 
 ---
 
-### Step 6: Universal Intake Bar & Minimalist Workspace Canvas
-* **Objective:** Build the unified input bar and the minimalist post-login workspace canvas adhering to non-generic UI principles (clean typography, generous whitespace, bespoke non-card layout rhythms, and top-right mode/logout controls).
-* **Deliverables:**
-  * `frontend/src/screens/notes/NotesHomeScreen.tsx`:
-    * Clean, distraction-free workspace canvas with top-right theme toggle and logout actions.
-    * Prominent workspace heading with dynamic greeting and active status indicators.
-    * Dynamic non-card note rendering with high-contrast text and pastel accent tokens.
-  * `frontend/src/components/intake/IntakeBar.tsx`:
-    * Universal Intake Bar for friction-free text capture, voice audio recording, and file drops.
-    * Connects directly to `POST /api/v1/intake` on the VPS backend.
-* **Verification Criteria:**
-  * Friction-free text capture writes optimistically to local SQLite and syncs in $< 50\text{ ms}$.
-  * Avoids generic card patterns; provides bespoke, fluid responsive workspace layout.
+### Step 6: Binary Asset Ingestion API & Storage (`/api/v1/assets/upload`)
+* **Objective:** Non-blocking multi-part media upload pipeline saving audio recordings, PDFs, spreadsheets, and images into the physical vault directory (`data/vault/{user_id}/_assets/`).
+* **Endpoints:**
+  * `POST /api/v1/assets/upload`: Multi-part form upload with SHA-256 hash validation.
+  * `GET /api/v1/assets/{asset_id}/stream`: Range-request-enabled media streaming.
 
 ---
 
-### Step 7: Composable Block-Based Note Surface & AST Engine
-* **Objective:** Implement the universal block-based note editor supporting the 20-block registry (paragraphs, headings, checklists, code, KaTeX, audio transcripts, callouts) and the bidirectional Extended Markdown AST serializer.
-* **Deliverables:**
-  * `frontend/src/core/astSerializer.ts`:
-    * Bidirectional converter: parses Markdown with inline block metadata $\longleftrightarrow$ reactive `NoteBlock[]`.
-    * Injects deterministic task IDs (`<!-- scribex:task id=... -->`) into Markdown task items for single-source-of-truth syncing.
-  * `frontend/src/components/editor/BlockEditor.tsx`:
-    * Composable, fluid block surface supporting inline editing, reordering, and type conversion.
-    * Unified task interaction: checking off an inline task updates the unified `tasks` table and emits a task delta.
-    * Auto-save debounce (300ms) triggering optimistic local SQLite save and sync queue.
-* **Verification Criteria:**
-  * Markdown AST serialization and deserialization round-trips with 100% data fidelity.
-  * Editing an inline task inside a note immediately syncs to the global task state.
+### Step 7: Asynchronous Git Markdown Vault Projector (`GitPython`)
+* **Objective:** Asynchronously serialize SQLite note transactions into clean Extended Markdown AST `.md` files committed to a local Git repository on the VPS disk.
+* **Key Guarantees:**
+  * Live user typing is never blocked by disk-level Git commit operations.
+  * Physical folder hierarchy is preserved (`data/vault/{user_id}/folders/...`).
+  * Notes are 100% human-readable with zero proprietary locks.
 
 ---
 
-### Step 8: Ask-Before-Write Ambiguity Gate & Multi-Modal Asset Pipeline
-* **Objective:** Build the interactive Clarification Modal for the Ask-Before-Write Ambiguity Gate and integrate the binary asset upload pipeline.
-* **Deliverables:**
-  * `frontend/src/components/intake/ClarificationModal.tsx`:
-    * Intercepts `status: "NEEDS_CLARIFICATION"` from `POST /api/v1/intake`.
-    * Presents Friday's clarifying questions with actionable choice pills and text input.
-    * Dispatches user resolution to `POST /api/v1/intake/{staging_id}/clarify`.
-  * `frontend/src/services/assetService.ts`:
-    * Handles multipart uploads to `POST /api/v1/assets/upload`.
-    * Listens for WebSocket `ASSET_PROCESSED` events to hydrate OCR and Whisper transcripts.
-* **Verification Criteria:**
-  * Ambiguous intake inputs pause and display the Clarification Modal.
-  * Submitting an answer resolves the staging item and updates the note canvas with zero layout shift.
+### Step 8: Multi-Device Concurrency & Conflict Resolution Strategy
+* **Objective:** Deterministic conflict resolution across concurrent offline edits.
+* **Strategy:**
+  * Metadata & Tasks: Field-level Last-Write-Wins (LWW) based on NTP UTC timestamps (`updated_at`).
+  * Note Blocks: 3-way merge on the Extended Markdown AST. If non-conflicting blocks were edited, they merge cleanly; conflicting lines are preserved with conflict markers for easy resolution.
 
 ---
 
-### Step 9: Conversational Onboarding Flow & Layer 1 Profile Screen
-* **Objective:** Build the interactive onboarding interview interface that guides new users through the 6 profile pillars on first launch and exposes the living cognitive profile viewer.
-* **Deliverables:**
-  * `frontend/src/screens/OnboardingScreen.tsx`:
-    * Multi-turn conversational interface connecting to `POST /api/v1/onboarding/start`, `/message`, `/finalize`.
-    * Guided questions and user responses across the 6 pillars.
-  * `frontend/src/screens/ProfileScreen.tsx`:
-    * Dynamic viewer for Layer 1 Core Identity (`_core/identity.md`).
-    * Displays User Mindset, Active Goals, Current Top Priorities, and Note Groups.
-* **Verification Criteria:**
-  * Completing the onboarding interview transitions the app into the main Notes workspace with initial seed context.
-
----
-
-### Step 10: Phase 2 Cross-Platform Verification & E2E Sync Testing
-* **Objective:** Execute automated and manual end-to-end verification across Web, iOS, and Android to guarantee performance, design system fidelity, and sync resilience.
-* **Deliverables:**
-  * Component and integration tests for AST serializer, block editor, and ClarificationModal.
-  * Theme switching test verifying high-contrast dark text on pastel accents in both themes.
-  * Offline sync engine unit tests simulating network loss and recovery.
-  * Cross-platform build checks (`npx expo export --platform web`, iOS, Android).
-* **Verification Criteria:**
-  * 100% test pass rate across frontend and backend sync test suites.
-  * Two active browser/device clients sync note edits bidirectionally in $< 100\text{ ms}$.
-
----
-
-## 3. How We Track and Execute
-
-1. We work on **one step at a time**.
-2. Before starting a step, we mark its status as `[ ] IN_PROGRESS` in this document and in [Master_Tasks_Tracker.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Master_Tasks_Tracker.md).
-3. Once the step's code is written and verified against its test criteria, we mark it as `[x] COMPLETED` and move to the next step.
-4. Git commits will reference the specific step (e.g., `feat(phase2): step 5 - scalable architecture and central auth state management`).
-5. **No code will be pushed to GitHub until the user explicitly says so.**
+### Step 9: Phase 2 Master Verification Suite & Multi-Device Sync Testing
+* **Objective:** Automated E2E verification simulating two offline clients making concurrent edits and reconciling cleanly upon reconnection.
+* **Verification Command:**
+  ```bash
+  cd backend && pytest tests/test_sync.py -v
+  ```
