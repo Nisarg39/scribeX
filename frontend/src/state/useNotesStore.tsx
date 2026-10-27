@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { NoteItem, TaskItem, ComposableBlock } from '../types/note';
+import { NoteItem, TaskItem, ComposableBlock, TaskPriority } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
 import { notesRepo } from '../db/notesRepo';
 import { tasksRepo } from '../db/tasksRepo';
+import { serializeBlocksToMarkdown } from '../core/astSerializer';
 
 interface NotesContextValue {
   notes: NoteItem[];
@@ -12,8 +13,17 @@ interface NotesContextValue {
   setActiveFilter: (filter: string) => void;
   addNote: (title: string, content: string, colorToken?: NoteColorToken, folderPath?: string) => Promise<void>;
   toggleFavorite: (noteId: string) => Promise<void>;
-  addTask: (title: string, noteId?: string, noteTitle?: string, noteColorToken?: NoteColorToken) => Promise<void>;
+  addTask: (
+    title: string, 
+    priority?: TaskPriority, 
+    dueDate?: string, 
+    noteId?: string, 
+    noteTitle?: string, 
+    noteColorToken?: NoteColorToken
+  ) => Promise<void>;
   toggleTask: (taskId: string) => Promise<void>;
+  updateTaskPriority: (taskId: string, priority: TaskPriority) => Promise<void>;
+  updateTaskDueDate: (taskId: string, dueDate: string) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
   refreshFromDB: () => Promise<void>;
 }
@@ -38,6 +48,8 @@ const NotesContext = createContext<NotesContextValue>({
   toggleFavorite: async () => {},
   addTask: async () => {},
   toggleTask: async () => {},
+  updateTaskPriority: async () => {},
+  updateTaskDueDate: async () => {},
   deleteTask: async () => {},
   refreshFromDB: async () => {},
 });
@@ -107,7 +119,6 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         colorToken: nextColor,
       });
 
-      // Update state with confirmed persisted item
       setNotes((prev) => prev.map((n) => (n.id === tempId ? created : n)));
     } catch (err) {
       console.warn('Failed to persist note via notesRepo:', err);
@@ -115,7 +126,6 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const toggleFavorite = async (noteId: string) => {
-    // Optimistic update
     setNotes((prev) =>
       prev.map((n) => (n.id === noteId ? { ...n, isFavorite: !n.isFavorite } : n))
     );
@@ -129,6 +139,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const addTask = async (
     title: string,
+    priority: TaskPriority = 'none',
+    dueDate: string = 'Today',
     noteId?: string,
     noteTitle?: string,
     noteColorToken?: NoteColorToken
@@ -145,8 +157,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       noteColorToken,
       title: cleanTitle,
       isCompleted: false,
-      priority: 'none',
-      dueDate: 'Today',
+      priority,
+      dueDate,
       createdAt: 'Just now',
       updatedAt: 'Just now',
     };
@@ -157,6 +169,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const created = await tasksRepo.createTask({
         id: tempId,
         title: cleanTitle,
+        priority,
+        dueDate,
         noteId,
         noteTitle,
         noteColorToken,
@@ -169,14 +183,154 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const toggleTask = async (taskId: string) => {
+    let noteIdToSync: string | undefined;
+    let nextCheckedState = false;
+
+    // 1. Optimistic update of task in tasks array
     setTasks((prev) =>
-      prev.map((t) => (t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t))
+      prev.map((t) => {
+        if (t.id === taskId) {
+          nextCheckedState = !t.isCompleted;
+          noteIdToSync = t.noteId;
+          return { ...t, isCompleted: nextCheckedState };
+        }
+        return t;
+      })
     );
+
+    // 2. If task belongs to an origin note, sync checklist block in note too!
+    if (noteIdToSync) {
+      setNotes((prevNotes) =>
+        prevNotes.map((n) => {
+          if (n.id !== noteIdToSync) return n;
+
+          const updatedBlocks = (n.blocks || []).map((b) => {
+            if (b.type === 'checklist' && (b.metadata?.taskId === taskId || b.id === taskId)) {
+              return {
+                ...b,
+                metadata: {
+                  ...b.metadata,
+                  checked: nextCheckedState,
+                },
+              };
+            }
+            return b;
+          });
+
+          const updatedMarkdown = serializeBlocksToMarkdown(updatedBlocks);
+
+          notesRepo
+            .updateNote(n.id, {
+              blocks: updatedBlocks,
+              contentMarkdown: updatedMarkdown,
+            })
+            .catch((err) => console.warn('Failed to sync note block on task toggle:', err));
+
+          return {
+            ...n,
+            blocks: updatedBlocks,
+            contentMarkdown: updatedMarkdown,
+          };
+        })
+      );
+    }
 
     try {
       await tasksRepo.toggleTask(taskId);
     } catch (err) {
       console.warn('Failed to toggle task via tasksRepo:', err);
+    }
+  };
+
+  const updateTaskPriority = async (taskId: string, priority: TaskPriority) => {
+    let noteIdToSync: string | undefined;
+
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id === taskId) {
+          noteIdToSync = t.noteId;
+          return { ...t, priority };
+        }
+        return t;
+      })
+    );
+
+    if (noteIdToSync) {
+      setNotes((prevNotes) =>
+        prevNotes.map((n) => {
+          if (n.id !== noteIdToSync) return n;
+
+          const updatedBlocks = (n.blocks || []).map((b) => {
+            if (b.type === 'checklist' && (b.metadata?.taskId === taskId || b.id === taskId)) {
+              return {
+                ...b,
+                metadata: {
+                  ...b.metadata,
+                  priority,
+                },
+              };
+            }
+            return b;
+          });
+
+          const updatedMarkdown = serializeBlocksToMarkdown(updatedBlocks);
+          notesRepo.updateNote(n.id, { blocks: updatedBlocks, contentMarkdown: updatedMarkdown }).catch(() => {});
+
+          return { ...n, blocks: updatedBlocks, contentMarkdown: updatedMarkdown };
+        })
+      );
+    }
+
+    try {
+      await tasksRepo.updateTask(taskId, { priority });
+    } catch (err) {
+      console.warn('Failed to update task priority via tasksRepo:', err);
+    }
+  };
+
+  const updateTaskDueDate = async (taskId: string, dueDate: string) => {
+    let noteIdToSync: string | undefined;
+
+    setTasks((prev) =>
+      prev.map((t) => {
+        if (t.id === taskId) {
+          noteIdToSync = t.noteId;
+          return { ...t, dueDate };
+        }
+        return t;
+      })
+    );
+
+    if (noteIdToSync) {
+      setNotes((prevNotes) =>
+        prevNotes.map((n) => {
+          if (n.id !== noteIdToSync) return n;
+
+          const updatedBlocks = (n.blocks || []).map((b) => {
+            if (b.type === 'checklist' && (b.metadata?.taskId === taskId || b.id === taskId)) {
+              return {
+                ...b,
+                metadata: {
+                  ...b.metadata,
+                  dueDate,
+                },
+              };
+            }
+            return b;
+          });
+
+          const updatedMarkdown = serializeBlocksToMarkdown(updatedBlocks);
+          notesRepo.updateNote(n.id, { blocks: updatedBlocks, contentMarkdown: updatedMarkdown }).catch(() => {});
+
+          return { ...n, blocks: updatedBlocks, contentMarkdown: updatedMarkdown };
+        })
+      );
+    }
+
+    try {
+      await tasksRepo.updateTask(taskId, { dueDate });
+    } catch (err) {
+      console.warn('Failed to update task due date via tasksRepo:', err);
     }
   };
 
@@ -202,6 +356,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         toggleFavorite,
         addTask,
         toggleTask,
+        updateTaskPriority,
+        updateTaskDueDate,
         deleteTask,
         refreshFromDB,
       }}

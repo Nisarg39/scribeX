@@ -46,7 +46,7 @@
   - Audio voice recorder with waveform visualizer and scrub bar.
   - Document attachments (PDFs, spreadsheets) with preview cards.
   - Web bookmark preview cards with OpenGraph metadata scraping.
-- [ ] **Step 6: Unified Task Engine (Embedded Checklists $\leftrightarrow$ Global Task View)**
+- [x] **Step 6: Unified Task Engine (Embedded Checklists $\leftrightarrow$ Global Task View)**
   - Single-source-of-truth task entity linking note checklist blocks to global task records.
   - Reactive completion toggle, priority weights (`low`, `medium`, `high`, `urgent`), and due dates.
 - [ ] **Step 7: Hierarchical Folders & Physical Vault Directory Mirroring**

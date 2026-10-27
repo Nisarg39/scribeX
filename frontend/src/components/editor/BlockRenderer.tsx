@@ -33,7 +33,8 @@ import {
   AudioBlock,
   ImageBlock,
   FileBlock,
-  BookmarkBlock
+  BookmarkBlock,
+  ChecklistBlock
 } from './blocks';
 
 interface BlockRendererProps {
@@ -288,29 +289,18 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
       {/* 3. Checklist Block */}
       {block.type === 'checklist' && (
-        <View className="flex-row items-start gap-3 py-1">
-          <Pressable
-            onPress={() => onUpdateMetadata({ checked: !block.metadata?.checked })}
-            className="pt-1 active:scale-90"
-          >
-            {block.metadata?.checked ? (
-              <CheckCircle2 size={19} color={NoteColors.lime} strokeWidth={2.4} />
-            ) : (
-              <Circle size={19} color={isDark ? '#858585' : '#929292'} strokeWidth={2} />
-            )}
-          </Pressable>
-
-          <TextInput
-            multiline
-            placeholder="To-do item..."
-            placeholderTextColor={isDark ? '#858585' : '#929292'}
-            value={block.content}
-            onChangeText={onUpdateContent}
-            className={`flex-1 text-base leading-relaxed py-0 text-light-textPrimary dark:text-dark-textPrimary ${
-              block.metadata?.checked ? 'line-through text-light-textMuted dark:text-dark-textMuted' : ''
-            }`}
-          />
-        </View>
+        <ChecklistBlock
+          content={block.content}
+          checked={block.metadata?.checked || false}
+          taskId={block.metadata?.taskId}
+          priority={block.metadata?.priority}
+          dueDate={block.metadata?.dueDate}
+          onUpdateContent={onUpdateContent}
+          onToggleCheck={(checked) => onUpdateMetadata({ ...block.metadata, checked })}
+          onUpdatePriority={(priority) => onUpdateMetadata({ ...block.metadata, priority })}
+          onUpdateDueDate={(dueDate) => onUpdateMetadata({ ...block.metadata, dueDate })}
+          onDelete={onDelete}
+        />
       )}
 
       {/* 4. Code Block */}

@@ -165,6 +165,49 @@ export class TasksRepository {
   public async getTasksByNoteId(noteId: string): Promise<TaskItem[]> {
     return this.listTasks({ noteId });
   }
+
+  public async syncNoteChecklists(
+    noteId: string,
+    noteTitle: string,
+    noteColorToken: NoteColorToken | undefined,
+    checklistItems: Array<{ id: string; text: string; checked: boolean; priority?: any; dueDate?: string }>
+  ): Promise<void> {
+    const existing = await this.getTasksByNoteId(noteId);
+    const existingIds = new Set(existing.map((t) => t.id));
+    const currentIds = new Set(checklistItems.map((c) => c.id));
+
+    // 1. Delete tasks that were removed from the note
+    for (const ex of existing) {
+      if (!currentIds.has(ex.id)) {
+        await this.deleteTask(ex.id);
+      }
+    }
+
+    // 2. Insert or update
+    for (const item of checklistItems) {
+      if (!item.text.trim()) continue;
+
+      if (existingIds.has(item.id)) {
+        await this.updateTask(item.id, {
+          title: item.text.trim(),
+          isCompleted: item.checked,
+          priority: item.priority || 'none',
+          dueDate: item.dueDate || 'Today',
+        });
+      } else {
+        await this.createTask({
+          id: item.id,
+          noteId,
+          noteTitle,
+          noteColorToken,
+          title: item.text.trim(),
+          isCompleted: item.checked,
+          priority: item.priority || 'none',
+          dueDate: item.dueDate || 'Today',
+        });
+      }
+    }
+  }
 }
 
 export const tasksRepo = new TasksRepository();

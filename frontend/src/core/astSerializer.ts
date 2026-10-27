@@ -292,11 +292,29 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
     if (checkMatch) {
       flushParagraph();
       const isChecked = checkMatch[1].toLowerCase() === 'x';
+      let rawText = checkMatch[2].trim();
+      let taskId = `task-${Date.now()}-${blocks.length + 1}`;
+      let priority = 'none';
+      let dueDate = 'Today';
+
+      const taskCommentMatch = rawText.match(/<!--\s*scribex:task\s+id=([^\s]+)(?:\s+priority=([^\s]+))?(?:\s+due=([^\s]+))?\s*-->/);
+      if (taskCommentMatch) {
+        taskId = taskCommentMatch[1];
+        if (taskCommentMatch[2]) priority = taskCommentMatch[2];
+        if (taskCommentMatch[3]) dueDate = taskCommentMatch[3];
+        rawText = rawText.replace(/<!--\s*scribex:task.*?-->/, '').trim();
+      }
+
       blocks.push({
         id: `b-${Date.now()}-${blocks.length + 1}`,
         type: 'checklist',
-        content: checkMatch[2].trim(),
-        metadata: { checked: isChecked },
+        content: rawText,
+        metadata: {
+          checked: isChecked,
+          taskId,
+          priority,
+          dueDate,
+        },
       });
       continue;
     }
@@ -353,7 +371,10 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
 
       case 'checklist': {
         const checked = block.metadata?.checked ? 'x' : ' ';
-        chunks.push(`- [${checked}] ${block.content.trim()}`);
+        const taskId = block.metadata?.taskId || `task-${Date.now()}`;
+        const priority = block.metadata?.priority && block.metadata.priority !== 'none' ? ` priority=${block.metadata.priority}` : '';
+        const due = block.metadata?.dueDate ? ` due=${block.metadata.dueDate}` : '';
+        chunks.push(`- [${checked}] ${block.content.trim()} <!-- scribex:task id=${taskId}${priority}${due} -->`);
         break;
       }
 

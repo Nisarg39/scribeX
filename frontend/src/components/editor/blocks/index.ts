@@ -7,3 +7,4 @@ export { AudioBlock } from './AudioBlock';
 export { ImageBlock } from './ImageBlock';
 export { FileBlock } from './FileBlock';
 export { BookmarkBlock } from './BookmarkBlock';
+export { ChecklistBlock } from './ChecklistBlock';

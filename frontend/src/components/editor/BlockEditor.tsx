@@ -4,6 +4,8 @@ import { NoteItem, ComposableBlock, BlockType } from '../../types/note';
 import { useTheme, NoteColors, NoteColorToken } from '../../theme';
 import { BlockRenderer } from './BlockRenderer';
 import { notesRepo } from '../../db/notesRepo';
+import { tasksRepo } from '../../db/tasksRepo';
+import { useNotesStore } from '../../state/useNotesStore';
 import { serializeBlocksToMarkdown } from '../../core/astSerializer';
 import { 
   ArrowLeft, 
@@ -52,6 +54,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   onNoteDeleted,
 }) => {
   const { isDark } = useTheme();
+  const { refreshFromDB } = useNotesStore();
 
   const [title, setTitle] = useState(note.title);
   const [colorToken, setColorToken] = useState<NoteColorToken>(note.colorToken);
@@ -82,6 +85,21 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         isPinned: newPin,
       });
       onNoteUpdated(updated);
+
+      // Sync embedded checklists with global tasks table
+      const checklistItems = newBlocks
+        .filter((b) => b.type === 'checklist')
+        .map((b) => ({
+          id: b.metadata?.taskId || b.id,
+          text: b.content,
+          checked: !!b.metadata?.checked,
+          priority: b.metadata?.priority || 'none',
+          dueDate: b.metadata?.dueDate || 'Today',
+        }));
+
+      tasksRepo.syncNoteChecklists(note.id, newTitle, newColor, checklistItems)
+        .then(() => refreshFromDB())
+        .catch((err) => console.warn('Failed to sync note checklists to tasksRepo:', err));
     } catch (err) {
       console.warn('Failed to persist note changes in BlockEditor:', err);
     }
