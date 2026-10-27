@@ -20,7 +20,12 @@ import {
   Minus,
   Table,
   AlertCircle,
-  Sigma
+  Sigma,
+  PenTool,
+  Volume2,
+  Image as ImageIcon,
+  Paperclip,
+  Globe
 } from 'lucide-react-native';
 
 interface BlockEditorProps {
@@ -385,6 +390,56 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               <Sigma size={13} color={isDark ? '#F7F7F7' : '#171717'} />
               <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
                 LaTeX Formula
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleAddBlock('drawing', { paths: [] })}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border active:scale-95"
+            >
+              <PenTool size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Sketch
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleAddBlock('audio', { durationSec: 94 })}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border active:scale-95"
+            >
+              <Volume2 size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Voice Note
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleAddBlock('image', { url: 'https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80', caption: '', aspectRatio: 'natural' })}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border active:scale-95"
+            >
+              <ImageIcon size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Image
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleAddBlock('file', { fileName: 'Architecture_Spec.pdf', sizeBytes: 1845600 })}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border active:scale-95"
+            >
+              <Paperclip size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                File
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => handleAddBlock('bookmark', { url: 'https://reactnative.dev' })}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border active:scale-95"
+            >
+              <Globe size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Bookmark
               </Text>
             </Pressable>
 

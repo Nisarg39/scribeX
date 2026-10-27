@@ -2,3 +2,8 @@ export { TableBlock } from './TableBlock';
 export { CodeBlock } from './CodeBlock';
 export { CalloutBlock } from './CalloutBlock';
 export { EquationBlock } from './EquationBlock';
+export { DrawingBlock } from './DrawingBlock';
+export { AudioBlock } from './AudioBlock';
+export { ImageBlock } from './ImageBlock';
+export { FileBlock } from './FileBlock';
+export { BookmarkBlock } from './BookmarkBlock';

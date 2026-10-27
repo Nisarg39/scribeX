@@ -17,9 +17,24 @@ import {
   AlignLeft,
   Table,
   AlertCircle,
-  Sigma
+  Sigma,
+  PenTool,
+  Volume2,
+  Image as ImageIcon,
+  Paperclip,
+  Globe
 } from 'lucide-react-native';
-import { TableBlock, CodeBlock, CalloutBlock, EquationBlock } from './blocks';
+import { 
+  TableBlock, 
+  CodeBlock, 
+  CalloutBlock, 
+  EquationBlock,
+  DrawingBlock,
+  AudioBlock,
+  ImageBlock,
+  FileBlock,
+  BookmarkBlock
+} from './blocks';
 
 interface BlockRendererProps {
   block: ComposableBlock;
@@ -167,6 +182,61 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           >
             <Sigma size={13} color={block.type === 'equation' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
+
+          <Pressable
+            onPress={() => {
+              onChangeType('drawing');
+              if (!block.metadata?.paths) onUpdateMetadata({ paths: [] });
+            }}
+            className={`p-1.5 rounded-lg ${block.type === 'drawing' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Drawing"
+          >
+            <PenTool size={13} color={block.type === 'drawing' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              onChangeType('audio');
+              if (!block.metadata?.durationSec) onUpdateMetadata({ durationSec: 94 });
+            }}
+            className={`p-1.5 rounded-lg ${block.type === 'audio' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Audio"
+          >
+            <Volume2 size={13} color={block.type === 'audio' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              onChangeType('image');
+              if (!block.content) onUpdateContent('https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80');
+            }}
+            className={`p-1.5 rounded-lg ${block.type === 'image' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Image"
+          >
+            <ImageIcon size={13} color={block.type === 'image' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              onChangeType('file');
+              if (!block.metadata?.fileName) onUpdateMetadata({ fileName: 'Attachment.pdf', sizeBytes: 1540000 });
+            }}
+            className={`p-1.5 rounded-lg ${block.type === 'file' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="File"
+          >
+            <Paperclip size={13} color={block.type === 'file' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => {
+              onChangeType('bookmark');
+              if (!block.content) onUpdateContent('https://reactnative.dev');
+            }}
+            className={`p-1.5 rounded-lg ${block.type === 'bookmark' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
+            accessibilityLabel="Bookmark"
+          >
+            <Globe size={13} color={block.type === 'bookmark' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
+          </Pressable>
         </View>
 
         {/* Right Actions: Reorder & Delete */}
@@ -304,7 +374,70 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
-      {/* 9. Standard Paragraph Block */}
+      {/* 9. Drawing Block */}
+      {block.type === 'drawing' && (
+        <DrawingBlock
+          initialPaths={block.metadata?.paths || []}
+          onUpdateDrawing={(paths) => {
+            onUpdateMetadata({ ...block.metadata, paths });
+            onUpdateContent(JSON.stringify(paths));
+          }}
+        />
+      )}
+
+      {/* 10. Audio Block */}
+      {block.type === 'audio' && (
+        <AudioBlock
+          assetId={block.metadata?.assetId}
+          durationSec={block.metadata?.durationSec || 94}
+          transcription={block.metadata?.transcription || ''}
+          onUpdateMetadata={(meta) => {
+            onUpdateMetadata({ ...block.metadata, ...meta });
+          }}
+        />
+      )}
+
+      {/* 11. Image Block */}
+      {block.type === 'image' && (
+        <ImageBlock
+          url={block.content || block.metadata?.url}
+          caption={block.metadata?.caption || ''}
+          aspectRatio={block.metadata?.aspectRatio || 'natural'}
+          onUpdateImage={(url, caption, aspectRatio) => {
+            onUpdateContent(url);
+            onUpdateMetadata({ ...block.metadata, url, caption, aspectRatio });
+          }}
+        />
+      )}
+
+      {/* 12. File Attachment Block */}
+      {block.type === 'file' && (
+        <FileBlock
+          fileName={block.metadata?.fileName || 'Attachment.pdf'}
+          sizeBytes={block.metadata?.sizeBytes || 1845600}
+          url={block.content || block.metadata?.url || '#'}
+          onUpdateFile={(fileName, sizeBytes, url) => {
+            if (url) onUpdateContent(url);
+            onUpdateMetadata({ ...block.metadata, fileName, sizeBytes, url });
+          }}
+        />
+      )}
+
+      {/* 13. Bookmark Block */}
+      {block.type === 'bookmark' && (
+        <BookmarkBlock
+          url={block.content || block.metadata?.url || 'https://reactnative.dev'}
+          title={block.metadata?.title}
+          description={block.metadata?.description}
+          previewUrl={block.metadata?.previewUrl}
+          onUpdateBookmark={(url, title, description, previewUrl) => {
+            onUpdateContent(url);
+            onUpdateMetadata({ ...block.metadata, url, title, description, previewUrl });
+          }}
+        />
+      )}
+
+      {/* 14. Standard Paragraph Block */}
       {block.type === 'paragraph' && (
         <TextInput
           multiline

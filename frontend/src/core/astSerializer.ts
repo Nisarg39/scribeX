@@ -111,7 +111,91 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 3. Divider (--- or ***)
+    // 3. Audio / Drawing / Image with annotations
+    // Drawing: ![Sketch](url) <!-- scribex:block type=drawing -->
+    if (line.includes('scribex:block type=drawing')) {
+      flushParagraph();
+      const match = line.match(/!\[(.*?)\]\((.*?)\)/);
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'drawing',
+        content: match ? match[2] : '',
+        metadata: { title: match ? match[1] : 'Sketch' },
+      });
+      continue;
+    }
+
+    // Audio: ![Audio](url) <!-- scribex:block type=audio duration=184 -->
+    if (line.includes('scribex:block type=audio')) {
+      flushParagraph();
+      const match = line.match(/!\[(.*?)\]\((.*?)\)/);
+      const durMatch = line.match(/duration=(\d+)/);
+      const transMatch = line.match(/transcription="([^"]*)"/);
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'audio',
+        content: match ? match[2] : '',
+        metadata: {
+          durationSec: durMatch ? parseInt(durMatch[1], 10) : 94,
+          transcription: transMatch ? transMatch[1] : '',
+        },
+      });
+      continue;
+    }
+
+    // File: [FileName.pdf](url) <!-- scribex:block type=file size=1048576 -->
+    if (line.includes('scribex:block type=file')) {
+      flushParagraph();
+      const match = line.match(/\[(.*?)\]\((.*?)\)/);
+      const sizeMatch = line.match(/size=(\d+)/);
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'file',
+        content: match ? match[2] : '',
+        metadata: {
+          fileName: match ? match[1] : 'File.pdf',
+          sizeBytes: sizeMatch ? parseInt(sizeMatch[1], 10) : 1048576,
+        },
+      });
+      continue;
+    }
+
+    // Bookmark: [Title](url) <!-- scribex:block type=bookmark description="desc" previewUrl="thumb" -->
+    if (line.includes('scribex:block type=bookmark')) {
+      flushParagraph();
+      const match = line.match(/\[(.*?)\]\((.*?)\)/);
+      const descMatch = line.match(/description="([^"]*)"/);
+      const prevMatch = line.match(/previewUrl="([^"]*)"/);
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'bookmark',
+        content: match ? match[2] : '',
+        metadata: {
+          title: match ? match[1] : 'Bookmark',
+          description: descMatch ? descMatch[1] : '',
+          previewUrl: prevMatch ? prevMatch[1] : '',
+        },
+      });
+      continue;
+    }
+
+    // Standard Image: ![Caption](url)
+    const imageMatch = line.trim().match(/^!\[(.*?)\]\((.*?)\)$/);
+    if (imageMatch) {
+      flushParagraph();
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'image',
+        content: imageMatch[2],
+        metadata: {
+          caption: imageMatch[1],
+          aspectRatio: 'natural',
+        },
+      });
+      continue;
+    }
+
+    // 4. Divider (--- or ***)
     if (/^(\*{3,}|-{3,}|_{3,})$/.test(line.trim())) {
       flushParagraph();
       blocks.push({
@@ -122,7 +206,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 4. Callout Alert (> [!info] / > [!warning] / > [!success] / > [!quote])
+    // 5. Callout Alert (> [!info] / > [!warning] / > [!success] / > [!quote])
     const calloutHeaderMatch = line.match(/^>\s*\[!(info|warning|success|quote|note|tip|caution)\]/i);
     if (calloutHeaderMatch) {
       flushParagraph();
@@ -147,9 +231,8 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 5. GFM Markdown Table (| Col 1 | Col 2 |)
+    // 6. GFM Markdown Table (| Col 1 | Col 2 |)
     if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
-      // Check if subsequent lines form a table (need at least 2 lines with a separator |---|)
       const tableLines: string[] = [line.trim()];
       let j = i + 1;
       while (j < lines.length && lines[j].trim().startsWith('|') && lines[j].trim().endsWith('|')) {
@@ -158,13 +241,11 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       }
 
       if (tableLines.length >= 2) {
-        // Has header and separator
         const separatorIdx = tableLines.findIndex(tl => /^\|(\s*:?-+:?\s*\|)+$/.test(tl));
         if (separatorIdx > 0) {
           flushParagraph();
-          i = j - 1; // Advance outer loop
+          i = j - 1;
 
-          // Parse columns and rows
           const headerLine = tableLines[0];
           const columns = headerLine
             .split('|')
@@ -177,7 +258,6 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
               .split('|')
               .slice(1, -1)
               .map(c => c.trim());
-            // Align length to columns
             while (rowCells.length < columns.length) rowCells.push('');
             rows.push(rowCells.slice(0, columns.length));
           }
@@ -193,7 +273,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       }
     }
 
-    // 6. Headings (# H1 to #### H4)
+    // 7. Headings (# H1 to #### H4)
     const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
     if (headingMatch) {
       flushParagraph();
@@ -207,7 +287,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 7. Checklist (- [ ] or - [x])
+    // 8. Checklist (- [ ] or - [x])
     const checkMatch = line.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
     if (checkMatch) {
       flushParagraph();
@@ -221,7 +301,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 8. Standard Blockquote (> Text)
+    // 9. Standard Blockquote (> Text)
     if (line.startsWith('>')) {
       flushParagraph();
       blocks.push({
@@ -232,13 +312,12 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 9. Empty Line (deliberate paragraph separator)
+    // 10. Empty Line
     if (line.trim() === '') {
       flushParagraph();
       continue;
     }
 
-    // Normal paragraph line
     currentParagraph.push(line);
   }
 
@@ -309,6 +388,44 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
       case 'equation': {
         const formula = block.content.trim();
         chunks.push(`$$\n${formula}\n$$`);
+        break;
+      }
+
+      case 'image': {
+        const url = block.content || block.metadata?.url || '';
+        const caption = block.metadata?.caption || '';
+        chunks.push(`![${caption}](${url})`);
+        break;
+      }
+
+      case 'drawing': {
+        const url = block.content || '';
+        chunks.push(`![Sketch](${url}) <!-- scribex:block type=drawing -->`);
+        break;
+      }
+
+      case 'audio': {
+        const url = block.content || '';
+        const dur = block.metadata?.durationSec || 94;
+        const trans = (block.metadata?.transcription || '').replace(/"/g, "'");
+        chunks.push(`![Audio](${url}) <!-- scribex:block type=audio duration=${dur} transcription="${trans}" -->`);
+        break;
+      }
+
+      case 'file': {
+        const url = block.content || '#';
+        const name = block.metadata?.fileName || 'Document.pdf';
+        const size = block.metadata?.sizeBytes || 1048576;
+        chunks.push(`[${name}](${url}) <!-- scribex:block type=file size=${size} -->`);
+        break;
+      }
+
+      case 'bookmark': {
+        const url = block.content || 'https://';
+        const title = (block.metadata?.title || 'Web Bookmark').replace(/"/g, "'");
+        const desc = (block.metadata?.description || '').replace(/"/g, "'");
+        const thumb = block.metadata?.previewUrl || '';
+        chunks.push(`[${title}](${url}) <!-- scribex:block type=bookmark description="${desc}" previewUrl="${thumb}" -->`);
         break;
       }
 

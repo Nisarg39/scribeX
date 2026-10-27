@@ -41,7 +41,7 @@
   - Monospace code blocks with syntax highlighting and one-click copy.
   - Inline and display KaTeX LaTeX mathematical formulas.
   - Visual callout alert blocks (`info`, `warning`, `success`, `quote`).
-- [ ] **Step 5: Multi-Modal Media & File Capture (Drawings, Audio, Attachments, Bookmarks)**
+- [x] **Step 5: Multi-Modal Media & File Capture (Drawings, Audio, Attachments, Bookmarks)**
   - Vector sketch pad with freehand pen, eraser, color palette, and SVG path persistence.
   - Audio voice recorder with waveform visualizer and scrub bar.
   - Document attachments (PDFs, spreadsheets) with preview cards.
