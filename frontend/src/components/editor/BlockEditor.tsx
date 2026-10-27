@@ -130,24 +130,40 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   };
 
   // Block Mutation Helpers
+  const handleUpdateBlock = (blockId: string, updates: Partial<ComposableBlock>) => {
+    setBlocks((prevBlocks) => {
+      const nextBlocks = prevBlocks.map((b) =>
+        b.id === blockId ? { ...b, ...updates } : b
+      );
+      persistChanges(title, colorToken, nextBlocks);
+      return nextBlocks;
+    });
+  };
+
   const handleUpdateContent = (blockId: string, content: string) => {
-    const nextBlocks = blocks.map((b) => (b.id === blockId ? { ...b, content } : b));
-    setBlocks(nextBlocks);
-    persistChanges(title, colorToken, nextBlocks);
+    setBlocks((prevBlocks) => {
+      const nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, content } : b));
+      persistChanges(title, colorToken, nextBlocks);
+      return nextBlocks;
+    });
   };
 
   const handleUpdateMetadata = (blockId: string, metadata: Record<string, any>) => {
-    const nextBlocks = blocks.map((b) =>
-      b.id === blockId ? { ...b, metadata: { ...b.metadata, ...metadata } } : b
-    );
-    setBlocks(nextBlocks);
-    persistChanges(title, colorToken, nextBlocks);
+    setBlocks((prevBlocks) => {
+      const nextBlocks = prevBlocks.map((b) =>
+        b.id === blockId ? { ...b, metadata: { ...b.metadata, ...metadata } } : b
+      );
+      persistChanges(title, colorToken, nextBlocks);
+      return nextBlocks;
+    });
   };
 
   const handleChangeType = (blockId: string, type: BlockType) => {
-    const nextBlocks = blocks.map((b) => (b.id === blockId ? { ...b, type } : b));
-    setBlocks(nextBlocks);
-    persistChanges(title, colorToken, nextBlocks);
+    setBlocks((prevBlocks) => {
+      const nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, type } : b));
+      persistChanges(title, colorToken, nextBlocks);
+      return nextBlocks;
+    });
   };
 
   const handleDeleteBlock = (blockId: string) => {
@@ -511,6 +527,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               isActive={block.id === activeBlockId}
               onFocus={() => setActiveBlockId(block.id)}
               onEnterPress={() => handleEnterPress(idx)}
+              onUpdateBlock={(updates) => handleUpdateBlock(block.id, updates)}
               onUpdateContent={(content) => handleUpdateContent(block.id, content)}
               onUpdateMetadata={(metadata) => handleUpdateMetadata(block.id, metadata)}
               onChangeType={(type) => handleChangeType(block.id, type)}

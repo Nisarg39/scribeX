@@ -22,6 +22,7 @@ interface BlockRendererProps {
   totalBlocks: number;
   isActive?: boolean;
   onFocus?: () => void;
+  onUpdateBlock?: (updates: Partial<ComposableBlock>) => void;
   onUpdateContent: (content: string) => void;
   onUpdateMetadata: (metadata: Record<string, any>) => void;
   onChangeType: (type: BlockType) => void;
@@ -37,6 +38,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   totalBlocks,
   isActive,
   onFocus,
+  onUpdateBlock,
   onUpdateContent,
   onUpdateMetadata,
   onChangeType,
@@ -95,8 +97,15 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           }
           isSelected={isActive}
           onUpdateItems={(items) => {
-            onUpdateMetadata({ ...block.metadata, items });
-            onUpdateContent(items.map((i) => i.text).join('\n'));
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: { ...block.metadata, items },
+                content: items.map((i) => i.text).join('\n'),
+              });
+            } else {
+              onUpdateMetadata({ ...block.metadata, items });
+              onUpdateContent(items.map((i) => i.text).join('\n'));
+            }
           }}
           onFocus={onFocus}
           onDelete={onDelete}

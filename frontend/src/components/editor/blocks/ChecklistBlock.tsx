@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { useTheme, NoteColors } from '../../../theme';
 import { TaskPriority, ChecklistPoint } from '../../../types/note';
@@ -7,7 +7,9 @@ import {
   Circle, 
   Calendar, 
   Trash2, 
-  Plus 
+  Plus,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react-native';
 
 interface ChecklistBlockProps {
@@ -54,6 +56,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   onDelete,
 }) => {
   const { isDark } = useTheme();
+  const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
 
   // Normalize items to ensure a checklist container array
   const checklistItems: ChecklistPoint[] = Array.isArray(items) && items.length > 0
@@ -114,8 +117,10 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
 
   const handleAddItem = (afterIndex?: number) => {
     onFocus?.();
+    const newId = `task-${Date.now()}-${checklistItems.length + 1}`;
+    setNewlyAddedId(newId);
     const newPoint: ChecklistPoint = {
-      id: `task-${Date.now()}-${checklistItems.length + 1}`,
+      id: newId,
       text: '',
       checked: false,
       priority: 'none',
@@ -132,6 +137,26 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
     } else {
       next = [...checklistItems, newPoint];
     }
+    handleCommitItems(next);
+  };
+
+  const handleMoveItemUp = (index: number) => {
+    if (index <= 0) return;
+    onFocus?.();
+    const next = [...checklistItems];
+    const temp = next[index - 1];
+    next[index - 1] = next[index];
+    next[index] = temp;
+    handleCommitItems(next);
+  };
+
+  const handleMoveItemDown = (index: number) => {
+    if (index >= checklistItems.length - 1) return;
+    onFocus?.();
+    const next = [...checklistItems];
+    const temp = next[index + 1];
+    next[index + 1] = next[index];
+    next[index] = temp;
     handleCommitItems(next);
   };
 
@@ -222,58 +247,106 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
               {/* Text Input & Meta Chips */}
               <View className="flex-1">
                 <TextInput
-                  multiline
+                  autoFocus={item.id === newlyAddedId}
                   placeholder="Checklist point... (Press Enter to add next)"
                   placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
                   value={item.text}
-                  onChangeText={(text) => handleUpdateItemText(idx, text)}
+                  onChangeText={(text) => {
+                    if (newlyAddedId === item.id) setNewlyAddedId(null);
+                    handleUpdateItemText(idx, text);
+                  }}
                   onFocus={onFocus}
+                  returnKeyType="next"
+                  blurOnSubmit={false}
+                  onKeyPress={(e: any) => {
+                    if (e.nativeEvent.key === 'Enter') {
+                      e.preventDefault?.();
+                      handleAddItem(idx);
+                    } else if (e.nativeEvent.key === 'Backspace' && item.text === '' && checklistItems.length > 1) {
+                      e.preventDefault?.();
+                      handleDeleteItem(idx);
+                    }
+                  }}
                   onSubmitEditing={() => handleAddItem(idx)}
                   className={`text-base leading-relaxed py-0 outline-none text-light-textPrimary dark:text-dark-textPrimary ${
                     item.checked ? 'line-through text-light-textMuted dark:text-dark-textMuted' : ''
                   }`}
                 />
 
-                {/* Priority & Due Date Chips */}
-                <View className="flex-row items-center gap-2 mt-1 flex-wrap">
-                  {/* Priority Pill */}
-                  <Pressable
-                    onPress={() => handleCyclePriority(idx)}
-                    className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 active:scale-95"
-                    accessibilityLabel="Cycle Priority"
-                  >
-                    <View
-                      style={{ backgroundColor: priorityConf.color }}
-                      className="w-1.5 h-1.5 rounded-full"
-                    />
-                    <Text
-                      style={{ color: item.priority && item.priority !== 'none' ? priorityConf.color : (isDark ? '#858585' : '#929292') }}
-                      className="text-[10px] font-bold uppercase tracking-wider"
+                {/* Priority & Due Date Chips and Point Reorder/Delete */}
+                <View className="flex-row items-center gap-2 mt-1.5 flex-wrap justify-between">
+                  {/* Left: Priority & Due Date Pills */}
+                  <View className="flex-row items-center gap-2">
+                    {/* Priority Pill */}
+                    <Pressable
+                      onPress={() => handleCyclePriority(idx)}
+                      className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 active:scale-95"
+                      accessibilityLabel="Cycle Priority"
                     >
-                      {priorityConf.label}
-                    </Text>
-                  </Pressable>
+                      <View
+                        style={{ backgroundColor: priorityConf.color }}
+                        className="w-1.5 h-1.5 rounded-full"
+                      />
+                      <Text
+                        style={{ color: item.priority && item.priority !== 'none' ? priorityConf.color : (isDark ? '#858585' : '#929292') }}
+                        className="text-[10px] font-bold uppercase tracking-wider"
+                      >
+                        {priorityConf.label}
+                      </Text>
+                    </Pressable>
 
-                  {/* Due Date Chip */}
-                  <Pressable
-                    onPress={() => handleCycleDueDate(idx)}
-                    className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 active:scale-95"
-                    accessibilityLabel="Change Due Date"
-                  >
-                    <Calendar size={10} color={isDark ? '#858585' : '#929292'} />
-                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
-                      {item.dueDate || 'Today'}
-                    </Text>
-                  </Pressable>
+                    {/* Due Date Chip */}
+                    <Pressable
+                      onPress={() => handleCycleDueDate(idx)}
+                      className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 active:scale-95"
+                      accessibilityLabel="Change Due Date"
+                    >
+                      <Calendar size={10} color={isDark ? '#858585' : '#929292'} />
+                      <Text className="text-[10px] font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+                        {item.dueDate || 'Today'}
+                      </Text>
+                    </Pressable>
+                  </View>
 
-                  {/* Delete individual point */}
-                  <Pressable
-                    onPress={() => handleDeleteItem(idx)}
-                    className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 active:scale-90 ml-auto"
-                    accessibilityLabel="Delete item"
-                  >
-                    <Trash2 size={12} color={isDark ? '#B5B5B5' : '#626262'} />
-                  </Pressable>
+                  {/* Right: Point Reorder (Up/Down) & Delete Controls */}
+                  <View className="flex-row items-center gap-0.5">
+                    {/* Move Up */}
+                    <Pressable
+                      onPress={() => handleMoveItemUp(idx)}
+                      disabled={idx === 0}
+                      className={`p-1 rounded-full ${
+                        idx === 0
+                          ? 'opacity-20'
+                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:scale-90'
+                      }`}
+                      accessibilityLabel="Move checkpoint up"
+                    >
+                      <ChevronUp size={14} color={isDark ? '#B5B5B5' : '#626262'} strokeWidth={2.2} />
+                    </Pressable>
+
+                    {/* Move Down */}
+                    <Pressable
+                      onPress={() => handleMoveItemDown(idx)}
+                      disabled={idx === checklistItems.length - 1}
+                      className={`p-1 rounded-full ${
+                        idx === checklistItems.length - 1
+                          ? 'opacity-20'
+                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:scale-90'
+                      }`}
+                      accessibilityLabel="Move checkpoint down"
+                    >
+                      <ChevronDown size={14} color={isDark ? '#B5B5B5' : '#626262'} strokeWidth={2.2} />
+                    </Pressable>
+
+                    {/* Delete point */}
+                    <Pressable
+                      onPress={() => handleDeleteItem(idx)}
+                      className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 active:scale-90 ml-1"
+                      accessibilityLabel="Delete checkpoint"
+                    >
+                      <Trash2 size={12} color={isDark ? '#B5B5B5' : '#626262'} />
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             </View>
@@ -282,14 +355,16 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
       </View>
 
       {/* Add Checkpoint Button */}
-      <View className="flex-row items-center mt-2 pl-7">
+      <View className="flex-row items-center mt-2.5 pl-7">
         <Pressable
           onPress={() => handleAddItem()}
-          className="flex-row items-center gap-1.5 px-3 py-1 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 hover:border-black/20 dark:hover:border-white/20 active:scale-95"
+          className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/70 dark:border-white/10 hover:border-note-cyan/60 dark:hover:border-note-cyan/60 active:scale-95 shadow-sm group"
           accessibilityLabel="Add checkpoint to this checklist"
         >
-          <Plus size={12} color={isDark ? '#B5B5B5' : '#626262'} strokeWidth={2.2} />
-          <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+          <View className="w-4 h-4 rounded-full bg-note-cyan/15 items-center justify-center">
+            <Plus size={11} color={isDark ? '#38BDF8' : '#0284C7'} strokeWidth={2.5} />
+          </View>
+          <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
             Add checkpoint
           </Text>
         </Pressable>
