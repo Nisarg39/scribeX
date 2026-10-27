@@ -76,8 +76,13 @@ function getCleanSnippet(markdown: string): string {
     .replace(/!\[[^\]]*\]\([^)]+\)/g, '')
     .replace(/\[(?:Asset:\s*)?[^\]]+\]\([^)]+\)/g, '')
     .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/>\s*\[![a-zA-Z]+\]\s*/g, '')
+    .replace(/^>\s*$/gm, '')
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, '')
     .replace(/PNG[\s\S]*?IHDR[\s\S]*/gi, '')
+    .replace(/IHDR[\s\S]*?PLTE[\s\S]*/gi, '')
+    .replace(/PLTE[\s\S]*/gi, '')
+    .replace(/^\s*[\r\n]/gm, '')
     .trim();
 }
 
@@ -460,7 +465,10 @@ export const NotesHomeScreen: React.FC = () => {
                     pastelColors[note.color_token as PastelColorKey] || pastelColors.apricot;
                   const firstImageUrl = extractFirstImageUrl(note.content_markdown);
                   const cleanSnippet = getCleanSnippet(note.content_markdown);
-                  const cleanTitle = getCleanSnippet(note.title) || 'Photo Note';
+                  let cleanTitle = getCleanSnippet(note.title) || 'Photo Note';
+                  if (cleanTitle.includes('PNG') || /[\x00-\x1F\x7F-\x9F]/.test(cleanTitle)) {
+                    cleanTitle = cleanTitle.replace(/[\x00-\x1F\x7F-\x9F]/g, '').replace(/PNG/gi, '').trim() || 'Photo Note';
+                  }
 
                   return (
                     <Pressable

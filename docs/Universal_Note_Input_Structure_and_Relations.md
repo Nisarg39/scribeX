@@ -705,37 +705,47 @@ When raw input contains ambiguity or contradictions:
 ## 6. Phased Implementation Roadmap
 
 ```
-Phase 1: Core Notes Foundation
-├── [x] Plain text & rich-text notes
-├── [x] Markdown notes & Git projection
-├── [x] Checklists & actionable tasks
-├── [x] Pastel tile design system tokens
-├── [x] Universal inbox & basic tags
-└── [x] Offline-first SQLite local replica
+Phase 1: Core VPS Backend & 4-Layer Memory Foundation (COMPLETED)
+├── [x] FastAPI operational core & SQLite WAL schemas
+├── [x] Git-backed Markdown Vault projection
+├── [x] Embedded LanceDB vector store
+├── [x] Conversational onboarding flow
+└── [x] Ask-Before-Write Ambiguity Gate & Universal Intake
 
-Phase 2: Universal Capture & Media (Active)
-├── [x] Desktop navigation rail & shell architecture
-├── [x] Focused note reading & editing surface
-├── [ ] Universal Intake Bar with multi-modal attachment picker
-├── [ ] PDF, DOCX, TXT document parser & text extractor
-├── [ ] Image capture & OCR text pipeline
-├── [ ] Web bookmarks & OpenGraph metadata scraping
-├── [ ] Bidirectional note linking & relationship models
-└── [ ] Ask-Before-Write Ambiguity Gate modal
+Phase 2: Universal Expo App, Pastel Tile UI & Resilient Delta Sync (COMPLETED)
+├── [x] Universal Expo scaffolding (iOS, Android, Web)
+├── [x] Pastel tile UI design system & WCAG AA contrast tokens
+├── [x] Client offline-first SQLite engine (expo-sqlite / OPFS)
+├── [x] Real-time delta sync state machine (WebSocket doorbell + REST catch-up)
+├── [x] Universal Intake Bar with multi-modal attachment picker
+└── [x] Basic block editor canvas & AST serialization
 
-Phase 3: Voice, Audio & Proactive Intelligence
-├── [ ] Real-time audio waveform recorder
-├── [ ] Whisper speech-to-text transcription engine
-├── [ ] Meeting minutes synthesis & action item extraction
-├── [ ] LanceDB semantic hybrid search across notes & blocks
-└── [ ] Contradiction detection & duplicate note merge assistant
+Phase 3: Comprehensive Manual Note Input, Block Manipulation & Relations Engine (ACTIVE)
+├── [ ] Universal block manipulation & reordering engine (insert, reorder, delete, split/merge)
+├── [ ] Rich manual content blocks (interactive tables, monospace code with copy, KaTeX, callouts)
+├── [ ] Multi-modal media ingestion & viewers (audio player, file/PDF attachments, web bookmarks, lightbox)
+├── [ ] Folder hierarchy & physical Git Vault directory mirroring
+├── [ ] Multi-tags (#tags), starred favorites, archive & recoverable 30-day trash
+├── [ ] Bidirectional cross-note links ([[Note]]) & SQLite knowledge graph (entity_relations)
+├── [ ] Fast local full-text search (< 5ms) & dynamic smart collections
+└── [ ] Phase 3 master cross-platform verification suite (automated test runner)
 
-Phase 4: Advanced Canvases, Tables & Integrations
-├── [ ] Interactive spreadsheet tables with CSV import/export
-├── [ ] Freehand vector drawing & sketch canvas
-├── [ ] Kanban board & dynamic smart collection views
-├── [ ] Mobile OS Share-Sheet & clipboard listeners
-└── [ ] External calendar & webhook connectors
+Phase 4: Manual Edit Diff Learner + Temporal "Versions of Me" (AI Cognitive Loop)
+├── [ ] Background Git diff analyzer (user_manual vs. ai_assistant commits)
+├── [ ] Noise-filtered semantic preference extraction (tone, formatting, filing habits)
+├── [ ] Layer 4 Behavioral Ledger auto-updating (_core/behavioral_ledger.md)
+└── [ ] Layer 3 Temporal Identity timeline ("Versions of Me" profile history)
+
+Phase 5: Remote PC Agent Orchestration & Pluggable CLI Daemon
+├── [ ] Outbound WebSocket PC bridge (zero open ports)
+├── [ ] Universal CLI agent adapter (Claude Code, Gemini CLI, Codex)
+└── [ ] Automated 3-stage execution verification pipeline
+
+Phase 6 & 7: SaaS Multi-Tenancy, Cloud Deployment & Commercial Scaling
+├── [ ] Multi-tenant isolated vaults & SQLite DBs
+├── [ ] Production authentication (Clerk / Supabase Auth)
+├── [ ] Stripe billing webhooks & LiteLLM token spend quotas
+└── [ ] Dockerized VPS deployment with Caddy reverse proxy
 ```
 
 ---
