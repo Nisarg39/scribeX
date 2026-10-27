@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../auth';
 import { useTheme } from '../theme';
@@ -53,7 +53,7 @@ export const RootNavigator: React.FC = () => {
 
   if (isLoading || (isAuthenticated && !isGuest && !hasCheckedOnboarding)) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.appBg }]}>
+      <View className="flex-1 justify-center items-center bg-appBg">
         <ActivityIndicator size="large" color={colors.textPrimary} />
       </View>
     );
@@ -78,11 +78,3 @@ export const RootNavigator: React.FC = () => {
   // Primary authenticated / guest notes workspace
   return <NotesHomeScreen />;
 };
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});

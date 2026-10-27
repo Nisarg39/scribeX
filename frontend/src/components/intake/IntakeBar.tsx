@@ -7,7 +7,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  StyleSheet,
   View,
   TextInput,
   Pressable,
@@ -228,31 +227,23 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
   };
 
   return (
-    <View style={styles.wrapper}>
+    <View className="w-full my-4">
       {/* Universal Intake Capsule */}
       <View
-        style={[
-          styles.container,
-          {
-            backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-            borderColor: isFocused
-              ? isDark
-                ? '#FFC96F'
-                : colors.iconBg
-              : colors.borderSubtle,
-          },
-        ]}
+        className={`flex-row items-center rounded-[24px] border-[1.5px] px-4 py-2 min-h-[56px] bg-surface dark:bg-surfaceRaised ${
+          isFocused
+            ? 'border-[#111111] dark:border-[#FFC96F]'
+            : 'border-borderSubtle'
+        }`}
       >
         {/* Left Actions: Voice recording, Attachments & Templates */}
-        <View style={styles.leftActions}>
+        <View className="flex-row items-center gap-1.5 mr-2.5">
           <Pressable
             onPress={toggleRecording}
             hitSlop={8}
-            style={({ pressed }) => [
-              styles.utilityButton,
-              isRecording && { backgroundColor: isDark ? '#FF9277' : '#FF9277' },
-              pressed && { opacity: 0.75 },
-            ]}
+            className={`w-[34px] h-[34px] rounded-full justify-center items-center active:opacity-75 ${
+              isRecording ? 'bg-[#FF9277]' : ''
+            }`}
             accessibilityLabel="Voice capture"
           >
             <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
@@ -273,10 +264,7 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
             onPress={handleTriggerFileUpload}
             hitSlop={8}
             disabled={isUploadingAsset}
-            style={({ pressed }) => [
-              styles.utilityButton,
-              pressed && { opacity: 0.75 },
-            ]}
+            className="w-[34px] h-[34px] rounded-full justify-center items-center active:opacity-75"
             accessibilityLabel="Attach document or file"
           >
             {isUploadingAsset ? (
@@ -293,10 +281,7 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
               }
             }}
             hitSlop={8}
-            style={({ pressed }) => [
-              styles.utilityButton,
-              pressed && { opacity: 0.75 },
-            ]}
+            className="w-[34px] h-[34px] rounded-full justify-center items-center active:opacity-75"
             accessibilityLabel="Attach template"
           >
             <Sparkles size={17} color={colors.textMuted} />
@@ -315,32 +300,25 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
           onBlur={() => setIsFocused(false)}
           onKeyPress={handleKeyPress}
           onSubmitEditing={Platform.OS === 'web' ? handleSubmit : undefined}
-          style={[
-            styles.textInput,
-            {
-              color: colors.textPrimary,
-              ...Platform.select({
-                web: {
-                  outlineStyle: 'none',
-                  outlineWidth: 0,
-                  outline: 'none',
-                } as any,
-              }),
-            },
-          ]}
+          className="flex-1 text-base font-normal leading-[22px] max-h-[120px] py-1.5 px-1 text-textPrimary"
+          style={Platform.select({
+            web: {
+              outlineStyle: 'none',
+              outlineWidth: 0,
+              outline: 'none',
+            } as any,
+          })}
         />
 
         {/* Right Action: Circular Submit Button */}
         <Pressable
           onPress={handleSubmit}
           disabled={!text.trim() || isSubmitting}
-          style={({ pressed }) => [
-            styles.submitButton,
-            {
-              backgroundColor: text.trim() ? colors.iconBg : isDark ? '#3A3A3A' : '#E8E8E8',
-              opacity: pressed ? 0.8 : text.trim() ? 1 : 0.6,
-            },
-          ]}
+          className={`w-9 h-9 rounded-full justify-center items-center ml-2.5 ${
+            text.trim()
+              ? 'bg-iconBg active:opacity-80'
+              : 'bg-[#E8E8E8] dark:bg-[#3A3A3A] opacity-60'
+          }`}
           accessibilityLabel="Submit Note"
         >
           {isSubmitting ? (
@@ -369,49 +347,3 @@ export const IntakeBar: React.FC<IntakeBarProps> = ({
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  wrapper: {
-    width: '100%',
-    marginVertical: 16,
-  },
-  container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 24,
-    borderWidth: 1.5,
-    paddingHorizontal: 16,
-    paddingVertical: Platform.OS === 'web' ? 10 : 6,
-    minHeight: 56,
-  },
-  leftActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginRight: 10,
-  },
-  utilityButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  textInput: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '400',
-    lineHeight: 22,
-    maxHeight: 120,
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-  },
-  submitButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 10,
-  },
-});

@@ -8,7 +8,6 @@
 
 import React, { useState } from 'react';
 import {
-  StyleSheet,
   View,
   Text,
   Modal,
@@ -120,33 +119,23 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({
       animationType="fade"
       onRequestClose={onDismiss}
     >
-      <Pressable style={styles.overlay} onPress={onDismiss}>
+      <Pressable className="flex-1 bg-black/65 justify-center items-center p-5" onPress={onDismiss}>
         <Pressable
-          style={[
-            styles.modalContent,
-            {
-              backgroundColor: isDark ? colors.surface : colors.surface,
-              borderColor: isDark ? '#3A3A3A' : '#E8E8E8',
-            },
-          ]}
+          className="w-full max-w-[620px] max-h-[85%] rounded-[24px] border overflow-hidden bg-surface border-borderSubtle"
+          style={Platform.select({ web: { boxShadow: '0 20px 40px rgba(0,0,0,0.25)' } as any })}
           onPress={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <View
-                style={[
-                  styles.iconBadge,
-                  { backgroundColor: isDark ? '#3D2F1D' : '#FFF3D6' },
-                ]}
-              >
+          <View className="flex-row justify-between items-center px-6 pt-6 pb-4">
+            <View className="flex-row items-center gap-3">
+              <View className="w-[38px] h-[38px] rounded-full justify-center items-center bg-[#FFF3D6] dark:bg-[#3D2F1D]">
                 <HelpCircle size={18} color="#D97706" />
               </View>
               <View>
-                <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
+                <Text className="text-[17px] font-bold leading-[22px] text-textPrimary">
                   Ambiguity Gate
                 </Text>
-                <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
+                <Text className="text-xs font-normal text-textSecondary">
                   Friday wants to align before committing to your vault
                 </Text>
               </View>
@@ -155,43 +144,32 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({
             <Pressable
               onPress={onDismiss}
               hitSlop={8}
-              style={[
-                styles.closeButton,
-                { backgroundColor: isDark ? colors.surfaceRaised : '#F5F5F5' },
-              ]}
+              className="w-8 h-8 rounded-full justify-center items-center bg-[#F5F5F5] dark:bg-surfaceRaised"
             >
               <X size={16} color={colors.textSecondary} />
             </Pressable>
           </View>
 
-          <ScrollView style={styles.scrollBody} showsVerticalScrollIndicator={false}>
+          <ScrollView className="px-6 max-h-[480px]" showsVerticalScrollIndicator={false}>
             {/* Raw Input Preview Quote */}
-            <View
-              style={[
-                styles.rawInputBox,
-                {
-                  backgroundColor: isDark ? colors.surfaceRaised : '#F8FAFC',
-                  borderColor: colors.borderSubtle,
-                },
-              ]}
-            >
-              <Text style={[styles.rawInputLabel, { color: colors.textMuted }]}>
+            <View className="p-3.5 rounded-[14px] border border-borderSubtle mb-4 bg-[#F8FAFC] dark:bg-surfaceRaised">
+              <Text className="text-[10px] font-bold tracking-wider mb-1 text-textMuted">
                 ORIGINAL CAPTURE
               </Text>
-              <Text style={[styles.rawInputText, { color: colors.textPrimary }]} numberOfLines={3}>
+              <Text className="text-sm leading-5 italic text-textPrimary" numberOfLines={3}>
                 "{data.rawInput}"
               </Text>
             </View>
 
             {/* Friday's Clarifying Questions */}
-            <View style={styles.questionsSection}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            <View className="mb-[18px]">
+              <Text className="text-[13px] font-semibold mb-2 text-textPrimary">
                 Clarifying Questions
               </Text>
               {data.clarifyingQuestions.map((q, idx) => (
-                <View key={idx} style={styles.questionItem}>
-                  <Text style={[styles.questionBullet, { color: '#D97706' }]}>?</Text>
-                  <Text style={[styles.questionText, { color: colors.textPrimary }]}>
+                <View key={idx} className="flex-row items-start gap-2 mb-1.5">
+                  <Text className="text-[15px] font-bold leading-5 text-[#D97706]">?</Text>
+                  <Text className="text-sm leading-5 flex-1 text-textPrimary">
                     {q}
                   </Text>
                 </View>
@@ -199,43 +177,29 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({
             </View>
 
             {/* Quick Action Choice Pills */}
-            <View style={styles.pillsSection}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            <View className="mb-[18px]">
+              <Text className="text-[13px] font-semibold mb-2 text-textPrimary">
                 Suggested Resolutions
               </Text>
-              <View style={styles.pillsWrap}>
+              <View className="flex-row flex-wrap gap-2">
                 {DEFAULT_CHOICE_PILLS.map((pill) => {
                   const isSelected = selectedPill === pill;
                   return (
                     <Pressable
                       key={pill}
                       onPress={() => handleSelectPill(pill)}
-                      style={[
-                        styles.choicePill,
-                        {
-                          backgroundColor: isSelected
-                            ? isDark
-                              ? '#FFC96F'
-                              : '#111111'
-                            : isDark
-                            ? colors.surfaceRaised
-                            : '#F0F0F0',
-                          borderColor: isSelected ? 'transparent' : colors.borderSubtle,
-                        },
-                      ]}
+                      className={`px-3 py-1.5 rounded-full border ${
+                        isSelected
+                          ? 'bg-[#111111] dark:bg-[#FFC96F] border-transparent'
+                          : 'bg-[#F0F0F0] dark:bg-surfaceRaised border-borderSubtle'
+                      }`}
                     >
                       <Text
-                        style={[
-                          styles.choicePillText,
-                          {
-                            color: isSelected
-                              ? isDark
-                                ? '#111111'
-                                : '#FFFFFF'
-                              : colors.textSecondary,
-                            fontWeight: isSelected ? '600' : '400',
-                          },
-                        ]}
+                        className={`text-xs ${
+                          isSelected
+                            ? 'text-white dark:text-[#111111] font-semibold'
+                            : 'text-textSecondary font-normal'
+                        }`}
                       >
                         {pill}
                       </Text>
@@ -246,8 +210,8 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({
             </View>
 
             {/* User Custom Clarification Input */}
-            <View style={styles.inputSection}>
-              <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>
+            <View className="mb-4">
+              <Text className="text-[13px] font-semibold mb-2 text-textPrimary">
                 Your Instruction or Answer
               </Text>
               <TextInput
@@ -256,41 +220,31 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({
                 placeholder="Type your clarification or additional context here..."
                 placeholderTextColor={colors.textMuted}
                 multiline
-                style={[
-                  styles.clarifyTextInput,
-                  {
-                    color: colors.textPrimary,
-                    backgroundColor: isDark ? colors.surfaceRaised : '#FAFAFA',
-                    borderColor: isDark ? '#424242' : '#E0E0E0',
-                    ...Platform.select({
-                      web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any,
-                    }),
-                  },
-                ]}
+                className="rounded-[14px] border border-inputBorder p-3.5 text-sm leading-[21px] min-h-[80px] text-textPrimary bg-[#FAFAFA] dark:bg-surfaceRaised"
+                style={Platform.select({
+                  web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any,
+                })}
               />
             </View>
 
             {errorMessage && (
-              <Text style={styles.errorText}>{errorMessage}</Text>
+              <Text className="text-[13px] text-red-500 mb-3">{errorMessage}</Text>
             )}
           </ScrollView>
 
           {/* Footer Actions */}
-          <View style={[styles.footer, { borderTopColor: colors.borderSubtle }]}>
+          <View className="flex-row justify-between items-center px-6 py-4 border-t border-borderSubtle">
             <Pressable
               onPress={handleDiscard}
               disabled={isDiscarding}
-              style={[
-                styles.discardButton,
-                { backgroundColor: isDark ? colors.surfaceRaised : '#F5F5F5' },
-              ]}
+              className="flex-row items-center gap-1.5 px-3.5 py-2.5 rounded-[14px] bg-[#F5F5F5] dark:bg-surfaceRaised active:opacity-75"
             >
               {isDiscarding ? (
                 <ActivityIndicator size="small" color={colors.textMuted} />
               ) : (
                 <>
                   <Trash2 size={15} color={colors.textMuted} />
-                  <Text style={[styles.discardText, { color: colors.textSecondary }]}>
+                  <Text className="text-[13px] font-medium text-textSecondary">
                     Discard Draft
                   </Text>
                 </>
@@ -300,19 +254,17 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({
             <Pressable
               onPress={handleConfirm}
               disabled={(!answer.trim() && !selectedPill) || isSubmitting}
-              style={({ pressed }) => [
-                styles.confirmButton,
-                {
-                  backgroundColor: colors.iconBg,
-                  opacity: (!answer.trim() && !selectedPill) || isSubmitting ? 0.5 : pressed ? 0.85 : 1,
-                },
-              ]}
+              className={`flex-row items-center gap-2 px-[18px] py-2.5 rounded-2xl bg-iconBg ${
+                (!answer.trim() && !selectedPill) || isSubmitting
+                  ? 'opacity-50'
+                  : 'active:opacity-85'
+              }`}
             >
               {isSubmitting ? (
                 <ActivityIndicator size="small" color={colors.iconFg} />
               ) : (
                 <>
-                  <Text style={[styles.confirmText, { color: colors.iconFg }]}>
+                  <Text className="text-[13px] font-semibold text-iconFg">
                     Confirm & Commit
                   </Text>
                   <ArrowRight size={16} color={colors.iconFg} />
@@ -325,170 +277,3 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({
     </Modal>
   );
 };
-
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    width: '100%',
-    maxWidth: 620,
-    maxHeight: '85%',
-    borderRadius: 24,
-    borderWidth: 1,
-    overflow: 'hidden',
-    ...Platform.select({
-      web: { boxShadow: '0 20px 40px rgba(0,0,0,0.25)' } as any,
-    }),
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 16,
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  iconBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    lineHeight: 22,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollBody: {
-    paddingHorizontal: 24,
-    maxHeight: 480,
-  },
-  rawInputBox: {
-    padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 16,
-  },
-  rawInputLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  rawInputText: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontStyle: 'italic',
-  },
-  questionsSection: {
-    marginBottom: 18,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  questionItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 6,
-  },
-  questionBullet: {
-    fontSize: 15,
-    fontWeight: '700',
-    lineHeight: 20,
-  },
-  questionText: {
-    fontSize: 14,
-    lineHeight: 20,
-    flex: 1,
-  },
-  pillsSection: {
-    marginBottom: 18,
-  },
-  pillsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  choicePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  choicePillText: {
-    fontSize: 12,
-  },
-  inputSection: {
-    marginBottom: 16,
-  },
-  clarifyTextInput: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 14,
-    fontSize: 14,
-    lineHeight: 21,
-    minHeight: 80,
-  },
-  errorText: {
-    fontSize: 13,
-    color: '#EF4444',
-    marginBottom: 12,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderTopWidth: 1,
-  },
-  discardButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 14,
-  },
-  discardText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  confirmButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 16,
-  },
-  confirmText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-});

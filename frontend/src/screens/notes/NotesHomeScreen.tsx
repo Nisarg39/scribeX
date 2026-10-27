@@ -6,32 +6,22 @@
  */
 
 import React, { useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../../theme';
 import { clearAllLocalNotes } from '../../db/notesRepo';
 
 export const NotesHomeScreen: React.FC = () => {
-  const { colors, isDark } = useTheme();
+  const { isDark } = useTheme();
 
   useEffect(() => {
     clearAllLocalNotes().catch((e) => console.warn('Local purge warning:', e));
   }, []);
 
   return (
-    <View
-      className="flex-1 w-full h-full bg-appBg"
-      style={[styles.container, { backgroundColor: colors.appBg }]}
-    >
+    <View className="flex-1 w-full h-full bg-appBg">
       <StatusBar style={isDark ? 'light' : 'dark'} />
     </View>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-});

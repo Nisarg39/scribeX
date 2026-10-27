@@ -11,7 +11,6 @@
 
 import React, { useState } from 'react';
 import {
-  StyleSheet,
   Text,
   View,
   TextInput,
@@ -104,32 +103,21 @@ export const AuthScreen: React.FC = () => {
   const activeError = localError || error;
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.appBg }]}>
+    <View className="flex-1 bg-appBg">
       {/* Top Quiet Navigation Row */}
-      <View style={styles.topBar}>
-        <View style={styles.brandRow}>
-          <View
-            style={[
-              styles.brandBadge,
-              { backgroundColor: pastelColors.apricot },
-            ]}
-          >
+      <View className="flex-row justify-between items-center px-8 pt-6 pb-4">
+        <View className="flex-row items-center gap-2.5">
+          <View className="w-[30px] h-[30px] rounded-full justify-center items-center bg-pastel-apricot">
             <Sparkles size={16} color="#111111" />
           </View>
-          <Text style={[styles.brandTitle, { color: colors.textPrimary }]}>
+          <Text className="text-lg font-bold tracking-tight text-textPrimary">
             ScribeX
           </Text>
         </View>
 
         <Pressable
           onPress={toggleTheme}
-          style={({ pressed }) => [
-            styles.themeToggle,
-            {
-              backgroundColor: colors.iconBg,
-              opacity: pressed ? 0.8 : 1,
-            },
-          ]}
+          className="w-10 h-10 rounded-full justify-center items-center bg-iconBg active:opacity-80"
           accessibilityLabel="Toggle Theme"
         >
           {isDark ? (
@@ -141,31 +129,25 @@ export const AuthScreen: React.FC = () => {
       </View>
 
       <ScrollView
-        contentContainerStyle={[
-          styles.contentContainer,
-          isWide && styles.contentContainerWide,
-        ]}
+        contentContainerClassName={`grow justify-center items-center px-6 pb-12 ${isWide ? 'py-12' : ''}`}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.formSurface, { maxWidth: isWide ? 440 : '100%' }]}>
+        <View className={`w-full ${isWide ? 'max-w-[440px]' : ''}`}>
           {/* Header Block */}
-          <View style={styles.headerBlock}>
-            <View
-              style={[
-                styles.categoryPill,
-                { backgroundColor: pastelColors.lavender },
-              ]}
-            >
-              <Text style={styles.categoryPillText}>Cognitive Vault</Text>
+          <View className="mb-7">
+            <View className="self-start px-2.5 py-1 rounded-xl mb-3.5 bg-pastel-lavender">
+              <Text className="text-[#191919] text-[11px] font-bold tracking-wider uppercase">
+                Cognitive Vault
+              </Text>
             </View>
 
-            <Text style={[styles.mainHeading, { color: colors.textPrimary }]}>
+            <Text className="text-[32px] font-bold leading-[38px] tracking-tight mb-2.5 text-textPrimary">
               {mode === 'signin'
                 ? 'Welcome back to your private memory'
                 : 'Create your private ScribeX vault'}
             </Text>
 
-            <Text style={[styles.subHeading, { color: colors.textSecondary }]}>
+            <Text className="text-sm leading-[21px] text-textSecondary">
               {mode === 'signin'
                 ? 'Sign in to access your notes, knowledge graph, and cloud sync.'
                 : 'Zero commingled tables. Fully isolated tenant vault powered by offline-first SQLite.'}
@@ -174,47 +156,33 @@ export const AuthScreen: React.FC = () => {
 
           {/* Error Message */}
           {activeError && (
-            <View
-              style={[
-                styles.errorBanner,
-                { backgroundColor: pastelColors.coral },
-              ]}
-            >
-              <Text style={styles.errorText}>{activeError}</Text>
+            <View className="px-3.5 py-2.5 rounded-[10px] mb-4 bg-pastel-coral">
+              <Text className="text-[#191919] text-[13px] font-semibold leading-[18px]">
+                {activeError}
+              </Text>
             </View>
           )}
 
           {/* Form Fields Stack */}
-          <View style={styles.fieldsStack}>
+          <View className="gap-3.5 mb-5">
             {mode === 'signup' && (
-              <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+              <View className="gap-1.5">
+                <Text className="text-xs font-semibold tracking-tight text-textSecondary">
                   Full Name
                 </Text>
                 <Pressable
                   onPress={() => nameRef.current?.focus()}
-                  style={[
-                    styles.inputWrapper,
-                    {
-                      backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-                      borderColor:
-                        focusedField === 'name'
-                          ? isDark
-                            ? '#F7F7F7'
-                            : '#171717'
-                          : colors.borderSubtle,
-                      borderWidth: focusedField === 'name' ? 1.5 : 1,
-                    },
-                  ]}
+                  className={`flex-row items-center rounded-xl px-3 h-11 bg-surface dark:bg-surfaceRaised border ${
+                    focusedField === 'name'
+                      ? 'border-textPrimary border-[1.5px]'
+                      : 'border-borderSubtle'
+                  }`}
                 >
-                  <UserIcon size={16} color={colors.textMuted} style={styles.inputIcon} />
+                  <UserIcon size={16} color={colors.textMuted} className="mr-2" />
                   <TextInput
                     ref={nameRef}
-                    style={[
-                      styles.input,
-                      { color: colors.textPrimary },
-                      webInputReset,
-                    ]}
+                    className="flex-1 text-sm h-full text-textPrimary"
+                    style={webInputReset}
                     placeholder="e.g. Alex Turing"
                     placeholderTextColor={colors.textMuted}
                     value={name}
@@ -228,34 +196,23 @@ export const AuthScreen: React.FC = () => {
               </View>
             )}
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+            <View className="gap-1.5">
+              <Text className="text-xs font-semibold tracking-tight text-textSecondary">
                 Email Address
               </Text>
               <Pressable
                 onPress={() => emailRef.current?.focus()}
-                style={[
-                  styles.inputWrapper,
-                  {
-                    backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-                    borderColor:
-                      focusedField === 'email'
-                        ? isDark
-                          ? '#F7F7F7'
-                          : '#171717'
-                        : colors.borderSubtle,
-                    borderWidth: focusedField === 'email' ? 1.5 : 1,
-                  },
-                ]}
+                className={`flex-row items-center rounded-xl px-3 h-11 bg-surface dark:bg-surfaceRaised border ${
+                  focusedField === 'email'
+                    ? 'border-textPrimary border-[1.5px]'
+                    : 'border-borderSubtle'
+                }`}
               >
-                <Mail size={16} color={colors.textMuted} style={styles.inputIcon} />
+                <Mail size={16} color={colors.textMuted} className="mr-2" />
                 <TextInput
                   ref={emailRef}
-                  style={[
-                    styles.input,
-                    { color: colors.textPrimary },
-                    webInputReset,
-                  ]}
+                  className="flex-1 text-sm h-full text-textPrimary"
+                  style={webInputReset}
                   placeholder="you@domain.com"
                   placeholderTextColor={colors.textMuted}
                   value={email}
@@ -269,34 +226,23 @@ export const AuthScreen: React.FC = () => {
               </Pressable>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>
+            <View className="gap-1.5">
+              <Text className="text-xs font-semibold tracking-tight text-textSecondary">
                 {mode === 'signup' ? 'Password (min. 6 characters)' : 'Password'}
               </Text>
               <Pressable
                 onPress={() => passwordRef.current?.focus()}
-                style={[
-                  styles.inputWrapper,
-                  {
-                    backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-                    borderColor:
-                      focusedField === 'password'
-                        ? isDark
-                          ? '#F7F7F7'
-                          : '#171717'
-                        : colors.borderSubtle,
-                    borderWidth: focusedField === 'password' ? 1.5 : 1,
-                  },
-                ]}
+                className={`flex-row items-center rounded-xl px-3 h-11 bg-surface dark:bg-surfaceRaised border ${
+                  focusedField === 'password'
+                    ? 'border-textPrimary border-[1.5px]'
+                    : 'border-borderSubtle'
+                }`}
               >
-                <Lock size={16} color={colors.textMuted} style={styles.inputIcon} />
+                <Lock size={16} color={colors.textMuted} className="mr-2" />
                 <TextInput
                   ref={passwordRef}
-                  style={[
-                    styles.input,
-                    { color: colors.textPrimary },
-                    webInputReset,
-                  ]}
+                  className="flex-1 text-sm h-full text-textPrimary"
+                  style={webInputReset}
                   placeholder="••••••••"
                   placeholderTextColor={colors.textMuted}
                   value={password}
@@ -314,19 +260,15 @@ export const AuthScreen: React.FC = () => {
           <Pressable
             onPress={handleSubmit}
             disabled={isSubmitting}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              {
-                backgroundColor: colors.iconBg,
-                opacity: pressed || isSubmitting ? 0.85 : 1,
-              },
-            ]}
+            className={`h-[46px] rounded-full flex-row justify-center items-center gap-2 mb-4 bg-iconBg ${
+              isSubmitting ? 'opacity-85' : 'active:opacity-85'
+            }`}
           >
             {isSubmitting ? (
               <ActivityIndicator color={colors.iconFg} />
             ) : (
               <>
-                <Text style={[styles.primaryButtonText, { color: colors.iconFg }]}>
+                <Text className="text-[15px] font-semibold tracking-tight text-iconFg">
                   {mode === 'signin' ? 'Sign In' : 'Create Vault'}
                 </Text>
                 <ArrowRight size={17} color={colors.iconFg} />
@@ -335,53 +277,34 @@ export const AuthScreen: React.FC = () => {
           </Pressable>
 
           {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View
-              style={[styles.dividerLine, { backgroundColor: colors.borderSubtle }]}
-            />
-            <Text style={[styles.dividerText, { color: colors.textMuted }]}>
-              or
-            </Text>
-            <View
-              style={[styles.dividerLine, { backgroundColor: colors.borderSubtle }]}
-            />
+          <View className="flex-row items-center gap-3 mb-4">
+            <View className="flex-1 h-[1px] bg-borderSubtle" />
+            <Text className="text-xs font-medium text-textMuted">or</Text>
+            <View className="flex-1 h-[1px] bg-borderSubtle" />
           </View>
 
           {/* Guest Mode Button */}
           <Pressable
             onPress={handleGuest}
             disabled={isSubmitting}
-            style={({ pressed }) => [
-              styles.guestButton,
-              {
-                borderColor: colors.borderSubtle,
-                backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-                opacity: pressed ? 0.85 : 1,
-              },
-            ]}
+            className="h-11 rounded-full border border-borderSubtle flex-row justify-center items-center gap-2.5 mb-5 bg-surface dark:bg-surfaceRaised px-4 active:opacity-85"
           >
-            <View
-              style={[
-                styles.guestDot,
-                { backgroundColor: pastelColors.lime },
-              ]}
-            >
+            <View className="w-5 h-5 rounded-full justify-center items-center bg-pastel-lime">
               <Zap size={12} color="#191919" />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.guestButtonText, { color: colors.textPrimary }]}>
+            <View className="flex-1">
+              <Text className="text-[13px] font-semibold text-textPrimary">
                 Try as Guest (Instant Offline)
               </Text>
-              <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 1 }}>
+              <Text className="text-[11px] text-textMuted mt-0.5">
                 No account required • Stored locally on this device
               </Text>
             </View>
           </Pressable>
 
-
           {/* Mode Switch Link */}
-          <View style={styles.switchRow}>
-            <Text style={[styles.switchText, { color: colors.textSecondary }]}>
+          <View className="flex-row justify-center items-center gap-1.5">
+            <Text className="text-[13px] text-textSecondary">
               {mode === 'signin'
                 ? "Don't have an account yet?"
                 : 'Already have an account?'}
@@ -393,12 +316,7 @@ export const AuthScreen: React.FC = () => {
                 setMode(mode === 'signin' ? 'signup' : 'signin');
               }}
             >
-              <Text
-                style={[
-                  styles.switchLink,
-                  { color: isDark ? '#FFC96F' : '#111111' },
-                ]}
-              >
+              <Text className="text-[13px] font-bold text-[#111111] dark:text-[#FFC96F]">
                 {mode === 'signin' ? 'Sign up' : 'Sign in'}
               </Text>
             </Pressable>
@@ -409,182 +327,3 @@ export const AuthScreen: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingTop: Platform.OS === 'web' ? 24 : 54,
-    paddingBottom: 16,
-  },
-  brandRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  brandBadge: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  brandTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  themeToggle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  contentContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: 48,
-  },
-  contentContainerWide: {
-    paddingVertical: 48,
-  },
-  formSurface: {
-    width: '100%',
-  },
-  headerBlock: {
-    marginBottom: 28,
-  },
-  categoryPill: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 14,
-  },
-  categoryPillText: {
-    color: '#191919',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-  mainHeading: {
-    fontSize: 32,
-    fontWeight: '700',
-    lineHeight: 38,
-    letterSpacing: -0.6,
-    marginBottom: 10,
-  },
-  subHeading: {
-    fontSize: 14,
-    lineHeight: 21,
-  },
-  errorBanner: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginBottom: 18,
-  },
-  errorText: {
-    color: '#191919',
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
-  fieldsStack: {
-    gap: 14,
-    marginBottom: 22,
-  },
-  inputGroup: {
-    gap: 5,
-  },
-  inputLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: -0.1,
-  },
-  inputWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-  },
-  inputIcon: {
-    marginRight: 8,
-  },
-  input: {
-    flex: 1,
-    fontSize: 14,
-    height: '100%',
-  },
-  primaryButton: {
-    height: 46,
-    borderRadius: 23,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 18,
-  },
-  primaryButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    letterSpacing: -0.2,
-  },
-  dividerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 18,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-  },
-  dividerText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  guestButton: {
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 9,
-    marginBottom: 22,
-  },
-  guestDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  guestButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 6,
-  },
-  switchText: {
-    fontSize: 13,
-  },
-  switchLink: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-});

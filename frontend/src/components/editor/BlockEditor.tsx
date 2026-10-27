@@ -8,7 +8,6 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import {
-  StyleSheet,
   View,
   Text,
   TextInput,
@@ -86,31 +85,28 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: isDark ? colors.appBg : '#FAFAFA' }]}>
+    <View className="flex-1 w-full h-full bg-[#FAFAFA] dark:bg-appBg">
       {/* Minimal Top Navigation */}
-      <View style={[styles.topBar, { borderBottomColor: colors.borderSubtle }]}>
+      <View className="flex-row justify-between items-center px-6 pt-5 pb-4 border-b border-borderSubtle">
         <Pressable
           onPress={onClose}
           hitSlop={12}
-          style={({ pressed }) => [
-            styles.backButton,
-            { opacity: pressed ? 0.6 : 1 },
-          ]}
+          className="flex-row items-center gap-2 py-1 active:opacity-60"
           accessibilityLabel="Back to notes"
         >
           <ArrowLeft size={18} color={colors.textPrimary} />
-          <Text style={[styles.backText, { color: colors.textPrimary }]}>Notes</Text>
+          <Text className="text-[15px] font-medium text-textPrimary">Notes</Text>
         </Pressable>
 
-        <View style={styles.topRightInfo}>
-          <Text style={[styles.groupLabel, { color: colors.textMuted }]}>{groupName}</Text>
-          <View style={styles.saveStatus}>
+        <View className="flex-row items-center gap-4">
+          <Text className="text-[13px] font-medium uppercase tracking-wider text-textMuted">{groupName}</Text>
+          <View className="flex-row items-center gap-1">
             {isSaving ? (
               <ActivityIndicator size="small" color={colors.textMuted} />
             ) : (
               <>
                 <Check size={14} color="#10B981" />
-                <Text style={[styles.savedText, { color: colors.textMuted }]}>Saved</Text>
+                <Text className="text-xs text-textMuted">Saved</Text>
               </>
             )}
           </View>
@@ -119,7 +115,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
       {/* Clean Distraction-Free Editorial Canvas */}
       <ScrollView
-        contentContainerStyle={styles.canvasScroll}
+        contentContainerClassName="max-w-[820px] w-full self-center px-6 pt-10 pb-24"
+        contentContainerStyle={{ maxWidth: 820, width: '100%', alignSelf: 'center', paddingHorizontal: 24, paddingTop: 40, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -128,15 +125,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           onChangeText={handleTitleChange}
           placeholder="Title"
           placeholderTextColor={colors.textMuted}
-          style={[
-            styles.titleInput,
-            {
-              color: colors.textPrimary,
-              ...Platform.select({
-                web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any,
-              }),
-            },
-          ]}
+          className="text-[32px] font-bold leading-10 mb-5 p-0 text-textPrimary"
+          style={Platform.select({ web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any })}
           multiline
         />
 
@@ -147,84 +137,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           placeholderTextColor={colors.textMuted}
           multiline
           scrollEnabled={false}
-          style={[
-            styles.contentInput,
-            {
-              color: colors.textPrimary,
-              ...Platform.select({
-                web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any,
-              }),
-            },
-          ]}
+          className="text-base leading-7 min-h-[300px] p-0 text-textPrimary"
+          style={Platform.select({ web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any })}
         />
       </ScrollView>
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-  },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: Platform.OS === 'web' ? 20 : 54,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
-  },
-  backText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  topRightInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  groupLabel: {
-    fontSize: 13,
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  saveStatus: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  savedText: {
-    fontSize: 12,
-  },
-  canvasScroll: {
-    maxWidth: 820,
-    width: '100%',
-    alignSelf: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 40,
-    paddingBottom: 100,
-  },
-  titleInput: {
-    fontSize: 32,
-    fontWeight: '700',
-    lineHeight: 40,
-    marginBottom: 20,
-    padding: 0,
-  },
-  contentInput: {
-    fontSize: 16,
-    lineHeight: 28,
-    minHeight: 300,
-    padding: 0,
-  },
-});

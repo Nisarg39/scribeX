@@ -14,7 +14,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  StyleSheet,
   View,
   Text,
   TextInput,
@@ -244,9 +243,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
 
   if (isLoading) {
     return (
-      <View style={[styles.loadingContainer, { backgroundColor: colors.appBg }]}>
+      <View className="flex-1 justify-center items-center gap-4 bg-appBg">
         <ActivityIndicator size="large" color={colors.textPrimary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+        <Text className="text-sm font-medium text-textSecondary">
           Connecting to Friday...
         </Text>
       </View>
@@ -254,24 +253,20 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
   }
 
   return (
-    <View style={[styles.screen, { backgroundColor: colors.appBg }]}>
+    <View className="flex-1 bg-appBg">
       <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { maxWidth: 760, alignSelf: 'center', width: '100%' },
-        ]}
+        contentContainerClassName="px-6 pt-12 pb-16 max-w-[760px] self-center w-full"
+        contentContainerStyle={{ maxWidth: 760, alignSelf: 'center', width: '100%', paddingHorizontal: 24, paddingTop: 48, paddingBottom: 64 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Top Minimalist Header */}
-        <View style={styles.topBar}>
-          <View style={styles.brandingRow}>
+        <View className="flex-row justify-between items-center mb-5">
+          <View className="flex-row items-center gap-2.5">
             <View
-              style={[
-                styles.brandDot,
-                { backgroundColor: currentAccent },
-              ]}
+              className="w-2.5 h-2.5 rounded-full"
+              style={{ backgroundColor: currentAccent }}
             />
-            <Text style={[styles.brandingTitle, { color: colors.textPrimary }]}>
+            <Text className="text-sm font-semibold tracking-wide text-textPrimary">
               Friday Cognitive Alignment
             </Text>
           </View>
@@ -279,12 +274,9 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
           <Pressable
             onPress={handleSkip}
             hitSlop={8}
-            style={({ pressed }) => [
-              styles.skipButton,
-              pressed && { opacity: 0.7 },
-            ]}
+            className="flex-row items-center gap-1.5 py-1.5 px-2.5 rounded-xl active:opacity-70"
           >
-            <Text style={[styles.skipText, { color: colors.textMuted }]}>
+            <Text className="text-[13px] font-medium text-textMuted">
               Skip for now
             </Text>
             <SkipForward size={14} color={colors.textMuted} />
@@ -292,28 +284,26 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
         </View>
 
         {/* 6-Step Minimalist Progress Ribbon */}
-        <View style={styles.progressContainer}>
+        <View className="flex-row items-center gap-1.5 mb-9">
           {[0, 1, 2, 3, 4, 5].map((idx) => {
             const isPassed = idx < pillarIndex;
             const isCurrent = idx === pillarIndex;
             return (
               <View
                 key={idx}
-                style={[
-                  styles.progressSegment,
-                  {
-                    backgroundColor: isCurrent
-                      ? currentAccent
-                      : isPassed
-                      ? isDark
-                        ? '#4A4A4A'
-                        : '#C4C4C4'
-                      : isDark
-                      ? '#303030'
-                      : '#E0E0E0',
-                    height: isCurrent ? 5 : 3,
-                  },
-                ]}
+                className="flex-1 rounded-[3px]"
+                style={{
+                  backgroundColor: isCurrent
+                    ? currentAccent
+                    : isPassed
+                    ? isDark
+                      ? '#4A4A4A'
+                      : '#C4C4C4'
+                    : isDark
+                    ? '#303030'
+                    : '#E0E0E0',
+                  height: isCurrent ? 5 : 3,
+                }}
               />
             );
           })}
@@ -321,66 +311,42 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
 
         {/* Current Pillar Badge */}
         <Animated.View style={{ opacity: fadeAnim }}>
-          <View style={styles.pillarMetaRow}>
+          <View className="mb-4">
             <View
-              style={[
-                styles.pillarBadge,
-                {
-                  backgroundColor: isDark ? '#303030' : '#FFFFFF',
-                  borderColor: currentAccent,
-                },
-              ]}
+              className="flex-row items-center gap-2 self-start px-3 py-1.5 rounded-2xl border-[1.5px] bg-white dark:bg-[#303030]"
+              style={{ borderColor: currentAccent }}
             >
               <View
-                style={[
-                  styles.pillarIndicatorDot,
-                  { backgroundColor: currentAccent },
-                ]}
+                className="w-[7px] h-[7px] rounded-full"
+                style={{ backgroundColor: currentAccent }}
               />
-              <Text
-                style={[
-                  styles.pillarBadgeText,
-                  { color: colors.textPrimary },
-                ]}
-              >
+              <Text className="text-xs font-semibold tracking-wide text-textPrimary">
                 Pillar {pillarIndex + 1} of 6 • {pillarName}
               </Text>
             </View>
           </View>
 
           {/* Friday's Editorial Prompt */}
-          <View style={styles.promptBlock}>
-            <Text style={[styles.questionHeadline, { color: colors.textPrimary }]}>
+          <View className="mb-7">
+            <Text className="text-2xl leading-[34px] font-bold tracking-tight text-textPrimary">
               {question}
             </Text>
           </View>
 
           {/* Suggested Answer Chips (Non-generic, subtle pill aesthetics) */}
           {suggestions.length > 0 && (
-            <View style={styles.suggestionsSection}>
-              <Text style={[styles.suggestionsLabel, { color: colors.textMuted }]}>
+            <View className="mb-6">
+              <Text className="text-[11px] font-bold tracking-wider mb-2.5 text-textMuted">
                 RECOMMENDED STARTERS (TAP TO ADD)
               </Text>
-              <View style={styles.chipsWrap}>
+              <View className="flex-row flex-wrap gap-2">
                 {suggestions.map((sug, i) => (
                   <Pressable
                     key={i}
                     onPress={() => handleSelectSuggestion(sug)}
-                    style={({ pressed }) => [
-                      styles.suggestionChip,
-                      {
-                        backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-                        borderColor: colors.borderSubtle,
-                        opacity: pressed ? 0.75 : 1,
-                      },
-                    ]}
+                    className="px-3.5 py-2 rounded-2xl border border-borderSubtle bg-surface dark:bg-surfaceRaised active:opacity-75"
                   >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        { color: colors.textSecondary },
-                      ]}
-                    >
+                    <Text className="text-[13px] leading-[18px] text-textSecondary">
                       {sug}
                     </Text>
                   </Pressable>
@@ -390,15 +356,7 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
           )}
 
           {/* Response Text Input Area */}
-          <View
-            style={[
-              styles.inputContainer,
-              {
-                backgroundColor: isDark ? colors.surfaceRaised : colors.surface,
-                borderColor: colors.borderSubtle,
-              },
-            ]}
-          >
+          <View className="rounded-[20px] border-[1.5px] border-borderSubtle p-[18px] min-h-[160px] mb-9 bg-surface dark:bg-surfaceRaised">
             <TextInput
               ref={inputRef}
               value={answer}
@@ -407,38 +365,29 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
               placeholderTextColor={colors.textMuted}
               multiline
               autoFocus
-              style={[
-                styles.inputField,
-                {
-                  color: colors.textPrimary,
-                  ...Platform.select({
-                    web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any,
-                  }),
-                },
-              ]}
+              className="flex-1 text-base leading-6 min-h-[80px] p-0 text-textPrimary"
+              style={Platform.select({
+                web: { outlineStyle: 'none', outlineWidth: 0, outline: 'none' } as any,
+              })}
             />
 
-            <View style={styles.inputBottomRow}>
-              <Text style={[styles.inputHint, { color: colors.textMuted }]}>
+            <View className="flex-row justify-between items-center mt-3.5 pt-2.5">
+              <Text className="text-xs text-textMuted">
                 {Platform.OS === 'web' ? 'Press Enter or click Continue' : 'Be as candid as you wish'}
               </Text>
 
               <Pressable
                 onPress={handleSubmitTurn}
                 disabled={!answer.trim() || isSubmitting || isFinalizing}
-                style={({ pressed }) => [
-                  styles.continueButton,
-                  {
-                    backgroundColor: colors.iconBg,
-                    opacity: !answer.trim() || isSubmitting ? 0.45 : pressed ? 0.8 : 1,
-                  },
-                ]}
+                className={`flex-row items-center gap-2 px-5 py-2.5 rounded-[18px] bg-iconBg ${
+                  !answer.trim() || isSubmitting ? 'opacity-45' : 'active:opacity-80'
+                }`}
               >
                 {isSubmitting || isFinalizing ? (
                   <ActivityIndicator size="small" color={colors.iconFg} />
                 ) : (
                   <>
-                    <Text style={[styles.continueText, { color: colors.iconFg }]}>
+                    <Text className="text-sm font-semibold text-iconFg">
                       {pillarIndex === 5 ? 'Finalize Profile' : 'Continue'}
                     </Text>
                     <ArrowRight size={16} color={colors.iconFg} />
@@ -451,22 +400,20 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
 
         {/* Previous Answer History (Compact Accordion/Summary) */}
         {conversationHistory.length > 0 && (
-          <View style={styles.historySection}>
-            <Text style={[styles.historyLabel, { color: colors.textMuted }]}>
+          <View className="mt-3 pt-6 border-t border-[rgba(150,150,150,0.15)]">
+            <Text className="text-[11px] font-bold tracking-wider mb-3.5 text-textMuted">
               ESTABLISHED PILLARS
             </Text>
             {conversationHistory.map((item, idx) => (
               <View
                 key={idx}
-                style={[
-                  styles.historyItem,
-                  { borderLeftColor: PILLAR_PALETTES[idx % PILLAR_PALETTES.length] },
-                ]}
+                className="border-l-[3px] pl-3.5 mb-4"
+                style={{ borderLeftColor: PILLAR_PALETTES[idx % PILLAR_PALETTES.length] }}
               >
-                <Text style={[styles.historyPillarName, { color: colors.textSecondary }]}>
+                <Text className="text-xs font-semibold mb-1 text-textSecondary">
                   {item.pillar}
                 </Text>
-                <Text style={[styles.historyAnswer, { color: colors.textPrimary }]}>
+                <Text className="text-sm leading-5 text-textPrimary">
                   {item.a}
                 </Text>
               </View>
@@ -477,186 +424,3 @@ export const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onComplete }
     </View>
   );
 };
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 16,
-  },
-  loadingText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    paddingBottom: 64,
-  },
-  topBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  brandingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  brandDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  brandingTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  skipButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-  },
-  skipText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  progressContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 36,
-  },
-  progressSegment: {
-    flex: 1,
-    borderRadius: 3,
-  },
-  pillarMetaRow: {
-    marginBottom: 16,
-  },
-  pillarBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1.5,
-  },
-  pillarIndicatorDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  pillarBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  promptBlock: {
-    marginBottom: 28,
-  },
-  questionHeadline: {
-    fontSize: 24,
-    lineHeight: 34,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  suggestionsSection: {
-    marginBottom: 24,
-  },
-  suggestionsLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    marginBottom: 10,
-  },
-  chipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  suggestionChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  chipText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  inputContainer: {
-    borderRadius: 20,
-    borderWidth: 1.5,
-    padding: 18,
-    minHeight: 160,
-    marginBottom: 36,
-  },
-  inputField: {
-    flex: 1,
-    fontSize: 16,
-    lineHeight: 24,
-    minHeight: 80,
-    padding: 0,
-    textAlignVertical: 'top',
-  },
-  inputBottomRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 14,
-    paddingTop: 10,
-  },
-  inputHint: {
-    fontSize: 12,
-  },
-  continueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 18,
-  },
-  continueText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  historySection: {
-    marginTop: 12,
-    paddingTop: 24,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(150, 150, 150, 0.15)',
-  },
-  historyLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.6,
-    marginBottom: 14,
-  },
-  historyItem: {
-    borderLeftWidth: 3,
-    paddingLeft: 14,
-    marginBottom: 16,
-  },
-  historyPillarName: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  historyAnswer: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-});
