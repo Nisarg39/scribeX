@@ -2,7 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/**
+ * ScribeX UI Design System - CSS Custom Properties
+ * Source of truth: docs/ScribeX-Pastel-Tile-UI-Design-System.md
+ */
+
+:root,
+[data-theme="light"] {
+  color-scheme: light;
   --color-app-bg: #E8ECF5;
   --color-surface: #FFFFFF;
   --color-surface-raised: #FFFFFF;
@@ -12,7 +19,24 @@
   --color-border-subtle: #E8E8E8;
   --color-icon-bg: #111111;
   --color-icon-fg: #FFFFFF;
+}
 
+[data-theme="dark"],
+.dark {
+  color-scheme: dark;
+  --color-app-bg: #242424;
+  --color-surface: #242424;
+  --color-surface-raised: #303030;
+  --color-text-primary: #F7F7F7;
+  --color-text-secondary: #B5B5B5;
+  --color-text-muted: #858585;
+  --color-border-subtle: #3A3A3A;
+  --color-icon-bg: #383838;
+  --color-icon-fg: #FFFFFF;
+}
+
+:root {
+  /* Pastel Note Tile Palette (Identical in both light and dark mode) */
   --note-apricot: #FFC96F;
   --note-coral: #FF9277;
   --note-lime: #E5F28B;
@@ -20,18 +44,19 @@
   --note-cyan: #08C4E5;
   --note-pink: #F5A4C6;
   --note-sky: #8EDCEB;
-}
+  --note-text: #191919;
+  --color-favorite: #FFD43B;
 
-.dark {
-  --color-app-bg: #0C0E14;
-  --color-surface: #141722;
-  --color-surface-raised: #1A1E2E;
-  --color-text-primary: #F0F2FA;
-  --color-text-secondary: #A0A6BA;
-  --color-text-muted: #6B7286;
-  --color-border-subtle: rgba(255, 255, 255, 0.08);
-  --color-icon-bg: #FFFFFF;
-  --color-icon-fg: #111111;
+  /* Shadows */
+  --shadow-none: none;
+  --shadow-subtle: 0 2px 8px rgba(0, 0, 0, 0.04);
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+  /* Motion */
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --motion-theme: 200ms;
+  --easing-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 html, body {
@@ -40,5 +65,6 @@ html, body {
   height: 100%;
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  transition: background-color 200ms cubic-bezier(0.2, 0, 0, 1), color 200ms cubic-bezier(0.2, 0, 0, 1);
 }

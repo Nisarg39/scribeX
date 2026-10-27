@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { useColorScheme as useRNColorScheme } from 'react-native';
+import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
 import { ThemeColors, ThemeColorPalette, ThemeMode } from './tokens';
 
 interface ThemeContextValue {
@@ -19,29 +20,55 @@ const ThemeContext = createContext<ThemeContextValue>({
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const systemScheme = useColorScheme();
-  const [mode, setMode] = useState<ThemeMode>(systemScheme === 'light' ? 'light' : 'dark');
+  const rnScheme = useRNColorScheme();
+  const { colorScheme: nwScheme, setColorScheme: setNWColorScheme } = useNativeWindColorScheme();
 
-  useEffect(() => {
-    // Sync class on documentElement for web NativeWind
+  const [mode, setModeState] = useState<ThemeMode>(() => {
+    if (typeof window !== 'undefined' && window.matchMedia) {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    return rnScheme === 'light' ? 'light' : 'dark';
+  });
+
+  const applyTheme = (targetMode: ThemeMode) => {
+    setModeState(targetMode);
+    try {
+      setNWColorScheme(targetMode);
+    } catch {
+      // NativeWind sync fallback if not supported
+    }
+
     if (typeof document !== 'undefined') {
-      if (mode === 'dark') {
-        document.documentElement.classList.add('dark');
+      const root = document.documentElement;
+      root.setAttribute('data-theme', targetMode);
+      if (targetMode === 'dark') {
+        root.classList.add('dark');
+        root.classList.remove('light');
       } else {
-        document.documentElement.classList.remove('dark');
+        root.classList.add('light');
+        root.classList.remove('dark');
       }
     }
-  }, [mode]);
+  };
+
+  useEffect(() => {
+    applyTheme(mode);
+  }, []);
 
   const toggleTheme = () => {
-    setMode((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    const nextMode = mode === 'dark' ? 'light' : 'dark';
+    applyTheme(nextMode);
+  };
+
+  const setTheme = (newMode: ThemeMode) => {
+    applyTheme(newMode);
   };
 
   const colors = ThemeColors[mode];
   const isDark = mode === 'dark';
 
   return (
-    <ThemeContext.Provider value={{ mode, colors, isDark, toggleTheme, setTheme: setMode }}>
+    <ThemeContext.Provider value={{ mode, colors, isDark, toggleTheme, setTheme }}>
       {children}
     </ThemeContext.Provider>
   );

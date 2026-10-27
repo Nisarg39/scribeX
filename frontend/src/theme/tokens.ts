@@ -1,3 +1,8 @@
+/**
+ * ScribeX Design System Tokens
+ * Source of truth: docs/ScribeX-Pastel-Tile-UI-Design-System.md
+ */
+
 export const NoteColors = {
   apricot: '#FFC96F',
   coral: '#FF9277',
@@ -6,6 +11,7 @@ export const NoteColors = {
   cyan: '#08C4E5',
   pink: '#F5A4C6',
   sky: '#8EDCEB',
+  darkText: '#191919', // Dark legible text for pastel tiles in both themes
 } as const;
 
 export type NoteColorToken = keyof typeof NoteColors;
@@ -14,7 +20,6 @@ export interface ThemeColorPalette {
   appBg: string;
   surface: string;
   surfaceRaised: string;
-  surfaceSubtle: string;
   textPrimary: string;
   textSecondary: string;
   textMuted: string;
@@ -29,7 +34,6 @@ export const ThemeColors: Record<'light' | 'dark', ThemeColorPalette> = {
     appBg: '#E8ECF5',
     surface: '#FFFFFF',
     surfaceRaised: '#FFFFFF',
-    surfaceSubtle: '#F4F6FB',
     textPrimary: '#171717',
     textSecondary: '#626262',
     textMuted: '#929292',
@@ -39,16 +43,15 @@ export const ThemeColors: Record<'light' | 'dark', ThemeColorPalette> = {
     favorite: '#FFD43B',
   },
   dark: {
-    appBg: '#0C0E14',
-    surface: '#141722',
-    surfaceRaised: '#1A1E2E',
-    surfaceSubtle: '#20263A',
-    textPrimary: '#F0F2FA',
-    textSecondary: '#A0A6BA',
-    textMuted: '#6B7286',
-    borderSubtle: 'rgba(255, 255, 255, 0.08)',
-    iconBg: '#FFFFFF',
-    iconFg: '#111111',
+    appBg: '#242424',
+    surface: '#242424',
+    surfaceRaised: '#303030',
+    textPrimary: '#F7F7F7',
+    textSecondary: '#B5B5B5',
+    textMuted: '#858585',
+    borderSubtle: '#3A3A3A',
+    iconBg: '#383838',
+    iconFg: '#FFFFFF',
     favorite: '#FFD43B',
   },
 };
