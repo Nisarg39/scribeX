@@ -24,7 +24,7 @@
 > **Source of Truth:** [Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md) & [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md)  
 > **Critical Design Constraint:** Strictly avoid generic cards, boxy components, and cookie-cutter SaaS widgets. Deliver a serene, soft minimalist editorial canvas with pastel note accents and circular action controls.
 
-- [ ] **Step 1: Frontend Scaffolding, NativeWind v4 Configuration & Pastel Design Tokens**
+- [x] **Step 1: Frontend Scaffolding, NativeWind v4 Configuration & Pastel Design Tokens**
   - Universal Expo SDK 52 setup (`frontend/`).
   - NativeWind v4 + Tailwind CSS config with pastel note palette (`apricot`, `coral`, `lime`, `lavender`, `cyan`, `pink`, `sky`).
   - Fluid, non-generic workspace layout adhering strictly to `<RULE[user_global]>`.

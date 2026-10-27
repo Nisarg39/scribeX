@@ -18,7 +18,7 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 
 | Step | Milestone / Component | Primary Files | Status |
 | :---: | :--- | :--- | :---: |
-| **1** | [Universal Expo Scaffolding, NativeWind v4 & Design Tokens](#step-1-universal-expo-scaffolding-nativewind-v4--design-tokens) | `frontend/package.json`, `frontend/tailwind.config.js`, `frontend/src/theme/tokens.ts`, `frontend/app/_layout.tsx` | `[ ] PENDING` |
+| **1** | [Universal Expo Scaffolding, NativeWind v4 & Design Tokens](#step-1-universal-expo-scaffolding-nativewind-v4--design-tokens) | `frontend/package.json`, `frontend/tailwind.config.js`, `frontend/src/theme/tokens.ts`, `frontend/app/_layout.tsx` | `[x] COMPLETED` |
 | **2** | [Local-First Client SQLite Engine (`expo-sqlite` / OPFS)](#step-2-local-first-client-sqlite-engine-expo-sqlite--opfs) | `frontend/src/db/schema.ts`, `frontend/src/db/client.ts`, `frontend/src/db/types.ts` | `[ ] PENDING` |
 | **3** | [Core Data Repositories (Notes, Blocks, Folders, Tags)](#step-3-core-data-repositories-notes-blocks-folders-tags) | `frontend/src/db/notesRepo.ts`, `frontend/src/db/foldersRepo.ts`, `frontend/src/db/tagsRepo.ts` | `[ ] PENDING` |
 | **4** | [Composable Block Editor Engine & Standard AST Renderers](#step-4-composable-block-editor-engine--standard-ast-renderers) | `frontend/src/components/editor/BlockEditor.tsx`, `frontend/src/components/editor/BlockRenderer.tsx`, `frontend/src/core/astSerializer.ts` | `[ ] PENDING` |
