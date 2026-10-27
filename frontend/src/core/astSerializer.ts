@@ -179,6 +179,28 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
+    // Annotated Image: ![Caption](url) <!-- scribex:media width=50% align=center ratio=natural -->
+    const imageAnnotatedMatch = line.trim().match(/^!\[(.*?)\]\((.*?)\)\s*<!--\s*scribex:media\s+([^>]+)-->/);
+    if (imageAnnotatedMatch) {
+      flushParagraph();
+      const metaStr = imageAnnotatedMatch[3];
+      const widthMatch = metaStr.match(/width=([^\s]+)/);
+      const alignMatch = metaStr.match(/align=([^\s]+)/);
+      const ratioMatch = metaStr.match(/ratio=([^\s]+)/);
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'image',
+        content: imageAnnotatedMatch[2],
+        metadata: {
+          caption: imageAnnotatedMatch[1],
+          width: widthMatch ? widthMatch[1] : '100%',
+          align: alignMatch ? alignMatch[1] : 'center',
+          aspectRatio: ratioMatch ? ratioMatch[1] : 'natural',
+        },
+      });
+      continue;
+    }
+
     // Standard Image: ![Caption](url)
     const imageMatch = line.trim().match(/^!\[(.*?)\]\((.*?)\)$/);
     if (imageMatch) {
@@ -189,6 +211,8 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
         content: imageMatch[2],
         metadata: {
           caption: imageMatch[1],
+          width: '100%',
+          align: 'center',
           aspectRatio: 'natural',
         },
       });
@@ -415,7 +439,14 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
       case 'image': {
         const url = block.content || block.metadata?.url || '';
         const caption = block.metadata?.caption || '';
-        chunks.push(`![${caption}](${url})`);
+        const width = block.metadata?.width || '100%';
+        const align = block.metadata?.align || 'center';
+        const aspectRatio = block.metadata?.aspectRatio || 'natural';
+        if (width !== '100%' || align !== 'center' || aspectRatio !== 'natural') {
+          chunks.push(`![${caption}](${url}) <!-- scribex:media width=${width} align=${align} ratio=${aspectRatio} -->`);
+        } else {
+          chunks.push(`![${caption}](${url})`);
+        }
         break;
       }
 

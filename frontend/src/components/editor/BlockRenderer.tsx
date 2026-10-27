@@ -1,29 +1,8 @@
 import React from 'react';
 import { View, TextInput, Pressable } from 'react-native';
 import { ComposableBlock, BlockType } from '../../types/note';
-import { useTheme, NoteColors } from '../../theme';
-import { 
-  CheckCircle2, 
-  Circle, 
-  Trash2, 
-  ChevronUp, 
-  ChevronDown, 
-  Code2, 
-  Heading1, 
-  Heading2, 
-  ListTodo, 
-  Quote, 
-  Minus,
-  AlignLeft,
-  Table,
-  AlertCircle,
-  Sigma,
-  PenTool,
-  Volume2,
-  Image as ImageIcon,
-  Paperclip,
-  Globe
-} from 'lucide-react-native';
+import { useTheme } from '../../theme';
+import { Trash2 } from 'lucide-react-native';
 import { 
   TableBlock, 
   CodeBlock, 
@@ -41,10 +20,13 @@ interface BlockRendererProps {
   block: ComposableBlock;
   index: number;
   totalBlocks: number;
+  isActive?: boolean;
+  onFocus?: () => void;
   onUpdateContent: (content: string) => void;
   onUpdateMetadata: (metadata: Record<string, any>) => void;
   onChangeType: (type: BlockType) => void;
   onDelete: () => void;
+  onEnterPress?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
 }
@@ -53,241 +35,55 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   block,
   index,
   totalBlocks,
+  isActive,
+  onFocus,
   onUpdateContent,
   onUpdateMetadata,
   onChangeType,
   onDelete,
-  onMoveUp,
-  onMoveDown,
+  onEnterPress,
 }) => {
   const { isDark } = useTheme();
 
-  // 1. Divider Block
+  // 1. Divider Block (Continuous line, no enclosing card)
   if (block.type === 'divider') {
     return (
-      <View className="my-4 py-2 group flex-row items-center justify-between">
-        <View className="flex-1 h-[1px] bg-light-border dark:bg-dark-border" />
+      <View className="my-6 py-2 flex-row items-center justify-between group">
+        <View className="flex-1 h-[1px] bg-light-border/80 dark:bg-dark-border/80" />
         <Pressable
           onPress={onDelete}
           accessibilityLabel="Delete Divider"
-          className="ml-2 w-7 h-7 rounded-full items-center justify-center opacity-40 hover:opacity-100 active:scale-90"
+          className="ml-2 p-1 rounded-full opacity-30 hover:opacity-100 active:scale-90"
         >
-          <Trash2 size={14} color={isDark ? '#B5B5B5' : '#626262'} />
+          <Trash2 size={13} color={isDark ? '#B5B5B5' : '#626262'} />
         </Pressable>
       </View>
     );
   }
 
   return (
-    <View className="mb-3 p-3 rounded-2xl bg-light-surface dark:bg-dark-surface border border-light-border/60 dark:border-dark-border/60 hover:border-light-border dark:hover:border-dark-border transition-colors">
-      
-      {/* Top Block Control Bar */}
-      <View className="flex-row items-center justify-between mb-2 pb-1.5 border-b border-light-border/40 dark:border-dark-border/40">
-        
-        {/* Type Selector Pills */}
-        <View className="flex-row items-center flex-wrap gap-1">
-          <Pressable
-            onPress={() => onChangeType('paragraph')}
-            className={`p-1.5 rounded-lg ${block.type === 'paragraph' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Text"
-          >
-            <AlignLeft size={13} color={block.type === 'paragraph' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('heading');
-              onUpdateMetadata({ level: 1 });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'heading' && block.metadata?.level === 1 ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Heading 1"
-          >
-            <Heading1 size={13} color={block.type === 'heading' && block.metadata?.level === 1 ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('heading');
-              onUpdateMetadata({ level: 2 });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'heading' && block.metadata?.level === 2 ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Heading 2"
-          >
-            <Heading2 size={13} color={block.type === 'heading' && block.metadata?.level === 2 ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('checklist');
-              onUpdateMetadata({ checked: false });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'checklist' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Checklist"
-          >
-            <ListTodo size={13} color={block.type === 'checklist' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('code');
-              if (!block.metadata?.language) onUpdateMetadata({ language: 'typescript' });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'code' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Code"
-          >
-            <Code2 size={13} color={block.type === 'code' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => onChangeType('quote')}
-            className={`p-1.5 rounded-lg ${block.type === 'quote' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Quote"
-          >
-            <Quote size={13} color={block.type === 'quote' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('table');
-              if (!block.metadata?.columns) {
-                onUpdateMetadata({
-                  columns: ['Header 1', 'Header 2'],
-                  rows: [['', '']],
-                });
-              }
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'table' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Table"
-          >
-            <Table size={13} color={block.type === 'table' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('callout');
-              if (!block.metadata?.variant) onUpdateMetadata({ variant: 'info' });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'callout' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Callout"
-          >
-            <AlertCircle size={13} color={block.type === 'callout' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('equation');
-              if (block.metadata?.displayMode === undefined) onUpdateMetadata({ displayMode: true });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'equation' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Equation"
-          >
-            <Sigma size={13} color={block.type === 'equation' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('drawing');
-              if (!block.metadata?.paths) onUpdateMetadata({ paths: [] });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'drawing' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Drawing"
-          >
-            <PenTool size={13} color={block.type === 'drawing' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('audio');
-              if (!block.metadata?.durationSec) onUpdateMetadata({ durationSec: 94 });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'audio' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Audio"
-          >
-            <Volume2 size={13} color={block.type === 'audio' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('image');
-              if (!block.content) onUpdateContent('https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80');
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'image' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Image"
-          >
-            <ImageIcon size={13} color={block.type === 'image' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('file');
-              if (!block.metadata?.fileName) onUpdateMetadata({ fileName: 'Attachment.pdf', sizeBytes: 1540000 });
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'file' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="File"
-          >
-            <Paperclip size={13} color={block.type === 'file' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              onChangeType('bookmark');
-              if (!block.content) onUpdateContent('https://reactnative.dev');
-            }}
-            className={`p-1.5 rounded-lg ${block.type === 'bookmark' ? 'bg-light-iconBg dark:bg-white' : 'hover:bg-black/5 dark:hover:bg-white/5'}`}
-            accessibilityLabel="Bookmark"
-          >
-            <Globe size={13} color={block.type === 'bookmark' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-          </Pressable>
-        </View>
-
-        {/* Right Actions: Reorder & Delete */}
-        <View className="flex-row items-center gap-1">
-          {index > 0 && onMoveUp && (
-            <Pressable
-              onPress={onMoveUp}
-              accessibilityLabel="Move Block Up"
-              className="p-1 rounded-full opacity-50 hover:opacity-100"
-            >
-              <ChevronUp size={14} color={isDark ? '#B5B5B5' : '#626262'} />
-            </Pressable>
-          )}
-
-          {index < totalBlocks - 1 && onMoveDown && (
-            <Pressable
-              onPress={onMoveDown}
-              accessibilityLabel="Move Block Down"
-              className="p-1 rounded-full opacity-50 hover:opacity-100"
-            >
-              <ChevronDown size={14} color={isDark ? '#B5B5B5' : '#626262'} />
-            </Pressable>
-          )}
-
-          <Pressable
-            onPress={onDelete}
-            accessibilityLabel="Delete Block"
-            className="p-1 rounded-full opacity-40 hover:opacity-100 active:scale-90"
-          >
-            <Trash2 size={14} color={isDark ? '#B5B5B5' : '#626262'} />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Block Main Editable Content */}
-      {/* 2. Heading Block */}
+    <View className="my-1 group relative">
+      {/* 2. Heading Block (Pure Typography, No Border) */}
       {block.type === 'heading' && (
         <TextInput
           multiline
           placeholder={`Heading ${block.metadata?.level || 1}...`}
-          placeholderTextColor={isDark ? '#858585' : '#929292'}
+          placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
           value={block.content}
           onChangeText={onUpdateContent}
-          className={`font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight py-1 ${
-            block.metadata?.level === 1 ? 'text-2xl md:text-3xl' : 'text-xl md:text-2xl'
+          onFocus={onFocus}
+          onSubmitEditing={onEnterPress}
+          className={`font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight py-1 outline-none ${
+            block.metadata?.level === 1 
+              ? 'text-2xl md:text-3xl mt-4 mb-1' 
+              : block.metadata?.level === 2 
+              ? 'text-xl md:text-2xl mt-3 mb-1' 
+              : 'text-lg md:text-xl mt-2 mb-0.5'
           }`}
         />
       )}
 
-      {/* 3. Checklist Block */}
+      {/* 3. Checklist Block (Inline checkmark with priority pill, No Border) */}
       {block.type === 'checklist' && (
         <ChecklistBlock
           content={block.content}
@@ -315,16 +111,17 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
-      {/* 5. Blockquote Block */}
+      {/* 5. Blockquote (Editorial Quote, Lavender accent bar) */}
       {block.type === 'quote' && (
-        <View className="pl-4 border-l-4 border-note-lavender py-1">
+        <View className="pl-4 border-l-4 border-note-lavender py-1 my-1">
           <TextInput
             multiline
             placeholder="Quote or reference text..."
-            placeholderTextColor={isDark ? '#858585' : '#929292'}
+            placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
             value={block.content}
             onChangeText={onUpdateContent}
-            className="text-base italic text-light-textSecondary dark:text-dark-textSecondary leading-relaxed py-0"
+            onFocus={onFocus}
+            className="text-base md:text-lg italic text-light-textSecondary dark:text-dark-textSecondary leading-relaxed py-0 outline-none"
           />
         </View>
       )}
@@ -387,16 +184,19 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
-      {/* 11. Image Block */}
+      {/* 11. Image / Video Resizable Embed Block */}
       {block.type === 'image' && (
         <ImageBlock
           url={block.content || block.metadata?.url}
           caption={block.metadata?.caption || ''}
+          width={block.metadata?.width || '100%'}
+          align={block.metadata?.align || 'center'}
           aspectRatio={block.metadata?.aspectRatio || 'natural'}
-          onUpdateImage={(url, caption, aspectRatio) => {
+          onUpdateImage={(url, caption, width, align, aspectRatio) => {
             onUpdateContent(url);
-            onUpdateMetadata({ ...block.metadata, url, caption, aspectRatio });
+            onUpdateMetadata({ ...block.metadata, url, caption, width, align, aspectRatio });
           }}
+          onDelete={onDelete}
         />
       )}
 
@@ -427,15 +227,17 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
-      {/* 14. Standard Paragraph Block */}
+      {/* 14. Standard Continuous Paragraph (Pure Text Sheet) */}
       {block.type === 'paragraph' && (
         <TextInput
           multiline
-          placeholder="Write your thought..."
-          placeholderTextColor={isDark ? '#858585' : '#929292'}
+          placeholder="Start typing your story or use floating dock below..."
+          placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
           value={block.content}
           onChangeText={onUpdateContent}
-          className="text-base font-normal leading-relaxed text-light-textPrimary dark:text-dark-textPrimary py-1 min-h-[44px]"
+          onFocus={onFocus}
+          onSubmitEditing={onEnterPress}
+          className="text-base font-normal leading-relaxed text-light-textPrimary dark:text-dark-textPrimary py-1 min-h-[36px] outline-none"
         />
       )}
     </View>

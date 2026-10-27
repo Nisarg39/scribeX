@@ -1,18 +1,35 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Image, Pressable, Modal } from 'react-native';
+import { View, Text, TextInput, Image, Pressable, Modal, DimensionValue } from 'react-native';
 import { useTheme } from '../../../theme';
 import { 
   Maximize2, 
   X, 
   Link as LinkIcon, 
-  Image as ImageIcon 
+  Image as ImageIcon,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Trash2
 } from 'lucide-react-native';
+
+export type ImageWidth = '33%' | '50%' | '75%' | '100%';
+export type ImageAlign = 'left' | 'center' | 'right';
+export type ImageRatio = 'compact' | 'natural' | 'wide';
 
 interface ImageBlockProps {
   url?: string;
   caption?: string;
-  aspectRatio?: 'compact' | 'natural' | 'wide';
-  onUpdateImage: (url: string, caption: string, aspectRatio?: 'compact' | 'natural' | 'wide') => void;
+  width?: ImageWidth;
+  align?: ImageAlign;
+  aspectRatio?: ImageRatio;
+  onUpdateImage: (
+    url: string,
+    caption: string,
+    width: ImageWidth,
+    align: ImageAlign,
+    aspectRatio: ImageRatio
+  ) => void;
+  onDelete?: () => void;
 }
 
 const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80';
@@ -20,13 +37,18 @@ const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1517842645767-c63904277
 export const ImageBlock: React.FC<ImageBlockProps> = ({
   url = DEFAULT_IMAGE,
   caption = '',
+  width = '100%',
+  align = 'center',
   aspectRatio = 'natural',
   onUpdateImage,
+  onDelete,
 }) => {
   const { isDark } = useTheme();
   const [imageUrl, setImageUrl] = useState(url || DEFAULT_IMAGE);
   const [imageCaption, setImageCaption] = useState(caption);
-  const [currentRatio, setCurrentRatio] = useState(aspectRatio);
+  const [currentWidth, setCurrentWidth] = useState<ImageWidth>(width);
+  const [currentAlign, setCurrentAlign] = useState<ImageAlign>(align);
+  const [currentRatio, setCurrentRatio] = useState<ImageRatio>(aspectRatio);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isUrlEditing, setIsUrlEditing] = useState(false);
   const [urlInput, setUrlInput] = useState(imageUrl);
@@ -35,104 +57,161 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
     const next = urlInput.trim() || DEFAULT_IMAGE;
     setImageUrl(next);
     setIsUrlEditing(false);
-    onUpdateImage(next, imageCaption, currentRatio);
+    onUpdateImage(next, imageCaption, currentWidth, currentAlign, currentRatio);
   };
 
   const handleCaptionChange = (text: string) => {
     setImageCaption(text);
-    onUpdateImage(imageUrl, text, currentRatio);
+    onUpdateImage(imageUrl, text, currentWidth, currentAlign, currentRatio);
   };
 
-  const handleRatioChange = (ratio: 'compact' | 'natural' | 'wide') => {
-    setCurrentRatio(ratio);
-    onUpdateImage(imageUrl, imageCaption, ratio);
+  const handleWidthChange = (w: ImageWidth) => {
+    setCurrentWidth(w);
+    onUpdateImage(imageUrl, imageCaption, w, currentAlign, currentRatio);
+  };
+
+  const handleAlignChange = (a: ImageAlign) => {
+    setCurrentAlign(a);
+    onUpdateImage(imageUrl, imageCaption, currentWidth, a, currentRatio);
+  };
+
+  const handleRatioChange = (r: ImageRatio) => {
+    setCurrentRatio(r);
+    onUpdateImage(imageUrl, imageCaption, currentWidth, currentAlign, r);
   };
 
   const containerHeight =
     currentRatio === 'compact' ? 'h-48' : currentRatio === 'wide' ? 'h-80' : 'h-64';
 
-  return (
-    <View className="my-2">
-      {/* Image Container */}
-      <View className={`w-full ${containerHeight} rounded-3xl overflow-hidden border border-light-border dark:border-white/10 bg-black/5 dark:bg-black/30 relative group`}>
-        <Image
-          source={{ uri: imageUrl }}
-          className="w-full h-full object-cover"
-          resizeMode="cover"
-        />
+  const widthStyle: { width: DimensionValue } = {
+    width: currentWidth === '33%' ? '33.33%' : currentWidth === '50%' ? '50%' : currentWidth === '75%' ? '75%' : '100%',
+  };
 
-        {/* Top Floating Controls */}
-        <View className="absolute top-3 right-3 flex-row items-center gap-1.5 bg-black/50 backdrop-blur-md px-2 py-1 rounded-full">
-          {/* Ratio Pills */}
-          {(['compact', 'natural', 'wide'] as const).map((r) => (
-            <Pressable
-              key={r}
-              onPress={() => handleRatioChange(r)}
-              className={`px-2 py-0.5 rounded-full ${
-                currentRatio === r ? 'bg-white text-black' : 'hover:bg-white/20'
-              }`}
-            >
-              <Text
-                className={`text-[10px] font-bold capitalize ${
-                  currentRatio === r ? 'text-black' : 'text-white'
+  const alignContainerClass =
+    currentAlign === 'left' ? 'items-start' : currentAlign === 'right' ? 'items-end' : 'items-center';
+
+  return (
+    <View className={`my-3 w-full ${alignContainerClass}`}>
+      {/* Resizable Image Wrapper */}
+      <View style={widthStyle} className="relative group">
+        <View className={`w-full ${containerHeight} rounded-2xl overflow-hidden border border-light-border dark:border-white/10 bg-black/5 dark:bg-black/30 relative shadow-sm`}>
+          <Image
+            source={{ uri: imageUrl }}
+            className="w-full h-full object-cover"
+            resizeMode="cover"
+          />
+
+          {/* Floating Media Toolbar */}
+          <View className="absolute top-2.5 right-2.5 flex-row items-center flex-wrap gap-1 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full shadow-lg">
+            {/* Width Selector Pills */}
+            {(['33%', '50%', '75%', '100%'] as const).map((w) => (
+              <Pressable
+                key={w}
+                onPress={() => handleWidthChange(w)}
+                className={`px-1.5 py-0.5 rounded-full ${
+                  currentWidth === w ? 'bg-white' : 'hover:bg-white/20'
                 }`}
               >
-                {r}
+                <Text
+                  className={`text-[9px] font-bold ${
+                    currentWidth === w ? 'text-black' : 'text-white/80'
+                  }`}
+                >
+                  {w}
+                </Text>
+              </Pressable>
+            ))}
+
+            <View className="w-[1px] h-3 bg-white/20 mx-0.5" />
+
+            {/* Alignment Icons */}
+            <Pressable
+              onPress={() => handleAlignChange('left')}
+              className={`p-1 rounded-full ${currentAlign === 'left' ? 'bg-white/30' : 'hover:bg-white/20'}`}
+              accessibilityLabel="Align Left"
+            >
+              <AlignLeft size={11} color="#FFFFFF" />
+            </Pressable>
+            <Pressable
+              onPress={() => handleAlignChange('center')}
+              className={`p-1 rounded-full ${currentAlign === 'center' ? 'bg-white/30' : 'hover:bg-white/20'}`}
+              accessibilityLabel="Align Center"
+            >
+              <AlignCenter size={11} color="#FFFFFF" />
+            </Pressable>
+            <Pressable
+              onPress={() => handleAlignChange('right')}
+              className={`p-1 rounded-full ${currentAlign === 'right' ? 'bg-white/30' : 'hover:bg-white/20'}`}
+              accessibilityLabel="Align Right"
+            >
+              <AlignRight size={11} color="#FFFFFF" />
+            </Pressable>
+
+            <View className="w-[1px] h-3 bg-white/20 mx-0.5" />
+
+            {/* Edit URL */}
+            <Pressable
+              onPress={() => setIsUrlEditing(!isUrlEditing)}
+              className="p-1 rounded-full hover:bg-white/20"
+              accessibilityLabel="Change Image URL"
+            >
+              <LinkIcon size={11} color="#FFFFFF" />
+            </Pressable>
+
+            {/* Fullscreen Lightbox */}
+            <Pressable
+              onPress={() => setIsLightboxOpen(true)}
+              className="p-1 rounded-full hover:bg-white/20"
+              accessibilityLabel="View Fullscreen"
+            >
+              <Maximize2 size={11} color="#FFFFFF" />
+            </Pressable>
+
+            {/* Delete Image */}
+            {onDelete && (
+              <Pressable
+                onPress={onDelete}
+                className="p-1 rounded-full hover:bg-red-500/30"
+                accessibilityLabel="Delete Image"
+              >
+                <Trash2 size={11} color="#FF6B6B" />
+              </Pressable>
+            )}
+          </View>
+        </View>
+
+        {/* URL Edit Input Bar */}
+        {isUrlEditing && (
+          <View className="flex-row items-center gap-2 mt-2 p-2 rounded-xl bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10 shadow-md">
+            <ImageIcon size={13} color={isDark ? '#B5B5B5' : '#626262'} />
+            <TextInput
+              value={urlInput}
+              onChangeText={setUrlInput}
+              placeholder="Paste image URL (https://...)"
+              placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
+              className="flex-1 text-xs text-light-textPrimary dark:text-dark-textPrimary py-0 outline-none"
+              autoCapitalize="none"
+            />
+            <Pressable
+              onPress={handleSaveUrl}
+              className="px-3 py-1 rounded-lg bg-light-iconBg dark:bg-white active:scale-95"
+            >
+              <Text className="text-xs font-bold text-white dark:text-[#111111]">
+                Apply
               </Text>
             </Pressable>
-          ))}
+          </View>
+        )}
 
-          {/* Edit URL Button */}
-          <Pressable
-            onPress={() => setIsUrlEditing(!isUrlEditing)}
-            className="p-1 rounded-full hover:bg-white/20"
-            accessibilityLabel="Change Image URL"
-          >
-            <LinkIcon size={12} color="#FFFFFF" />
-          </Pressable>
-
-          {/* Lightbox Zoom Button */}
-          <Pressable
-            onPress={() => setIsLightboxOpen(true)}
-            className="p-1 rounded-full hover:bg-white/20"
-            accessibilityLabel="View Fullscreen"
-          >
-            <Maximize2 size={12} color="#FFFFFF" />
-          </Pressable>
-        </View>
+        {/* Editorial Caption Input */}
+        <TextInput
+          value={imageCaption}
+          onChangeText={handleCaptionChange}
+          placeholder="Add caption or credit..."
+          placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
+          className="text-center text-xs text-light-textMuted dark:text-dark-textMuted mt-1.5 py-0.5 italic outline-none"
+        />
       </View>
-
-      {/* URL Edit Input Bar */}
-      {isUrlEditing && (
-        <View className="flex-row items-center gap-2 mt-2 p-2 rounded-xl bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10">
-          <ImageIcon size={13} color={isDark ? '#B5B5B5' : '#626262'} />
-          <TextInput
-            value={urlInput}
-            onChangeText={setUrlInput}
-            placeholder="Paste image URL (https://...)"
-            placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
-            className="flex-1 text-xs text-light-textPrimary dark:text-dark-textPrimary py-0"
-            autoCapitalize="none"
-          />
-          <Pressable
-            onPress={handleSaveUrl}
-            className="px-3 py-1 rounded-lg bg-light-iconBg dark:bg-white"
-          >
-            <Text className="text-xs font-bold text-white dark:text-[#111111]">
-              Set
-            </Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* Caption Input */}
-      <TextInput
-        value={imageCaption}
-        onChangeText={handleCaptionChange}
-        placeholder="Write image caption..."
-        placeholderTextColor={isDark ? '#858585' : '#929292'}
-        className="text-center text-xs text-light-textMuted dark:text-dark-textMuted mt-1.5 py-1 italic"
-      />
 
       {/* Fullscreen Lightbox Modal */}
       <Modal
@@ -166,3 +245,4 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
     </View>
   );
 };
+
