@@ -25,6 +25,8 @@ interface NotesContextValue {
   updateTaskPriority: (taskId: string, priority: TaskPriority) => Promise<void>;
   updateTaskDueDate: (taskId: string, dueDate: string) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
+  isEditingNote: boolean;
+  setIsEditingNote: (editing: boolean) => void;
   refreshFromDB: () => Promise<void>;
 }
 
@@ -43,6 +45,8 @@ const NotesContext = createContext<NotesContextValue>({
   tasks: [],
   activeFilter: 'all',
   isLoading: true,
+  isEditingNote: false,
+  setIsEditingNote: () => {},
   setActiveFilter: () => {},
   addNote: async () => {},
   toggleFavorite: async () => {},
@@ -59,6 +63,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<string>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isEditingNote, setIsEditingNote] = useState<boolean>(false);
 
   const refreshFromDB = async () => {
     try {
@@ -359,6 +364,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateTaskPriority,
         updateTaskDueDate,
         deleteTask,
+        isEditingNote,
+        setIsEditingNote,
         refreshFromDB,
       }}
     >

@@ -15,7 +15,7 @@ function HomeContainerContent() {
   const router = useRouter();
   const { isDark, toggleTheme } = useTheme();
   const { signOut } = useAuth();
-  const { tasks } = useNotesStore();
+  const { tasks, isEditingNote } = useNotesStore();
 
   const [activeTab, setActiveTab] = useState<'notes' | 'tasks'>('notes');
   const pendingCount = tasks.filter((t) => !t.isCompleted).length;
@@ -82,12 +82,14 @@ function HomeContainerContent() {
             {activeTab === 'notes' ? <NotesView /> : <TasksView />}
           </View>
 
-          {/* Floating Bottom Navigation Dock */}
-          <BottomDock 
-            activeTab={activeTab} 
-            onTabChange={setActiveTab} 
-            pendingTasksCount={pendingCount} 
-          />
+          {/* Floating Bottom Navigation Dock (Hidden during note editing) */}
+          {!isEditingNote && (
+            <BottomDock 
+              activeTab={activeTab} 
+              onTabChange={setActiveTab} 
+              pendingTasksCount={pendingCount} 
+            />
+          )}
 
         </View>
       </View>

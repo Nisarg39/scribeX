@@ -16,9 +16,20 @@ import {
 
 export const NotesView: React.FC = () => {
   const { isDark } = useTheme();
-  const { notes, activeFilter, setActiveFilter, addNote, toggleFavorite, refreshFromDB } = useNotesStore();
+  const { notes, activeFilter, setActiveFilter, addNote, toggleFavorite, refreshFromDB, setIsEditingNote } = useNotesStore();
   const [quickThought, setQuickThought] = useState('');
   const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
+
+  const handleOpenNote = (note: NoteItem) => {
+    setEditingNote(note);
+    setIsEditingNote(true);
+  };
+
+  const handleCloseNote = () => {
+    setEditingNote(null);
+    setIsEditingNote(false);
+    refreshFromDB();
+  };
 
   const handleQuickCapture = () => {
     if (!quickThought.trim()) return;
@@ -47,7 +58,7 @@ export const NotesView: React.FC = () => {
       updatedAt: 'Just now',
     };
     await addNote(newNote.title, '', newNote.colorToken, newNote.folderPath);
-    setEditingNote(newNote);
+    handleOpenNote(newNote);
   };
 
   const handleNoteUpdated = (updated: NoteItem) => {
@@ -56,8 +67,7 @@ export const NotesView: React.FC = () => {
   };
 
   const handleNoteDeleted = () => {
-    setEditingNote(null);
-    refreshFromDB();
+    handleCloseNote();
   };
 
   // If editing, render BlockEditor canvas full-screen
@@ -65,10 +75,7 @@ export const NotesView: React.FC = () => {
     return (
       <BlockEditor
         note={editingNote}
-        onClose={() => {
-          setEditingNote(null);
-          refreshFromDB();
-        }}
+        onClose={handleCloseNote}
         onNoteUpdated={handleNoteUpdated}
         onNoteDeleted={handleNoteDeleted}
       />
@@ -256,7 +263,7 @@ export const NotesView: React.FC = () => {
               className="w-full sm:w-1/2 lg:w-1/3 p-2.5"
             >
               <Pressable
-                onPress={() => setEditingNote(note)}
+                onPress={() => handleOpenNote(note)}
                 accessibilityLabel={`Open note ${note.title}`}
                 style={{ backgroundColor: pastelHex }}
                 className="p-6 rounded-[22px] min-h-[220px] justify-between shadow-sm active:scale-[0.99] transition-transform cursor-pointer"
@@ -308,7 +315,7 @@ export const NotesView: React.FC = () => {
                   <Pressable
                     onPress={(e) => {
                       e.stopPropagation();
-                      setEditingNote(note);
+                      handleOpenNote(note);
                     }}
                     accessibilityLabel="Edit Note"
                     className="w-9 h-9 rounded-full bg-[#111111] items-center justify-center active:scale-95 shadow-sm"

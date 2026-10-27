@@ -329,10 +329,123 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         </View>
       </View>
 
+      {/* Top Sticky Editorial Command Bar (Zero collision with bottom navigation) */}
+      <View className="flex-row items-center justify-between px-6 py-2.5 border-b border-light-border/70 dark:border-white/10 bg-light-appBg/95 dark:bg-[#18181A]/95 backdrop-blur-md z-20">
+        {/* Left: Primary Insert Element */}
+        <Pressable
+          onPress={() => setIsInsertPaletteOpen(!isInsertPaletteOpen)}
+          className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-iconBg dark:bg-white active:scale-95 shadow-sm"
+        >
+          <Plus size={13} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
+          <Text className="text-xs font-bold text-white dark:text-[#111111]">
+            Insert
+          </Text>
+        </Pressable>
+
+        {/* Center: Style Switchers */}
+        <View className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5">
+          <Pressable
+            onPress={() => handleSwitchActiveType('paragraph')}
+            className="px-2.5 py-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            accessibilityLabel="Normal Text"
+          >
+            <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+              Text
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleSwitchActiveType('heading', { level: 1 })}
+            className="px-2.5 py-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            accessibilityLabel="Heading 1"
+          >
+            <Text className="text-xs font-black text-light-textPrimary dark:text-dark-textPrimary">
+              H1
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleSwitchActiveType('heading', { level: 2 })}
+            className="px-2.5 py-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            accessibilityLabel="Heading 2"
+          >
+            <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+              H2
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleSwitchActiveType('quote')}
+            className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            accessibilityLabel="Quote"
+          >
+            <QuoteIcon size={13} color={isDark ? '#B5B5B5' : '#626262'} />
+          </Pressable>
+        </View>
+
+        {/* Right: Quick Task, Media, and Block Reorder/Delete */}
+        <View className="flex-row items-center gap-1.5">
+          <Pressable
+            onPress={() => handleInsertBlock('checklist', { checked: false })}
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5 active:scale-95"
+            accessibilityLabel="Add Task Checklist"
+          >
+            <ListTodo size={12} color={isDark ? '#6EE7B7' : '#059669'} />
+            <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+              Task
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleInsertBlock('image', { url: 'https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80', caption: '', width: '100%', align: 'center', aspectRatio: 'natural' })}
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5 active:scale-95"
+            accessibilityLabel="Add Image"
+          >
+            <ImageIcon size={12} color={isDark ? '#38BDF8' : '#0284C7'} />
+            <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+              Media
+            </Text>
+          </Pressable>
+
+          {activeBlockId && (
+            <>
+              <View className="w-[1px] h-4 bg-black/10 dark:bg-white/15 mx-0.5" />
+              <Pressable
+                onPress={() => {
+                  const idx = blocks.findIndex((b) => b.id === activeBlockId);
+                  if (idx > 0) handleMoveUp(idx);
+                }}
+                className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
+                accessibilityLabel="Move Up"
+              >
+                <ChevronUp size={13} color={isDark ? '#B5B5B5' : '#626262'} />
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  const idx = blocks.findIndex((b) => b.id === activeBlockId);
+                  if (idx < blocks.length - 1) handleMoveDown(idx);
+                }}
+                className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
+                accessibilityLabel="Move Down"
+              >
+                <ChevronDown size={13} color={isDark ? '#B5B5B5' : '#626262'} />
+              </Pressable>
+              <Pressable
+                onPress={() => handleDeleteBlock(activeBlockId)}
+                className="p-1 rounded-full hover:bg-red-500/20 active:scale-90"
+                accessibilityLabel="Delete Block"
+              >
+                <Trash2 size={13} color="#EF4444" />
+              </Pressable>
+            </>
+          )}
+        </View>
+      </View>
+
       {/* Editor Main Continuous Canvas */}
       <ScrollView 
         className="flex-1 px-6 md:px-16 lg:px-24 pt-6"
-        contentContainerStyle={{ paddingBottom: 220 }}
+        contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Folder Badge & Metadata */}
@@ -384,123 +497,6 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           ))}
         </View>
       </ScrollView>
-
-      {/* Sleek Floating Capsule Command Dock */}
-      <View className="absolute bottom-6 left-0 right-0 items-center justify-center px-4 pointer-events-box-none z-30">
-        <View className="flex-row items-center gap-1 px-3 py-1.5 rounded-full bg-white/90 dark:bg-[#1C1C1E]/90 backdrop-blur-xl border border-black/10 dark:border-white/10 shadow-2xl">
-          {/* Primary Insert Button */}
-          <Pressable
-            onPress={() => setIsInsertPaletteOpen(!isInsertPaletteOpen)}
-            className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-iconBg dark:bg-white active:scale-95 shadow-sm"
-          >
-            <Plus size={14} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
-            <Text className="text-xs font-bold text-white dark:text-[#111111]">
-              Insert
-            </Text>
-          </Pressable>
-
-          <View className="w-[1px] h-4 bg-black/10 dark:bg-white/15 mx-1" />
-
-          {/* Quick Style Format Switchers */}
-          <Pressable
-            onPress={() => handleSwitchActiveType('paragraph')}
-            className="px-2.5 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-            accessibilityLabel="Normal Text"
-          >
-            <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
-              Text
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleSwitchActiveType('heading', { level: 1 })}
-            className="px-2 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-            accessibilityLabel="Heading 1"
-          >
-            <Text className="text-xs font-black text-light-textPrimary dark:text-dark-textPrimary">
-              H1
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleSwitchActiveType('heading', { level: 2 })}
-            className="px-2 py-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-            accessibilityLabel="Heading 2"
-          >
-            <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
-              H2
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleSwitchActiveType('quote')}
-            className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
-            accessibilityLabel="Quote"
-          >
-            <QuoteIcon size={13} color={isDark ? '#B5B5B5' : '#626262'} />
-          </Pressable>
-
-          <View className="w-[1px] h-4 bg-black/10 dark:bg-white/15 mx-1" />
-
-          {/* Quick Task Button */}
-          <Pressable
-            onPress={() => handleInsertBlock('checklist', { checked: false })}
-            className="flex-row items-center gap-1 px-2.5 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10 active:scale-95"
-            accessibilityLabel="Add Task Checklist"
-          >
-            <ListTodo size={12} color={isDark ? '#6EE7B7' : '#059669'} />
-            <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
-              Task
-            </Text>
-          </Pressable>
-
-          {/* Quick Media Button */}
-          <Pressable
-            onPress={() => handleInsertBlock('image', { url: 'https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80', caption: '', width: '100%', align: 'center', aspectRatio: 'natural' })}
-            className="flex-row items-center gap-1 px-2.5 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10 active:scale-95"
-            accessibilityLabel="Add Image"
-          >
-            <ImageIcon size={12} color={isDark ? '#38BDF8' : '#0284C7'} />
-            <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
-              Media
-            </Text>
-          </Pressable>
-
-          {/* Discreet Reorder & Delete for Active Block */}
-          {activeBlockId && (
-            <>
-              <View className="w-[1px] h-4 bg-black/10 dark:bg-white/15 mx-1" />
-              <Pressable
-                onPress={() => {
-                  const idx = blocks.findIndex((b) => b.id === activeBlockId);
-                  if (idx > 0) handleMoveUp(idx);
-                }}
-                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
-                accessibilityLabel="Move Up"
-              >
-                <ChevronUp size={13} color={isDark ? '#B5B5B5' : '#626262'} />
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  const idx = blocks.findIndex((b) => b.id === activeBlockId);
-                  if (idx < blocks.length - 1) handleMoveDown(idx);
-                }}
-                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
-                accessibilityLabel="Move Down"
-              >
-                <ChevronDown size={13} color={isDark ? '#B5B5B5' : '#626262'} />
-              </Pressable>
-              <Pressable
-                onPress={() => handleDeleteBlock(activeBlockId)}
-                className="p-1.5 rounded-full hover:bg-red-500/20 active:scale-90"
-                accessibilityLabel="Delete Block"
-              >
-                <Trash2 size={13} color="#EF4444" />
-              </Pressable>
-            </>
-          )}
-        </View>
-      </View>
 
       {/* Modern Insert Palette Modal (Distraction-Free) */}
       <Modal
