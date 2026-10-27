@@ -93,6 +93,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
               ? [{ id: block.metadata?.taskId || block.id, text: block.content, checked: !!block.metadata?.checked, priority: block.metadata?.priority || 'none', dueDate: block.metadata?.dueDate || 'Today' }]
               : [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }]
           }
+          isSelected={isActive}
           onUpdateItems={(items) => {
             onUpdateMetadata({ ...block.metadata, items });
             onUpdateContent(items.map((i) => i.text).join('\n'));
@@ -195,10 +196,12 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           width={block.metadata?.width || '100%'}
           align={block.metadata?.align || 'center'}
           aspectRatio={block.metadata?.aspectRatio || 'natural'}
+          isSelected={isActive}
           onUpdateImage={(url, caption, width, align, aspectRatio) => {
             onUpdateContent(url);
             onUpdateMetadata({ ...block.metadata, url, caption, width, align, aspectRatio });
           }}
+          onFocus={onFocus}
           onDelete={onDelete}
         />
       )}

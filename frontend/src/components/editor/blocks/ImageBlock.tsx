@@ -22,6 +22,7 @@ interface ImageBlockProps {
   width?: ImageWidth;
   align?: ImageAlign;
   aspectRatio?: ImageRatio;
+  isSelected?: boolean;
   onUpdateImage: (
     url: string,
     caption: string,
@@ -29,6 +30,7 @@ interface ImageBlockProps {
     align: ImageAlign,
     aspectRatio: ImageRatio
   ) => void;
+  onFocus?: () => void;
   onDelete?: () => void;
 }
 
@@ -40,7 +42,9 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
   width = '100%',
   align = 'center',
   aspectRatio = 'natural',
+  isSelected = false,
   onUpdateImage,
+  onFocus,
   onDelete,
 }) => {
   const { isDark } = useTheme();
@@ -93,7 +97,13 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
   return (
     <View className={`my-3 w-full ${alignContainerClass}`}>
       {/* Resizable Image Wrapper */}
-      <View style={widthStyle} className="relative group">
+      <Pressable 
+        onPress={onFocus}
+        style={widthStyle} 
+        className={`relative group rounded-2xl transition-all ${
+          isSelected ? 'ring-2 ring-note-cyan shadow-md' : ''
+        }`}
+      >
         <View className={`w-full ${containerHeight} rounded-2xl overflow-hidden border border-light-border dark:border-white/10 bg-black/5 dark:bg-black/30 relative shadow-sm`}>
           <Image
             source={{ uri: imageUrl }}
@@ -211,7 +221,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
           placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
           className="text-center text-xs text-light-textMuted dark:text-dark-textMuted mt-1.5 py-0.5 italic outline-none"
         />
-      </View>
+      </Pressable>
 
       {/* Fullscreen Lightbox Modal */}
       <Modal

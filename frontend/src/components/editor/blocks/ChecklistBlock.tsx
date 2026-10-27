@@ -12,6 +12,7 @@ import {
 
 interface ChecklistBlockProps {
   items?: ChecklistPoint[];
+  isSelected?: boolean;
   // Legacy props fallback
   content?: string;
   checked?: boolean;
@@ -40,6 +41,7 @@ const PRIORITY_COLORS: Record<TaskPriority, { color: string; label: string }> = 
 
 export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   items,
+  isSelected = false,
   content,
   checked = false,
   taskId,
@@ -75,6 +77,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   };
 
   const handleToggleItem = (index: number) => {
+    onFocus?.();
     const next = checklistItems.map((item, i) =>
       i === index ? { ...item, checked: !item.checked } : item
     );
@@ -89,6 +92,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   };
 
   const handleCyclePriority = (index: number) => {
+    onFocus?.();
     const item = checklistItems[index];
     const currentIdx = PRIORITY_ORDER.indexOf(item.priority || 'none');
     const nextPriority = PRIORITY_ORDER[(currentIdx + 1) % PRIORITY_ORDER.length];
@@ -99,6 +103,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   };
 
   const handleCycleDueDate = (index: number) => {
+    onFocus?.();
     const item = checklistItems[index];
     const nextDue = item.dueDate === 'Today' ? 'Tomorrow' : item.dueDate === 'Tomorrow' ? 'This Week' : 'Today';
     const next = checklistItems.map((it, i) =>
@@ -108,6 +113,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   };
 
   const handleAddItem = (afterIndex?: number) => {
+    onFocus?.();
     const newPoint: ChecklistPoint = {
       id: `task-${Date.now()}-${checklistItems.length + 1}`,
       text: '',
@@ -130,6 +136,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   };
 
   const handleDeleteItem = (index: number) => {
+    onFocus?.();
     if (checklistItems.length <= 1) {
       if (onDelete) {
         onDelete();
@@ -145,22 +152,51 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   const completedCount = checklistItems.filter((i) => i.checked).length;
 
   return (
-    <View className="py-2.5 my-1 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] px-1 md:px-2 border border-transparent hover:border-black/5 dark:hover:border-white/5 transition-all">
-      {/* Container Header Badge if multiple points */}
-      {checklistItems.length > 1 && (
-        <View className="flex-row items-center justify-between mb-2 px-1">
-          <View className="flex-row items-center gap-2">
-            <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted">
-              Checklist Group
+    <Pressable
+      onPress={onFocus}
+      className={`py-3 my-2 rounded-2xl transition-all cursor-default ${
+        isSelected
+          ? 'bg-light-appBg/90 dark:bg-white/[0.06] border-2 border-note-cyan/80 dark:border-note-cyan/60 shadow-md ring-2 ring-note-cyan/20'
+          : 'bg-black/[0.02] dark:bg-white/[0.02] border-2 border-transparent hover:border-black/10 dark:hover:border-white/10'
+      } px-2.5 md:px-3.5`}
+    >
+      {/* Container Header Badge */}
+      <Pressable
+        onPress={onFocus}
+        className="flex-row items-center justify-between mb-2.5 px-1 cursor-pointer select-none"
+        accessibilityRole="button"
+        accessibilityLabel="Select checklist group"
+      >
+        <View className="flex-row items-center gap-2">
+          <View
+            className={`w-2 h-2 rounded-full ${
+              isSelected ? 'bg-note-cyan shadow-sm shadow-note-cyan' : 'bg-light-textMuted dark:bg-dark-textMuted'
+            }`}
+          />
+          <Text
+            className={`text-[11px] uppercase tracking-wider ${
+              isSelected ? 'text-note-cyan dark:text-note-cyan font-black' : 'text-light-textMuted dark:text-dark-textMuted font-bold'
+            }`}
+          >
+            Checklist Group {isSelected ? '• Selected' : ''}
+          </Text>
+          <View className="px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5">
+            <Text className="text-[10px] font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+              {completedCount} of {checklistItems.length} completed
             </Text>
-            <View className="px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5">
-              <Text className="text-[10px] font-semibold text-light-textSecondary dark:text-dark-textSecondary">
-                {completedCount} of {checklistItems.length} completed
-              </Text>
-            </View>
           </View>
         </View>
-      )}
+
+        {isSelected ? (
+          <Text className="text-[10px] font-medium text-note-cyan opacity-90 hidden sm:flex">
+            Use ▲ ▼ in top toolbar to move unit
+          </Text>
+        ) : (
+          <Text className="text-[10px] font-medium text-light-textMuted dark:text-dark-textMuted opacity-60 hidden sm:flex">
+            Click to select group
+          </Text>
+        )}
+      </Pressable>
 
       {/* Stream of Checkpoints inside this Container */}
       <View className="space-y-1">
@@ -258,6 +294,6 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
           </Text>
         </Pressable>
       </View>
-    </View>
+    </Pressable>
   );
 };
