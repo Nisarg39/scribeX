@@ -707,11 +707,38 @@ CREATE INDEX IF NOT EXISTS idx_changelog_user_rev ON sync_changelog(user_id, syn
 
 ---
 
-### 5.2. Canonical Markdown AST Serialization Specification
+### 5.2. The Invisible Editorial Canvas Paradigm (Blog Editor Architecture)
 
-To ensure that notes remain **100% human-readable in the Git Vault**, accessible to **Remote PC CLI agents (Claude Code, Gemini CLI)**, and clean for **Layer 4 Diff Learning**, composable blocks serialize into standardized Extended Markdown AST:
+To deliver a serene, distraction-free writing experience and strictly adhere to `<RULE[user_global]>`, ScribeX explicitly rejects rigid, card-like block containers with cluttered per-block header rows. 
 
-| Block Type | Markdown AST Representation in `.md` File |
+Instead, notes render as a **single continuous editorial canvas** (mirroring modern blog engines like Substack, Medium, Craft, and Notion):
+
+1. **Continuous Borderless Document Sheet:**
+   - Headings, text paragraphs, quotes, and lists flow together as unified typography without enclosing boxes or card borders.
+   - Keyboard navigation is completely natural: pressing `Enter` creates the next paragraph line; pressing `Backspace` on an empty line seamlessly merges back to the previous paragraph.
+
+2. **Single Contextual Floating Command Dock & Slash Palette:**
+   - All formatting controls (`H1`, `H2`, `Bold`, `Italic`, `Checklist`, `Table`, `Callout`, `Formula`) are consolidated into **one floating dock** pinned at the bottom of the canvas (or docked above the mobile keyboard).
+   - Typing `/` or pressing `+` on an empty line opens a lightweight command palette to insert any element directly into the document stream.
+
+3. **Inline Resizable Media & Flexible Layouts:**
+   - Media elements (Images, Videos, Voice Memos, Vector Sketches, File Attachments) live directly in the editorial stream.
+   - Tapping or hovering reveals clean sizing and alignment options:
+     - **Widths:** `Compact (33%)`, `Half (50%)`, `Wide (75%)`, `Full Bleed (100%)`.
+     - **Alignment:** `Left (with text wrap)`, `Center`, `Right`.
+
+4. **Cloud Link Storage & Serverless AI Architecture (Google Drive + Firebase + Next.js on Vercel):**
+   - **Google Drive API for Media Hosting:** Heavy media assets (audio recordings, PDFs, high-res images, video clips) are stored in Google Drive.
+   - **Firebase Realtime / Firestore for Metadata & Links:** The note document in Firebase stores *only* the Drive URLs and layout parameters (`width`, `align`, `caption`, `duration`). Note payloads stay tiny (<5 KB), guaranteeing sub-millisecond cloud sync well within free Spark tier limits.
+   - **Next.js on Vercel for Serverless AI Calls:** Next.js API routes on Vercel handle LLM synthesis, Whisper transcription, and OCR without server maintenance costs.
+
+---
+
+### 5.3. Canonical Markdown AST Serialization Specification
+
+To ensure that notes remain **100% human-readable in the Git Vault**, accessible to **Remote PC CLI agents (Claude Code, Gemini CLI)**, and clean for **Layer 4 Diff Learning**, editorial canvas elements serialize into standardized Extended Markdown AST:
+
+| Element Type | Markdown AST Representation in `.md` File |
 |---|---|
 | `paragraph` | Standard plain text or markdown paragraph |
 | `heading` | `# H1`, `## H2`, `### H3`, `#### H4` |
@@ -722,16 +749,15 @@ To ensure that notes remain **100% human-readable in the Git Vault**, accessible
 | `table` | Standard GFM Markdown table `\| Col 1 \| Col 2 \|\n\|---|---\|` |
 | `callout` | `> [!variant]\n> Callout text content` (Obsidian / GitHub alert format) |
 | `equation` | `$$ \text{LaTeX mathematical formula} $$` |
-| `image` | `![Caption](_assets/asset_uuid.png)` |
-| `audio` | `![Audio](_assets/rec_uuid.m4a) <!-- scribex:block type=audio duration=184 -->` |
-| `transcript` | `<!-- scribex:block type=transcript -->\n> **[00:15] Speaker:** Diarized text...` |
-| `drawing` | `![Sketch](_assets/sketch_uuid.svg) <!-- scribex:block type=drawing -->` |
-| `file` | `[FileName.pdf](_assets/file_uuid.pdf) <!-- scribex:block type=file size=1048576 -->` |
-| `location` | `<!-- scribex:block type=location lat=37.7749 lng=-122.4194 place="San Francisco" -->` |
+| `image` / `video` | `![Caption\|width=50%\|align=center](https://drive.google.com/...)` |
+| `audio` | `![Audio](https://drive.google.com/...) <!-- scribex:block type=audio duration=184 transcription="..." -->` |
+| `drawing` | `![Sketch](https://drive.google.com/...) <!-- scribex:block type=drawing -->` |
+| `file` | `[FileName.pdf](https://drive.google.com/...) <!-- scribex:block type=file size=1048576 -->` |
+| `bookmark` | `[Title](url) <!-- scribex:block type=bookmark description="..." previewUrl="..." -->` |
 | `divider` | `---` |
 
 * **Zero Lock-In Round-Tripping:**  
-  When an external CLI agent modifies a note's `.md` file, the backend AST parser parses it back into `NoteBlock[]` objects without loss of structural IDs.
+  When an external CLI agent modifies a note's `.md` file, the backend AST parser parses it back into canvas elements without loss of structural attributes.
 
 ---
 

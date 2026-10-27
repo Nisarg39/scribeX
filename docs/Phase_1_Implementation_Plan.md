@@ -92,51 +92,44 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 
 ---
 
-### Step 4: Composable Block Editor Engine & Standard AST Renderers
-* **Objective:** Implement the polymorphic, block-based editor canvas allowing frictionless typing, block reordering, inserting, deleting, and AST serialization.
-* **Core Block Types Handled in Step 4:**
-  * `paragraph`: Rich text paragraph with inline bold, italic, strikethrough, inline code, and links.
-  * `heading`: Levels H1, H2, H3, H4 with collapsible section disclosure toggles.
-  * `bulleted_list`: Unordered bulleted lists with tab/shift-tab nesting.
-  * `numbered_list`: Ordered procedural lists with automatic incrementing.
-  * `divider`: Subtle horizontal section separators.
+### Step 4: The Invisible Editorial Canvas Engine (Blog Editor Paradigm)
+* **Objective:** Implement a serene, continuous, borderless blog-style editor canvas (Medium / Substack / Craft / Notion style) that strictly adheres to `<RULE[user_global]>`.
+* **Key Architectural Principles:**
+  * **Continuous Borderless Document Sheet:** Eliminates isolated boxes and card borders around paragraphs. Text and headings flow together naturally as unified typography.
+  * **Unified Keyboard Flow:** Seamless Enter-to-split and Backspace-to-merge across lines.
+  * **Single Floating Command Dock & Slash Palette:** Consolidates all controls into a single floating dock at the bottom of the canvas (or docked above the mobile keyboard) and a quick `/` slash command menu.
 * **Key Deliverables:**
-  * `frontend/src/components/editor/BlockEditor.tsx`: Main canvas manager handling keyboard shortcuts (Enter to split block, Backspace on empty block to merge with previous, `/` command palette to insert block).
-  * `frontend/src/components/editor/BlockRenderer.tsx`: Polymorphic dispatcher rendering each block according to `block_type`.
-  * `frontend/src/components/editor/BlockGutter.tsx`: Subtle hover/touch controls (drag handle, add block, block type selector).
-  * `frontend/src/core/astSerializer.ts`: Bidirectional converter between `NoteBlock[]` AST and Extended Markdown (`.md`) format.
+  * `frontend/src/components/editor/BlockEditor.tsx`: Main editorial sheet manager with floating command dock and slash command palette.
+  * `frontend/src/components/editor/BlockRenderer.tsx`: Borderless, card-free polymorphic inline element renderer.
+  * `frontend/src/core/astSerializer.ts`: Extended Markdown serializer supporting inline layout attributes (`![Caption|width=50%|align=center](url)`).
 
 ---
 
-### Step 5: Structured Data Blocks: Tables, Code Blocks, LaTeX & Callouts
-* **Objective:** Support developer, scientific, and structured data input methods inside notes.
-* **Content Blocks:**
-  * `table`: Interactive tabular data grid with column/row add/delete, CSV paste parsing, and cell editing.
-  * `code`: Monospace syntax-highlighted code editor supporting 50+ languages, line numbers, and one-click copy.
-  * `equation`: KaTeX-powered LaTeX mathematical equation rendering (inline and block display).
-  * `callout`: Visual alert blocks (`info`, `warning`, `success`, `quote`) with pastel background tints and accent icons.
-* **Key Deliverables:**
-  * `frontend/src/components/editor/blocks/TableBlock.tsx`
-  * `frontend/src/components/editor/blocks/CodeBlock.tsx`
-  * `frontend/src/components/editor/blocks/EquationBlock.tsx`
-  * `frontend/src/components/editor/blocks/CalloutBlock.tsx`
+### Step 5: Structured Data & Media Elements (Tables, LaTeX, Callouts & Cloud Links)
+* **Objective:** Support inline developer, scientific, and multimedia elements directly within the blog flow with flexible sizing.
+* **Inline Elements:**
+  * `table`: Interactive tabular grid with cell editing and CSV paste.
+  * `code`: Monospace syntax-highlighted editor with line numbers and one-click copy.
+  * `equation`: KaTeX LaTeX formula editor with live symbol preview.
+  * `callout`: Visual alert blocks (`info`, `warning`, `success`, `quote`) with subtle pastel accent borders.
+  * `image` & `video`: Resizable media embeds (`33%`, `50%`, `75%`, `100%`) with Google Drive API link storage and Lightbox zoom.
+  * `audio`: Audio memo recorder and player with waveform and Friday AI transcription field.
+  * `drawing`: Vector sketch pad with pen, highlighter, and SVG persistence.
+  * `file`: Attachment card with type badges and size formatting.
+  * `bookmark`: Rich web bookmark preview cards with domain favicon and description.
+* **Cloud Architecture Integration:**
+  * Google Drive API stores heavy media files; note documents in SQLite and Firebase store only the Drive URLs and layout parameters.
+  * Next.js on Vercel serves as the serverless proxy for Whisper and LLM transformations.
 
 ---
 
-### Step 6: Multi-Modal Media & File Capture (Drawing, Audio, Attachments, Links)
-* **Objective:** Support multimedia and external asset capture directly into composable content blocks.
-* **Content Blocks:**
-  * `drawing`: Vector sketch canvas supporting freehand pen, highlighter, eraser, color palette, undo/redo, and SVG path persistence.
-  * `audio`: Audio voice recorder and playback player with waveform visualizer, playback speed controls, and scrub bar.
-  * `file`: Binary document attachment cards (PDF, DOCX, CSV) with file size, icon, and embedded viewer.
-  * `image`: High-resolution image block with caption, lightbox zoom, and aspect ratio controls.
-  * `bookmark`: Rich web bookmark preview cards with OpenGraph title, description, thumbnail, and favicon.
-* **Key Deliverables:**
-  * `frontend/src/components/editor/blocks/DrawingBlock.tsx`
-  * `frontend/src/components/editor/blocks/AudioBlock.tsx`
-  * `frontend/src/components/editor/blocks/FileBlock.tsx`
-  * `frontend/src/components/editor/blocks/ImageBlock.tsx`
-  * `frontend/src/components/editor/blocks/BookmarkBlock.tsx`
+### Step 6: Unified Task Engine (Embedded Checklists $\leftrightarrow$ Global Task View)
+* **Objective:** Unify note checklist blocks with the global task engine so completing a task in either place updates both instantly.
+* **Key Architectural Rules:**
+  * Every checklist item embedded in a note receives a unique `taskId`.
+  * The task record is synchronized in the `tasks` SQLite table with `is_completed`, `priority`, and `due_date`.
+  * Toggling a checkbox inside a note immediately updates the `tasks` table and emits a task change event.
+  * Toggling a task in the Global Task View immediately reflects in the note's AST blocks and rendered markdown.
 
 ---
 

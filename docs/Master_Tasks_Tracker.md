@@ -49,6 +49,12 @@
 - [x] **Step 6: Unified Task Engine (Embedded Checklists $\leftrightarrow$ Global Task View)**
   - Single-source-of-truth task entity linking note checklist blocks to global task records.
   - Reactive completion toggle, priority weights (`low`, `medium`, `high`, `urgent`), and due dates.
+- [ ] **Milestone 1.5: Invisible Editorial Canvas Refactor (Blog Editor Flow & Resizable Media)**
+  - Strip outer cards, borders, and per-block header strips from `BlockRenderer.tsx`.
+  - Unify all text and headings into a continuous editorial sheet (Medium / Substack / Notion style).
+  - Implement single floating contextual formatting dock + slash command palette (`/`).
+  - Add inline resizable media controls (`33%`, `50%`, `75%`, `100%`) with alignment (`left`, `center`, `right`).
+  - Ensure Google Drive URL linking compatibility for zero-cost media storage with Firebase sync.
 - [ ] **Step 7: Hierarchical Folders & Physical Vault Directory Mirroring**
   - Nested project subfolders with recursive parent paths.
   - Drag/move note into folders and breadcrumb navigation.
