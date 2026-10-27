@@ -28,9 +28,9 @@
   - Universal Expo SDK 52 setup (`frontend/`).
   - NativeWind v4 + Tailwind CSS config with pastel note palette (`apricot`, `coral`, `lime`, `lavender`, `cyan`, `pink`, `sky`).
   - Fluid, non-generic workspace layout adhering strictly to `<RULE[user_global]>`.
-- [ ] **Step 2: Local-First Client SQLite Engine (`expo-sqlite` / OPFS WAL Mode)**
+- [x] **Step 2: Local-First Client SQLite Engine (`expo-sqlite` / OPFS WAL Mode)**
   - SQLite DDL schemas: `folders`, `tags`, `notes`, `note_tags`, `tasks`, `assets`, `entity_relations`, `sync_changelog`.
-  - Sub-5ms optimistic reads/writes and atomic multi-block transactions.
+  - Sub-5ms optimistic reads/writes, WAL mode auto-initialization, and event-sourced delta changelog tracking.
 - [ ] **Step 3: Composable Block Editor Engine & 20 Content Block AST Renderers**
   - Polymorphic block manager: paragraph, headings (H1–H4), bulleted list, numbered list.
   - Interactive block manipulation: insert, reorder, delete, Enter/Backspace split/merge.

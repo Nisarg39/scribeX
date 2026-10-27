@@ -1,17 +1,21 @@
-import React, { createContext, useContext, useState } from 'react';
-import { NoteItem, TaskItem } from '../types/note';
-import { NoteColors, NoteColorToken } from '../theme/tokens';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { NoteItem, TaskItem, ComposableBlock } from '../types/note';
+import { NoteColorToken } from '../theme/tokens';
+import { dbClient } from '../db/client';
+import { DBNote, DBTask } from '../db/types';
 
 interface NotesContextValue {
   notes: NoteItem[];
   tasks: TaskItem[];
   activeFilter: string;
+  isLoading: boolean;
   setActiveFilter: (filter: string) => void;
-  addNote: (title: string, content: string, colorToken?: NoteColorToken, folderPath?: string) => void;
-  toggleFavorite: (noteId: string) => void;
-  addTask: (title: string, noteId?: string, noteTitle?: string, noteColorToken?: NoteColorToken) => void;
-  toggleTask: (taskId: string) => void;
-  deleteTask: (taskId: string) => void;
+  addNote: (title: string, content: string, colorToken?: NoteColorToken, folderPath?: string) => Promise<void>;
+  toggleFavorite: (noteId: string) => Promise<void>;
+  addTask: (title: string, noteId?: string, noteTitle?: string, noteColorToken?: NoteColorToken) => Promise<void>;
+  toggleTask: (taskId: string) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
+  refreshFromDB: () => Promise<void>;
 }
 
 const PASTEL_PALETTE: NoteColorToken[] = [
@@ -24,162 +28,114 @@ const PASTEL_PALETTE: NoteColorToken[] = [
   'sky',
 ];
 
-const INITIAL_NOTES: NoteItem[] = [
-  {
-    id: 'note-1',
-    userId: 'user-default',
-    folderPath: 'Work/Projects/ScribeX',
-    title: 'Sprint Checklist & Action Items',
-    contentMarkdown: 'Task engine single source of truth: checklist blocks inside notes reflect instantly on the global task board without data duplication.',
-    blocks: [
-      { id: 'b1-1', type: 'paragraph', content: 'Single source of truth between note checklists and tasks ledger.' },
-      { id: 'b1-2', type: 'checklist', content: 'Configure SQLite WAL mode for sub-5ms latency' },
-      { id: 'b1-3', type: 'checklist', content: 'Implement two-part Notes & Tasks floating dock' },
-    ],
-    colorToken: 'lime',
-    isFavorite: true,
-    isPinned: true,
-    status: 'active',
-    tags: ['sprint', 'architecture'],
-    createdAt: 'Today',
-    updatedAt: 'Just now',
-  },
-  {
-    id: 'note-2',
-    userId: 'user-default',
-    folderPath: 'Work/Projects/ScribeX',
-    title: 'Universal Engine Architecture',
-    contentMarkdown: 'Unifying 42 input methods into composable content blocks. Local-first SQLite WAL ensures sub-5ms latency across all platforms.',
-    blocks: [
-      { id: 'b2-1', type: 'paragraph', content: 'Unifying 42 input methods into composable content blocks.' },
-      { id: 'b2-2', type: 'code', content: 'CREATE TABLE notes (id TEXT PRIMARY KEY, sync_rev INT);' },
-    ],
-    colorToken: 'apricot',
-    isFavorite: false,
-    isPinned: false,
-    status: 'active',
-    tags: ['architecture', 'v1'],
-    createdAt: 'Today',
-    updatedAt: '1h ago',
-  },
-  {
-    id: 'note-3',
-    userId: 'user-default',
-    folderPath: 'General',
-    title: 'Offline Delta Sync & Git Vault',
-    contentMarkdown: 'Bidirectional sync: local SQLite commits append to sync_changelog. Server pushes Git commits to markdown vault.',
-    blocks: [
-      { id: 'b3-1', type: 'paragraph', content: 'Bidirectional sync engine.' },
-    ],
-    colorToken: 'cyan',
-    isFavorite: true,
-    isPinned: false,
-    status: 'active',
-    tags: ['sync', 'vault'],
-    createdAt: 'Yesterday',
-    updatedAt: 'Yesterday',
-  },
-  {
-    id: 'note-4',
-    userId: 'user-default',
-    folderPath: 'Research',
-    title: 'Bidirectional Relations & Backlinks',
-    contentMarkdown: 'Knowledge graph links (relates_to, supersedes, derived_from) allow traversal across folder boundaries freely.',
-    blocks: [
-      { id: 'b4-1', type: 'paragraph', content: 'Knowledge graph lateral connections.' },
-      { id: 'b4-2', type: 'relation', content: '[[Universal Engine Architecture]]', metadata: { relation: 'supersedes' } },
-    ],
-    colorToken: 'lavender',
-    isFavorite: false,
-    isPinned: false,
-    status: 'active',
-    tags: ['graph', 'ideas'],
-    createdAt: 'Oct 25',
-    updatedAt: 'Oct 25',
-  },
-];
-
-const INITIAL_TASKS: TaskItem[] = [
-  {
-    id: 'task-1',
-    userId: 'user-default',
-    noteId: 'note-1',
-    noteTitle: 'Sprint Checklist',
-    noteColorToken: 'lime',
-    title: 'Configure SQLite WAL mode for sub-5ms latency',
-    isCompleted: true,
-    priority: 'high',
-    dueDate: 'Today',
-    createdAt: 'Today',
-    updatedAt: 'Just now',
-  },
-  {
-    id: 'task-2',
-    userId: 'user-default',
-    noteId: 'note-1',
-    noteTitle: 'Sprint Checklist',
-    noteColorToken: 'lime',
-    title: 'Implement two-part Notes & Tasks floating dock',
-    isCompleted: false,
-    priority: 'urgent',
-    dueDate: 'Today',
-    createdAt: 'Today',
-    updatedAt: 'Just now',
-  },
-  {
-    id: 'task-3',
-    userId: 'user-default',
-    noteId: 'note-2',
-    noteTitle: 'Universal Engine',
-    noteColorToken: 'apricot',
-    title: 'Review 42 composable input block AST definitions',
-    isCompleted: false,
-    priority: 'medium',
-    dueDate: 'Tomorrow',
-    createdAt: 'Today',
-    updatedAt: 'Today',
-  },
-  {
-    id: 'task-4',
-    userId: 'user-default',
-    title: 'Test local offline storage across desktop and mobile browsers',
-    isCompleted: false,
-    priority: 'low',
-    dueDate: 'Oct 30',
-    createdAt: 'Yesterday',
-    updatedAt: 'Yesterday',
-  },
-];
-
 const NotesContext = createContext<NotesContextValue>({
-  notes: INITIAL_NOTES,
-  tasks: INITIAL_TASKS,
+  notes: [],
+  tasks: [],
   activeFilter: 'all',
+  isLoading: true,
   setActiveFilter: () => {},
-  addNote: () => {},
-  toggleFavorite: () => {},
-  addTask: () => {},
-  toggleTask: () => {},
-  deleteTask: () => {},
+  addNote: async () => {},
+  toggleFavorite: async () => {},
+  addTask: async () => {},
+  toggleTask: async () => {},
+  deleteTask: async () => {},
+  refreshFromDB: async () => {},
 });
 
 export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [notes, setNotes] = useState<NoteItem[]>(INITIAL_NOTES);
-  const [tasks, setTasks] = useState<TaskItem[]>(INITIAL_TASKS);
+  const [notes, setNotes] = useState<NoteItem[]>([]);
+  const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const addNote = (title: string, content: string, colorToken?: NoteColorToken, folderPath: string = 'General') => {
-    // Pick next pastel color if not specified
+  // Load notes and tasks from SQLite on initial mount
+  const refreshFromDB = async () => {
+    try {
+      const dbNotes = await dbClient.query<DBNote>(
+        `SELECT * FROM notes WHERE status != 'trashed' ORDER BY is_pinned DESC, updated_at DESC;`
+      );
+
+      const dbTasks = await dbClient.query<DBTask>(
+        `SELECT * FROM tasks ORDER BY is_completed ASC, created_at DESC;`
+      );
+
+      // Convert DB rows to UI models
+      const mappedNotes: NoteItem[] = dbNotes.map((n) => {
+        let parsedBlocks: ComposableBlock[] = [];
+        try {
+          parsedBlocks = JSON.parse(n.blocks_json);
+        } catch {
+          parsedBlocks = [{ id: `b-${n.id}`, type: 'paragraph', content: n.content_markdown }];
+        }
+
+        return {
+          id: n.id,
+          userId: n.user_id,
+          folderId: n.folder_id || undefined,
+          folderPath: n.folder_path || undefined,
+          title: n.title,
+          contentMarkdown: n.content_markdown,
+          blocks: parsedBlocks,
+          colorToken: n.color_token as NoteColorToken,
+          isFavorite: n.is_favorite === 1,
+          isPinned: n.is_pinned === 1,
+          status: n.status,
+          tags: ['sqlite-synced'],
+          createdAt: n.created_at,
+          updatedAt: n.updated_at,
+        };
+      });
+
+      const mappedTasks: TaskItem[] = dbTasks.map((t) => ({
+        id: t.id,
+        userId: t.user_id,
+        noteId: t.note_id || undefined,
+        noteTitle: t.note_title || undefined,
+        noteColorToken: (t.note_color_token as NoteColorToken) || undefined,
+        blockId: t.block_id || undefined,
+        title: t.title,
+        isCompleted: t.is_completed === 1,
+        priority: t.priority,
+        dueDate: t.due_date || undefined,
+        createdAt: t.created_at,
+        updatedAt: t.updated_at,
+      }));
+
+      setNotes(mappedNotes);
+      setTasks(mappedTasks);
+    } catch (err) {
+      console.warn('Could not load from SQLite, falling back to local state:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshFromDB();
+  }, []);
+
+  const addNote = async (
+    title: string,
+    content: string,
+    colorToken?: NoteColorToken,
+    folderPath: string = 'General'
+  ) => {
     const nextColor = colorToken || PASTEL_PALETTE[notes.length % PASTEL_PALETTE.length];
+    const noteId = `note-${Date.now()}`;
+    const cleanTitle = title.trim() || 'Untitled Note';
+    const cleanContent = content.trim();
+    const blocks: ComposableBlock[] = [
+      { id: `b-${Date.now()}`, type: 'paragraph', content: cleanContent }
+    ];
+    const blocksJson = JSON.stringify(blocks);
+
     const newNote: NoteItem = {
-      id: `note-${Date.now()}`,
+      id: noteId,
       userId: 'user-default',
       folderPath,
-      title: title.trim() || 'Untitled Note',
-      contentMarkdown: content.trim(),
-      blocks: [
-        { id: `b-${Date.now()}`, type: 'paragraph', content: content.trim() }
-      ],
+      title: cleanTitle,
+      contentMarkdown: cleanContent,
+      blocks,
       colorToken: nextColor,
       isFavorite: false,
       isPinned: false,
@@ -189,24 +145,71 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updatedAt: 'Just now',
     };
 
+    // Optimistic UI Update
     setNotes((prev) => [newNote, ...prev]);
+
+    // Persist into SQLite
+    try {
+      await dbClient.run(
+        `INSERT INTO notes (
+          id, user_id, folder_path, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0);`,
+        [noteId, 'user-default', folderPath, cleanTitle, cleanContent, blocksJson, nextColor]
+      );
+
+      // Log changelog event for Phase 2 Delta Sync
+      await dbClient.run(
+        `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [`log-${Date.now()}`, 'user-default', 1, 'note', noteId, 'insert', JSON.stringify(newNote)]
+      );
+    } catch (err) {
+      console.warn('Failed to persist note into SQLite:', err);
+    }
   };
 
-  const toggleFavorite = (noteId: string) => {
+  const toggleFavorite = async (noteId: string) => {
+    // Optimistic UI Update
     setNotes((prev) =>
       prev.map((n) => (n.id === noteId ? { ...n, isFavorite: !n.isFavorite } : n))
     );
+
+    // Persist into SQLite
+    try {
+      await dbClient.run(
+        `UPDATE notes 
+         SET is_favorite = (CASE WHEN is_favorite = 1 THEN 0 ELSE 1 END), updated_at = CURRENT_TIMESTAMP 
+         WHERE id = ?;`,
+        [noteId]
+      );
+
+      await dbClient.run(
+        `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [`log-${Date.now()}`, 'user-default', 1, 'note', noteId, 'update', JSON.stringify({ toggleFavorite: true })]
+      );
+    } catch (err) {
+      console.warn('Failed to update favorite in SQLite:', err);
+    }
   };
 
-  const addTask = (title: string, noteId?: string, noteTitle?: string, noteColorToken?: NoteColorToken) => {
+  const addTask = async (
+    title: string,
+    noteId?: string,
+    noteTitle?: string,
+    noteColorToken?: NoteColorToken
+  ) => {
     if (!title.trim()) return;
+    const taskId = `task-${Date.now()}`;
+    const cleanTitle = title.trim();
+
     const newTask: TaskItem = {
-      id: `task-${Date.now()}`,
+      id: taskId,
       userId: 'user-default',
       noteId,
       noteTitle,
       noteColorToken,
-      title: title.trim(),
+      title: cleanTitle,
       isCompleted: false,
       priority: 'none',
       dueDate: 'Today',
@@ -214,17 +217,69 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       updatedAt: 'Just now',
     };
 
+    // Optimistic UI Update
     setTasks((prev) => [newTask, ...prev]);
+
+    // Persist into SQLite
+    try {
+      await dbClient.run(
+        `INSERT INTO tasks (
+          id, user_id, note_id, note_title, note_color_token, title, is_completed, priority, due_date
+        ) VALUES (?, ?, ?, ?, ?, ?, 0, 'none', 'Today');`,
+        [taskId, 'user-default', noteId || null, noteTitle || null, noteColorToken || null, cleanTitle]
+      );
+
+      await dbClient.run(
+        `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [`log-${Date.now()}`, 'user-default', 1, 'task', taskId, 'insert', JSON.stringify(newTask)]
+      );
+    } catch (err) {
+      console.warn('Failed to insert task into SQLite:', err);
+    }
   };
 
-  const toggleTask = (taskId: string) => {
+  const toggleTask = async (taskId: string) => {
+    // Optimistic UI Update
     setTasks((prev) =>
       prev.map((t) => (t.id === taskId ? { ...t, isCompleted: !t.isCompleted } : t))
     );
+
+    // Persist into SQLite
+    try {
+      await dbClient.run(
+        `UPDATE tasks 
+         SET is_completed = (CASE WHEN is_completed = 1 THEN 0 ELSE 1 END), updated_at = CURRENT_TIMESTAMP 
+         WHERE id = ?;`,
+        [taskId]
+      );
+
+      await dbClient.run(
+        `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [`log-${Date.now()}`, 'user-default', 1, 'task', taskId, 'update', JSON.stringify({ toggleCompleted: true })]
+      );
+    } catch (err) {
+      console.warn('Failed to toggle task in SQLite:', err);
+    }
   };
 
-  const deleteTask = (taskId: string) => {
+  const deleteTask = async (taskId: string) => {
+    // Optimistic UI Update
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
+
+    // Persist into SQLite
+    try {
+      await dbClient.run(`DELETE FROM tasks WHERE id = ?;`, [taskId]);
+
+      await dbClient.run(
+        `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [`log-${Date.now()}`, 'user-default', 1, 'task', taskId, 'delete', JSON.stringify({ id: taskId })]
+      );
+    } catch (err) {
+      console.warn('Failed to delete task in SQLite:', err);
+    }
   };
 
   return (
@@ -233,12 +288,14 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         notes,
         tasks,
         activeFilter,
+        isLoading,
         setActiveFilter,
         addNote,
         toggleFavorite,
         addTask,
         toggleTask,
         deleteTask,
+        refreshFromDB,
       }}
     >
       {children}
