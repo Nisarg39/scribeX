@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { colorScheme } from 'nativewind';
 import {
   ThemeColors,
   lightColors,
@@ -73,6 +74,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const isDark = resolvedTheme === 'dark';
   const colors = isDark ? darkColors : lightColors;
+
+  useEffect(() => {
+    try {
+      colorScheme.set(resolvedTheme);
+    } catch (e) {
+      // safe fallback in testing/ssr environments
+    }
+  }, [resolvedTheme]);
 
   const toggleTheme = () => {
     const nextMode: ThemeMode = resolvedTheme === 'dark' ? 'light' : 'dark';

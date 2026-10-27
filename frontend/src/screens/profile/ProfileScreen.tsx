@@ -16,7 +16,10 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = () => {
   const { colors } = useTheme();
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.appBg }]} />
+    <View
+      className="flex-1 w-full h-full bg-appBg"
+      style={[styles.container, { backgroundColor: colors.appBg }]}
+    />
   );
 };
 

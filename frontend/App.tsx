@@ -1,3 +1,4 @@
+import './global.css';
 import React from 'react';
 import { ThemeProvider } from './src/theme';
 import { AuthProvider } from './src/auth';
