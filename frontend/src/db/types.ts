@@ -160,3 +160,31 @@ export interface CreateRelationDTO {
   createdBy?: 'user' | 'friday_ai';
   confidenceScore?: number;
 }
+
+export interface NoteFilter {
+  folderId?: string;
+  folderPath?: string;
+  tag?: string;
+  isFavorite?: boolean;
+  isPinned?: boolean;
+  status?: 'active' | 'archived' | 'trashed';
+  searchQuery?: string;
+}
+
+export interface TaskFilter {
+  noteId?: string;
+  isCompleted?: boolean;
+  priority?: TaskPriority;
+  dueToday?: boolean;
+}
+
+export interface FolderTreeNode {
+  id: string;
+  name: string;
+  path: string;
+  colorToken: string;
+  icon?: string;
+  children: FolderTreeNode[];
+  noteCount?: number;
+}
+
