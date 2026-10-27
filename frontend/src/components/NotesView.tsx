@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
 import { useTheme, NoteColors } from '../theme';
 import { useNotesStore } from '../state/useNotesStore';
+import { NoteItem } from '../types/note';
+import { BlockEditor } from './editor/BlockEditor';
 import { 
   Star, 
   Pencil, 
@@ -9,23 +11,69 @@ import {
   Paperclip, 
   ArrowUp, 
   Folder,
-  Tag as TagIcon
+  Plus
 } from 'lucide-react-native';
 
 export const NotesView: React.FC = () => {
   const { isDark } = useTheme();
-  const { notes, activeFilter, setActiveFilter, addNote, toggleFavorite } = useNotesStore();
+  const { notes, activeFilter, setActiveFilter, addNote, toggleFavorite, refreshFromDB } = useNotesStore();
   const [quickThought, setQuickThought] = useState('');
+  const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
 
   const handleQuickCapture = () => {
     if (!quickThought.trim()) return;
-    // Extract title from first line / sentence
     const parts = quickThought.trim().split('\n');
     const title = parts[0].slice(0, 48);
     const content = quickThought.trim();
     addNote(title, content);
     setQuickThought('');
   };
+
+  const handleCreateNewBlankNote = async () => {
+    const tempId = `note-${Date.now()}`;
+    const newNote: NoteItem = {
+      id: tempId,
+      userId: 'user-default',
+      folderPath: 'General',
+      title: 'Untitled Note',
+      contentMarkdown: '',
+      blocks: [{ id: `b-${Date.now()}`, type: 'paragraph', content: '' }],
+      colorToken: 'apricot',
+      isFavorite: false,
+      isPinned: false,
+      status: 'active',
+      tags: [],
+      createdAt: 'Just now',
+      updatedAt: 'Just now',
+    };
+    await addNote(newNote.title, '', newNote.colorToken, newNote.folderPath);
+    setEditingNote(newNote);
+  };
+
+  const handleNoteUpdated = (updated: NoteItem) => {
+    setEditingNote(updated);
+    refreshFromDB();
+  };
+
+  const handleNoteDeleted = () => {
+    setEditingNote(null);
+    refreshFromDB();
+  };
+
+  // If editing, render BlockEditor canvas full-screen
+  if (editingNote) {
+    return (
+      <BlockEditor
+        note={editingNote}
+        onClose={() => {
+          setEditingNote(null);
+          refreshFromDB();
+        }}
+        onNoteUpdated={handleNoteUpdated}
+        onNoteDeleted={handleNoteDeleted}
+      />
+    );
+  }
 
   // Filter notes based on active filter
   const filteredNotes = notes.filter((n) => {
@@ -40,14 +88,25 @@ export const NotesView: React.FC = () => {
       contentContainerStyle={{ paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* Editorial Page Heading */}
-      <View className="mb-6">
-        <Text className="text-4xl md:text-5xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight">
-          Notes
-        </Text>
-        <Text className="text-xs md:text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary mt-1">
-          Tuesday, Oct 27 • {notes.length} thoughts & captures
-        </Text>
+      {/* Editorial Page Heading + Add Note Button */}
+      <View className="flex-row items-baseline justify-between mb-6">
+        <View>
+          <Text className="text-4xl md:text-5xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight">
+            Notes
+          </Text>
+          <Text className="text-xs md:text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary mt-1">
+            Tuesday, Oct 27 • {notes.length} thoughts & captures
+          </Text>
+        </View>
+
+        {/* Create Note Circular Button */}
+        <Pressable
+          onPress={handleCreateNewBlankNote}
+          accessibilityLabel="Create New Note in Block Editor"
+          className="w-11 h-11 rounded-full bg-light-iconBg dark:bg-white items-center justify-center active:scale-95 shadow-md transition-transform"
+        >
+          <Plus size={20} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
+        </Pressable>
       </View>
 
       {/* Universal Quick Capture Ribbon (Level 0 Ingest) */}
@@ -196,9 +255,11 @@ export const NotesView: React.FC = () => {
               key={note.id}
               className="w-full sm:w-1/2 lg:w-1/3 p-2.5"
             >
-              <View 
+              <Pressable
+                onPress={() => setEditingNote(note)}
+                accessibilityLabel={`Open note ${note.title}`}
                 style={{ backgroundColor: pastelHex }}
-                className="p-6 rounded-[22px] min-h-[220px] justify-between shadow-sm active:scale-[0.99] transition-transform"
+                className="p-6 rounded-[22px] min-h-[220px] justify-between shadow-sm active:scale-[0.99] transition-transform cursor-pointer"
               >
                 {/* Top Row: Folder Badge & Favorite Star */}
                 <View className="flex-row items-center justify-between mb-3">
@@ -209,7 +270,10 @@ export const NotesView: React.FC = () => {
                   </View>
 
                   <Pressable
-                    onPress={() => toggleFavorite(note.id)}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      toggleFavorite(note.id);
+                    }}
                     accessibilityLabel="Toggle Favorite"
                     className="w-8 h-8 rounded-full items-center justify-center active:scale-90"
                   >
@@ -242,13 +306,17 @@ export const NotesView: React.FC = () => {
                   </Text>
 
                   <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      setEditingNote(note);
+                    }}
                     accessibilityLabel="Edit Note"
                     className="w-9 h-9 rounded-full bg-[#111111] items-center justify-center active:scale-95 shadow-sm"
                   >
                     <Pencil size={15} color="#FFFFFF" strokeWidth={2.2} />
                   </Pressable>
                 </View>
-              </View>
+              </Pressable>
             </View>
           );
         })}

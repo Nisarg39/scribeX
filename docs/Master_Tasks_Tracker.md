@@ -32,7 +32,7 @@
   - SQLite DDL schemas: `folders`, `tags`, `notes`, `note_tags`, `tasks`, `assets`, `entity_relations`, `sync_changelog`.
   - Sub-5ms optimistic reads/writes, WAL mode auto-initialization, and event-sourced delta changelog tracking.
   - Strongly typed repositories: `notesRepo.ts`, `tasksRepo.ts`, `foldersRepo.ts`, `tagsRepo.ts`.
-- [ ] **Step 3: Composable Block Editor Engine & Standard AST Renderers**
+- [x] **Step 3: Composable Block Editor Engine & Standard AST Renderers**
   - Polymorphic block manager: paragraph, headings (H1–H4), bulleted list, numbered list.
   - Interactive block manipulation: insert, reorder, delete, Enter/Backspace split/merge.
   - Canonical Extended Markdown AST serializer (`NoteBlock[]` $\leftrightarrow$ `.md` round-tripping).
