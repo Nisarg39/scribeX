@@ -37,7 +37,10 @@ The system is built from the **user's immediate journey first**:
 
 ### 2.5. Composable Block Architecture & Unified Task Engine
 * **Universal Composable Blocks (42 Input Methods):** Rather than maintaining separate siloed apps for text, sketches, PDFs, audio recordings, or spreadsheets, all 42 input methods enter the system through a unified composable block model. A single note can seamlessly contain rich markdown, KaTeX equations, vector sketches, audio transcripts, and embedded files.
-* **Unified Task Engine (Single Source of Truth):** Action items and checklist items embedded inside meeting notes share the exact same entity identity as items on the global task board. Checking off an item in either location synchronizes the state across both instantly.
+* **Core Two-Part Dual Engine (1 — Notes & 2 — Tasks):** The core application layout is divided into two distinct mental modes accessible via a floating minimalist bottom navigation dock:
+  1. **Notes Workspace:** Pastel tile canvas for capturing, exploring, and organizing freeform thoughts, meeting logs, audio memos, and structured documents.
+  2. **Tasks Workspace:** High-velocity checklist ledger for reviewing today's to-dos, upcoming priorities, and completing items.
+* **Unified Task Engine (Single Source of Truth):** Action items and checklist items embedded inside meeting notes share the exact same entity identity as items on the global task board. Checking off an item in either location synchronizes the state across both instantly. Standalone quick tasks can also be created without generating a whole note document.
 * **Cross-Boundary Relational Graph:** Knowledge is not trapped in mutually exclusive folders. Notes connect across categories via bidirectional graph relationships (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`) and dynamic Smart Collections.
 
 ---

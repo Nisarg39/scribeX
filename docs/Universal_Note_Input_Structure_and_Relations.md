@@ -22,6 +22,22 @@ ScribeX transcends traditional note apps: it unifies a focused block-based notes
 **Not every input method requires a separate note type or isolated subsystem.**  
 A single note can seamlessly contain a checklist, a voice recording, an uploaded PDF, and an interactive sketch canvas as composable **content blocks**. Meanwhile, **folders, tags, smart collections, and knowledge graph links** define the multi-dimensional relationships across notes without forcing arbitrary data duplication.
 
+### Core Two-Part Dual Engine: 1 — Notes & 2 — Tasks
+At the root user journey level, the application interface is cleanly bifurcated into two high-velocity workspaces unified by a floating minimalist bottom navigation dock:
+
+1. **Part 1 — Notes (The Creative Canvas):**
+   - Houses the full pastel tile stream (`apricot`, `coral`, `lime`, `lavender`, `cyan`, `pink`, `sky`) with high-contrast `#191919` dark text.
+   - Houses the **Universal Quick Capture Ribbon (Level 0 Ingest)** for instant thought capture (<5ms write).
+   - Houses all 42 input types structured into composable blocks (rich markdown, code, math, audio memos, drawings, attachments, and bidirectional backlinks).
+   - Filterable by folder hierarchy, multi-tags, and starred favorites.
+
+2. **Part 2 — Tasks (The Execution Ledger):**
+   - A dedicated, high-velocity checklist interface reflecting atomic action items.
+   - **Single Source of Truth:** Tasks embedded inside note checklist blocks are automatically projected into the global Tasks ledger. Checking off a task in Tasks instantly updates the origin note checklist.
+   - **Origin Note Chips:** Tasks originating from a note display a subtle pastel chip linking directly to their parent note.
+   - **Standalone Quick Tasks:** Users can capture tasks directly into the ledger without creating a full note.
+
+
 ```mermaid
 graph TD
     subgraph Capture [Universal Capture Layer]
