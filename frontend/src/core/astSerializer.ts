@@ -4,7 +4,47 @@
  * Source of Truth: docs/Universal_Note_Input_Structure_and_Relations.md
  */
 
-import { ComposableBlock, BlockType } from '../types/note';
+import { ComposableBlock, BlockType, ChecklistPoint } from '../types/note';
+
+/**
+ * Coalesces adjacent checklist blocks into unified checklist container blocks
+ */
+export function coalesceChecklistBlocks(blocks: ComposableBlock[]): ComposableBlock[] {
+  const result: ComposableBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === 'checklist') {
+      const items: ChecklistPoint[] = Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
+        ? block.metadata.items
+        : [{
+            id: block.metadata?.taskId || block.id,
+            text: block.content || '',
+            checked: !!block.metadata?.checked,
+            priority: block.metadata?.priority || 'none',
+            dueDate: block.metadata?.dueDate || 'Today',
+          }];
+
+      const prev = result[result.length - 1];
+      if (prev && prev.type === 'checklist') {
+        const prevItems = Array.isArray(prev.metadata?.items) ? prev.metadata.items : [];
+        prev.metadata = { ...prev.metadata, items: [...prevItems, ...items] };
+        prev.content = prev.metadata.items.map((i: any) => i.text).join('\n');
+      } else {
+        result.push({
+          ...block,
+          content: items.map((i: any) => i.text).join('\n'),
+          metadata: {
+            ...block.metadata,
+            items,
+          },
+        });
+      }
+    } else {
+      result.push(block);
+    }
+  }
+  return result;
+}
+
 
 /**
  * Parses raw markdown text into an array of ComposableBlock objects
@@ -329,17 +369,29 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
         rawText = rawText.replace(/<!--\s*scribex:task.*?-->/, '').trim();
       }
 
-      blocks.push({
-        id: `b-${Date.now()}-${blocks.length + 1}`,
-        type: 'checklist',
-        content: rawText,
-        metadata: {
-          checked: isChecked,
-          taskId,
-          priority,
-          dueDate,
-        },
-      });
+      const newItem: ChecklistPoint = {
+        id: taskId,
+        text: rawText,
+        checked: isChecked,
+        priority: priority as any,
+        dueDate,
+      };
+
+      const lastBlock = blocks[blocks.length - 1];
+      if (lastBlock && lastBlock.type === 'checklist') {
+        const existingItems = Array.isArray(lastBlock.metadata?.items) ? lastBlock.metadata.items : [];
+        lastBlock.metadata = { ...lastBlock.metadata, items: [...existingItems, newItem] };
+        lastBlock.content = lastBlock.metadata.items.map((i: any) => i.text).join('\n');
+      } else {
+        blocks.push({
+          id: `b-${Date.now()}-${blocks.length + 1}`,
+          type: 'checklist',
+          content: rawText,
+          metadata: {
+            items: [newItem],
+          },
+        });
+      }
       continue;
     }
 
@@ -394,11 +446,18 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
       }
 
       case 'checklist': {
-        const checked = block.metadata?.checked ? 'x' : ' ';
-        const taskId = block.metadata?.taskId || `task-${Date.now()}`;
-        const priority = block.metadata?.priority && block.metadata.priority !== 'none' ? ` priority=${block.metadata.priority}` : '';
-        const due = block.metadata?.dueDate ? ` due=${block.metadata.dueDate}` : '';
-        chunks.push(`- [${checked}] ${block.content.trim()} <!-- scribex:task id=${taskId}${priority}${due} -->`);
+        const items: ChecklistPoint[] = Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
+          ? block.metadata.items
+          : (block.content ? [{ id: block.metadata?.taskId || block.id, text: block.content, checked: !!block.metadata?.checked, priority: block.metadata?.priority || 'none', dueDate: block.metadata?.dueDate || 'Today' }] : []);
+        
+        const lines = items.map((item) => {
+          const checked = item.checked ? 'x' : ' ';
+          const taskId = item.id || `task-${Date.now()}`;
+          const priority = item.priority && item.priority !== 'none' ? ` priority=${item.priority}` : '';
+          const due = item.dueDate ? ` due=${item.dueDate}` : '';
+          return `- [${checked}] ${item.text.trim()} <!-- scribex:task id=${taskId}${priority}${due} -->`;
+        });
+        chunks.push(lines.join('\n'));
         break;
       }
 

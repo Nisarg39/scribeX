@@ -14,6 +14,14 @@ export type RelationType =
 
 export type TaskPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 
+export interface ChecklistPoint {
+  id: string;
+  text: string;
+  checked: boolean;
+  priority?: TaskPriority;
+  dueDate?: string;
+}
+
 export interface TaskItem {
   id: string;
   userId: string;

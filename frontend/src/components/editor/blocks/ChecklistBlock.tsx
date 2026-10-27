@@ -1,25 +1,30 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { useTheme, NoteColors } from '../../../theme';
-import { TaskPriority } from '../../../types/note';
+import { TaskPriority, ChecklistPoint } from '../../../types/note';
 import { 
   CheckCircle2, 
   Circle, 
   Calendar, 
-  Flag, 
-  Trash2 
+  Trash2, 
+  Plus 
 } from 'lucide-react-native';
 
 interface ChecklistBlockProps {
-  content: string;
-  checked: boolean;
+  items?: ChecklistPoint[];
+  // Legacy props fallback
+  content?: string;
+  checked?: boolean;
   taskId?: string;
   priority?: TaskPriority;
   dueDate?: string;
-  onUpdateContent: (content: string) => void;
-  onToggleCheck: (checked: boolean) => void;
+  onUpdateContent?: (content: string) => void;
+  onToggleCheck?: (checked: boolean) => void;
   onUpdatePriority?: (priority: TaskPriority) => void;
   onUpdateDueDate?: (dueDate: string) => void;
+
+  onUpdateItems?: (items: ChecklistPoint[]) => void;
+  onFocus?: () => void;
   onDelete?: () => void;
 }
 
@@ -34,97 +39,224 @@ const PRIORITY_COLORS: Record<TaskPriority, { color: string; label: string }> = 
 };
 
 export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
+  items,
   content,
   checked = false,
   taskId,
   priority = 'none',
   dueDate = 'Today',
+  onUpdateItems,
   onUpdateContent,
   onToggleCheck,
-  onUpdatePriority,
-  onUpdateDueDate,
+  onFocus,
   onDelete,
 }) => {
   const { isDark } = useTheme();
-  const [showMeta, setShowMeta] = useState(false);
 
-  const priorityConf = PRIORITY_COLORS[priority] || PRIORITY_COLORS.none;
+  // Normalize items to ensure a checklist container array
+  const checklistItems: ChecklistPoint[] = Array.isArray(items) && items.length > 0
+    ? items
+    : [{
+        id: taskId || `task-${Date.now()}-1`,
+        text: content || '',
+        checked: checked,
+        priority: priority || 'none',
+        dueDate: dueDate || 'Today',
+      }];
 
-  const cyclePriority = () => {
-    const currentIdx = PRIORITY_ORDER.indexOf(priority);
-    const nextPriority = PRIORITY_ORDER[(currentIdx + 1) % PRIORITY_ORDER.length];
-    if (onUpdatePriority) {
-      onUpdatePriority(nextPriority);
+  const handleCommitItems = (nextItems: ChecklistPoint[]) => {
+    if (onUpdateItems) {
+      onUpdateItems(nextItems);
+    } else if (onUpdateContent && nextItems.length > 0) {
+      // Legacy fallback
+      onUpdateContent(nextItems[0].text);
+      if (onToggleCheck) onToggleCheck(nextItems[0].checked);
     }
   };
 
+  const handleToggleItem = (index: number) => {
+    const next = checklistItems.map((item, i) =>
+      i === index ? { ...item, checked: !item.checked } : item
+    );
+    handleCommitItems(next);
+  };
+
+  const handleUpdateItemText = (index: number, text: string) => {
+    const next = checklistItems.map((item, i) =>
+      i === index ? { ...item, text } : item
+    );
+    handleCommitItems(next);
+  };
+
+  const handleCyclePriority = (index: number) => {
+    const item = checklistItems[index];
+    const currentIdx = PRIORITY_ORDER.indexOf(item.priority || 'none');
+    const nextPriority = PRIORITY_ORDER[(currentIdx + 1) % PRIORITY_ORDER.length];
+    const next = checklistItems.map((it, i) =>
+      i === index ? { ...it, priority: nextPriority } : it
+    );
+    handleCommitItems(next);
+  };
+
+  const handleCycleDueDate = (index: number) => {
+    const item = checklistItems[index];
+    const nextDue = item.dueDate === 'Today' ? 'Tomorrow' : item.dueDate === 'Tomorrow' ? 'This Week' : 'Today';
+    const next = checklistItems.map((it, i) =>
+      i === index ? { ...it, dueDate: nextDue } : it
+    );
+    handleCommitItems(next);
+  };
+
+  const handleAddItem = (afterIndex?: number) => {
+    const newPoint: ChecklistPoint = {
+      id: `task-${Date.now()}-${checklistItems.length + 1}`,
+      text: '',
+      checked: false,
+      priority: 'none',
+      dueDate: 'Today',
+    };
+
+    let next: ChecklistPoint[];
+    if (afterIndex !== undefined) {
+      next = [
+        ...checklistItems.slice(0, afterIndex + 1),
+        newPoint,
+        ...checklistItems.slice(afterIndex + 1),
+      ];
+    } else {
+      next = [...checklistItems, newPoint];
+    }
+    handleCommitItems(next);
+  };
+
+  const handleDeleteItem = (index: number) => {
+    if (checklistItems.length <= 1) {
+      if (onDelete) {
+        onDelete();
+      } else {
+        handleCommitItems([{ ...checklistItems[0], text: '', checked: false }]);
+      }
+      return;
+    }
+    const next = checklistItems.filter((_, i) => i !== index);
+    handleCommitItems(next);
+  };
+
+  const completedCount = checklistItems.filter((i) => i.checked).length;
+
   return (
-    <View className="py-1">
-      {/* Main Checklist Row */}
-      <View className="flex-row items-start gap-3">
-        {/* Toggle Checkbox */}
-        <Pressable
-          onPress={() => onToggleCheck(!checked)}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked }}
-          className="pt-0.5 active:scale-90"
-        >
-          {checked ? (
-            <CheckCircle2 size={19} color={NoteColors.lime} strokeWidth={2.4} />
-          ) : (
-            <Circle size={19} color={isDark ? '#858585' : '#929292'} strokeWidth={2} />
-          )}
-        </Pressable>
-
-        {/* Text Input */}
-        <View className="flex-1">
-          <TextInput
-            multiline
-            placeholder="To-do item..."
-            placeholderTextColor={isDark ? '#858585' : '#929292'}
-            value={content}
-            onChangeText={onUpdateContent}
-            className={`text-base leading-relaxed py-0 text-light-textPrimary dark:text-dark-textPrimary ${
-              checked ? 'line-through text-light-textMuted dark:text-dark-textMuted' : ''
-            }`}
-          />
-
-          {/* Quick Meta Chips Row */}
-          <View className="flex-row items-center gap-2 mt-1 flex-wrap">
-            {/* Priority Pill */}
-            <Pressable
-              onPress={cyclePriority}
-              className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 active:scale-95"
-            >
-              <View
-                style={{ backgroundColor: priorityConf.color }}
-                className="w-1.5 h-1.5 rounded-full"
-              />
-              <Text
-                style={{ color: priority !== 'none' ? priorityConf.color : (isDark ? '#858585' : '#929292') }}
-                className="text-[10px] font-bold uppercase tracking-wider"
-              >
-                {priorityConf.label}
+    <View className="py-2.5 my-1 rounded-2xl bg-black/[0.02] dark:bg-white/[0.02] px-1 md:px-2 border border-transparent hover:border-black/5 dark:hover:border-white/5 transition-all">
+      {/* Container Header Badge if multiple points */}
+      {checklistItems.length > 1 && (
+        <View className="flex-row items-center justify-between mb-2 px-1">
+          <View className="flex-row items-center gap-2">
+            <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted">
+              Checklist Group
+            </Text>
+            <View className="px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5">
+              <Text className="text-[10px] font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+                {completedCount} of {checklistItems.length} completed
               </Text>
-            </Pressable>
-
-            {/* Due Date Chip */}
-            <Pressable
-              onPress={() => {
-                if (onUpdateDueDate) {
-                  const nextDue = dueDate === 'Today' ? 'Tomorrow' : dueDate === 'Tomorrow' ? 'This Week' : 'Today';
-                  onUpdateDueDate(nextDue);
-                }
-              }}
-              className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 active:scale-95"
-            >
-              <Calendar size={10} color={isDark ? '#858585' : '#929292'} />
-              <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
-                {dueDate}
-              </Text>
-            </Pressable>
+            </View>
           </View>
         </View>
+      )}
+
+      {/* Stream of Checkpoints inside this Container */}
+      <View className="space-y-1">
+        {checklistItems.map((item, idx) => {
+          const priorityConf = PRIORITY_COLORS[item.priority || 'none'] || PRIORITY_COLORS.none;
+
+          return (
+            <View key={item.id || idx} className="flex-row items-start gap-3 py-1.5 group">
+              {/* Checkbox Toggle */}
+              <Pressable
+                onPress={() => handleToggleItem(idx)}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: item.checked }}
+                className="pt-1 active:scale-90"
+              >
+                {item.checked ? (
+                  <CheckCircle2 size={19} color={NoteColors.lime} strokeWidth={2.4} />
+                ) : (
+                  <Circle size={19} color={isDark ? '#858585' : '#929292'} strokeWidth={2} />
+                )}
+              </Pressable>
+
+              {/* Text Input & Meta Chips */}
+              <View className="flex-1">
+                <TextInput
+                  multiline
+                  placeholder="Checklist point... (Press Enter to add next)"
+                  placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
+                  value={item.text}
+                  onChangeText={(text) => handleUpdateItemText(idx, text)}
+                  onFocus={onFocus}
+                  onSubmitEditing={() => handleAddItem(idx)}
+                  className={`text-base leading-relaxed py-0 outline-none text-light-textPrimary dark:text-dark-textPrimary ${
+                    item.checked ? 'line-through text-light-textMuted dark:text-dark-textMuted' : ''
+                  }`}
+                />
+
+                {/* Priority & Due Date Chips */}
+                <View className="flex-row items-center gap-2 mt-1 flex-wrap">
+                  {/* Priority Pill */}
+                  <Pressable
+                    onPress={() => handleCyclePriority(idx)}
+                    className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 active:scale-95"
+                    accessibilityLabel="Cycle Priority"
+                  >
+                    <View
+                      style={{ backgroundColor: priorityConf.color }}
+                      className="w-1.5 h-1.5 rounded-full"
+                    />
+                    <Text
+                      style={{ color: item.priority && item.priority !== 'none' ? priorityConf.color : (isDark ? '#858585' : '#929292') }}
+                      className="text-[10px] font-bold uppercase tracking-wider"
+                    >
+                      {priorityConf.label}
+                    </Text>
+                  </Pressable>
+
+                  {/* Due Date Chip */}
+                  <Pressable
+                    onPress={() => handleCycleDueDate(idx)}
+                    className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 active:scale-95"
+                    accessibilityLabel="Change Due Date"
+                  >
+                    <Calendar size={10} color={isDark ? '#858585' : '#929292'} />
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                      {item.dueDate || 'Today'}
+                    </Text>
+                  </Pressable>
+
+                  {/* Delete individual point */}
+                  <Pressable
+                    onPress={() => handleDeleteItem(idx)}
+                    className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 active:scale-90 ml-auto"
+                    accessibilityLabel="Delete item"
+                  >
+                    <Trash2 size={12} color={isDark ? '#B5B5B5' : '#626262'} />
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+
+      {/* Add Checkpoint Button */}
+      <View className="flex-row items-center mt-2 pl-7">
+        <Pressable
+          onPress={() => handleAddItem()}
+          className="flex-row items-center gap-1.5 px-3 py-1 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5 hover:border-black/20 dark:hover:border-white/20 active:scale-95"
+          accessibilityLabel="Add checkpoint to this checklist"
+        >
+          <Plus size={12} color={isDark ? '#B5B5B5' : '#626262'} strokeWidth={2.2} />
+          <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+            Add checkpoint
+          </Text>
+        </Pressable>
       </View>
     </View>
   );

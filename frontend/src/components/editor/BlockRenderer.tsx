@@ -83,18 +83,21 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
-      {/* 3. Checklist Block (Inline checkmark with priority pill, No Border) */}
+      {/* 3. Checklist Container Block (Multi-point checklist unit) */}
       {block.type === 'checklist' && (
         <ChecklistBlock
-          content={block.content}
-          checked={block.metadata?.checked || false}
-          taskId={block.metadata?.taskId}
-          priority={block.metadata?.priority}
-          dueDate={block.metadata?.dueDate}
-          onUpdateContent={onUpdateContent}
-          onToggleCheck={(checked) => onUpdateMetadata({ ...block.metadata, checked })}
-          onUpdatePriority={(priority) => onUpdateMetadata({ ...block.metadata, priority })}
-          onUpdateDueDate={(dueDate) => onUpdateMetadata({ ...block.metadata, dueDate })}
+          items={
+            Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
+              ? block.metadata.items
+              : block.content
+              ? [{ id: block.metadata?.taskId || block.id, text: block.content, checked: !!block.metadata?.checked, priority: block.metadata?.priority || 'none', dueDate: block.metadata?.dueDate || 'Today' }]
+              : [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }]
+          }
+          onUpdateItems={(items) => {
+            onUpdateMetadata({ ...block.metadata, items });
+            onUpdateContent(items.map((i) => i.text).join('\n'));
+          }}
+          onFocus={onFocus}
           onDelete={onDelete}
         />
       )}

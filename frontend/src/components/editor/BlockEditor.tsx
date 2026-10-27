@@ -6,7 +6,7 @@ import { BlockRenderer } from './BlockRenderer';
 import { notesRepo } from '../../db/notesRepo';
 import { tasksRepo } from '../../db/tasksRepo';
 import { useNotesStore } from '../../state/useNotesStore';
-import { serializeBlocksToMarkdown } from '../../core/astSerializer';
+import { serializeBlocksToMarkdown, coalesceChecklistBlocks } from '../../core/astSerializer';
 import { 
   ArrowLeft, 
   Star, 
@@ -66,11 +66,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const [isPinned, setIsPinned] = useState(note.isPinned);
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [isInsertPaletteOpen, setIsInsertPaletteOpen] = useState(false);
-  const [blocks, setBlocks] = useState<ComposableBlock[]>(
-    note.blocks && note.blocks.length > 0
+  const [blocks, setBlocks] = useState<ComposableBlock[]>(() => {
+    const rawBlocks: ComposableBlock[] = note.blocks && note.blocks.length > 0
       ? note.blocks
-      : [{ id: `b-${Date.now()}-1`, type: 'paragraph', content: note.contentMarkdown || '' }]
-  );
+      : [{ id: `b-${Date.now()}-1`, type: 'paragraph', content: note.contentMarkdown || '' }];
+    return coalesceChecklistBlocks(rawBlocks);
+  });
 
   // Save changes to SQLite / Repository
   const persistChanges = async (
@@ -93,15 +94,32 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       onNoteUpdated(updated);
 
       // Sync embedded checklists with global tasks table
-      const checklistItems = newBlocks
-        .filter((b) => b.type === 'checklist')
-        .map((b) => ({
-          id: b.metadata?.taskId || b.id,
-          text: b.content,
-          checked: !!b.metadata?.checked,
-          priority: b.metadata?.priority || 'none',
-          dueDate: b.metadata?.dueDate || 'Today',
-        }));
+      const checklistItems: any[] = [];
+      newBlocks.forEach((b) => {
+        if (b.type === 'checklist') {
+          if (Array.isArray(b.metadata?.items)) {
+            b.metadata.items.forEach((item: any) => {
+              if (item.text && item.text.trim()) {
+                checklistItems.push({
+                  id: item.id,
+                  text: item.text,
+                  checked: !!item.checked,
+                  priority: item.priority || 'none',
+                  dueDate: item.dueDate || 'Today',
+                });
+              }
+            });
+          } else if (b.content && b.content.trim()) {
+            checklistItems.push({
+              id: b.metadata?.taskId || b.id,
+              text: b.content,
+              checked: !!b.metadata?.checked,
+              priority: b.metadata?.priority || 'none',
+              dueDate: b.metadata?.dueDate || 'Today',
+            });
+          }
+        }
+      });
 
       tasksRepo.syncNoteChecklists(note.id, newTitle, newColor, checklistItems)
         .then(() => refreshFromDB())
@@ -178,13 +196,16 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   // Convert current active block to new type or insert if none active
   const handleSwitchActiveType = (type: BlockType, metadata?: Record<string, any>) => {
+    const defaultMeta = type === 'checklist' && !metadata?.items
+      ? { items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }], ...metadata }
+      : metadata;
     if (!activeBlockId) {
-      handleInsertBlock(type, metadata);
+      handleInsertBlock(type, defaultMeta);
       return;
     }
     const nextBlocks = blocks.map((b) =>
       b.id === activeBlockId
-        ? { ...b, type, metadata: { ...b.metadata, ...metadata } }
+        ? { ...b, type, metadata: { ...b.metadata, ...defaultMeta } }
         : b
     );
     setBlocks(nextBlocks);
@@ -385,8 +406,11 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
         {/* Right: Quick Task, Media, and Block Reorder/Delete */}
         <View className="flex-row items-center gap-1.5">
+          {/* Quick Task Button */}
           <Pressable
-            onPress={() => handleInsertBlock('checklist', { checked: false })}
+            onPress={() => handleInsertBlock('checklist', {
+              items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }]
+            })}
             className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5 active:scale-95"
             accessibilityLabel="Add Task Checklist"
           >
@@ -634,7 +658,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               </Text>
               <View className="flex-row flex-wrap gap-2 mb-2">
                 <Pressable
-                  onPress={() => handleInsertBlock('checklist', { checked: false })}
+                  onPress={() => handleInsertBlock('checklist', {
+                    items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }]
+                  })}
                   className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
                 >
                   <View className="w-8 h-8 rounded-xl bg-emerald-500/15 items-center justify-center mb-2">
