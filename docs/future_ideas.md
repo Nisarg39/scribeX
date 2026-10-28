@@ -2,7 +2,7 @@ This file contains future ideas and features for ScribeX.
 
 Remaining Tasks to fix
 
-0 - Update to expo sdk 57
+0 - [x] Update to expo sdk 57 (COMPLETED)
 0.1 - remove the problems that are showing in the dev console they are related to the files of older version of code which we completely removed before this new idea implementation 
 1 - [x] autoscroll the notes when the user is dragging an element and goes out of visible screen bounds or reaches near the boundry (COMPLETED)
 2 - clear the element selection when the user clicks anywhere else in the screen 
