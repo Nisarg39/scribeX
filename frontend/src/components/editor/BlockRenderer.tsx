@@ -1,23 +1,29 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, TextInput, Pressable, Text, Platform, PanResponder, Animated, Easing } from 'react-native';
+import React from 'react';
+import { View, Text, Animated } from 'react-native';
 import { ComposableBlock, BlockType } from '../../types/note';
-import { useTheme } from '../../theme';
-import { Trash2, MoveVertical } from 'lucide-react-native';
-import { 
-  TableBlock, 
-  CodeBlock, 
-  CalloutBlock, 
+import { MoveVertical } from 'lucide-react-native';
+import {
+  TableBlock,
+  CodeBlock,
+  CalloutBlock,
   EquationBlock,
   DrawingBlock,
   AudioBlock,
   ImageBlock,
   FileBlock,
   BookmarkBlock,
-  ChecklistBlock
+  ChecklistBlock,
 } from './blocks';
 import { UniversalBlockWrapper } from './UniversalBlockWrapper';
+import {
+  DividerBlock,
+  HeadingBlock,
+  QuoteBlock,
+  ParagraphBlock,
+} from './components/typography';
+import { useBlockTouchDrag } from './hooks/useBlockTouchDrag';
 
-interface BlockRendererProps {
+export interface BlockRendererProps {
   block: ComposableBlock;
   index: number;
   totalBlocks: number;
@@ -51,8 +57,6 @@ interface BlockRendererProps {
 
 export const BlockRenderer: React.FC<BlockRendererProps> = ({
   block,
-  index,
-  totalBlocks,
   isActive,
   activePointId,
   onFocusPoint,
@@ -74,376 +78,41 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   onUpdateBlock,
   onUpdateContent,
   onUpdateMetadata,
-  onChangeType,
   onDelete,
-  onEnterPress,
 }) => {
-  const { isDark } = useTheme();
-
-  const selectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
-
-  const onStartDragRef = useRef(onStartDrag);
-  onStartDragRef.current = onStartDrag;
-  const onDragMoveRef = useRef(onDragMove);
-  onDragMoveRef.current = onDragMove;
-  const onEndDragRef = useRef(onEndDrag);
-  onEndDragRef.current = onEndDrag;
-
-  const isDraggingRef = useRef(isDragging);
-  isDraggingRef.current = isDragging;
-
-  const longPressTimerRef = useRef<any>(null);
-  const touchStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  const shiftAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    shiftAnim.stopAnimation();
-    if (isDragging) {
-      shiftAnim.setValue(0);
-      return;
-    }
-    // When no drag is active across the editor (drop occurred), snap to 0 immediately
-    // so there's zero transition lag after React commits the reordered blocks
-    if (!isAnyDragging) {
-      shiftAnim.setValue(0);
-      return;
-    }
-    // While dragging is active, smoothly animate slot shifts in and out
-    Animated.timing(shiftAnim, {
-      toValue: shiftOffset,
-      duration: 180,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [shiftOffset, isDragging, isAnyDragging]);
-
-  const handleStartDragFromChild = (clientY?: number) => {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    isDraggingRef.current = true;
-    if (clientY) {
-      touchStartRef.current = { x: 0, y: clientY };
-    }
-    onStartDragRef.current?.(clientY);
-  };
-
-  const handleTouchStart = (e: any) => {
-    if (Platform.OS === 'web') return;
-
-    // If this is an active text block currently being edited, don't hijack text selection
-    const isEditingTextBlock = isActive && (block.type === 'paragraph' || block.type === 'heading' || block.type === 'quote');
-    if (isEditingTextBlock) return;
-
-    const pageX = e.nativeEvent?.pageX || 0;
-    const pageY = e.nativeEvent?.pageY || 0;
-    touchStartRef.current = { x: pageX, y: pageY };
-
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-
-    longPressTimerRef.current = setTimeout(() => {
-      longPressTimerRef.current = null;
-      handleStartDragFromChild(pageY);
-    }, 260);
-  };
-
-  const handleTouchMove = (e: any) => {
-    if (Platform.OS === 'web') return;
-
-    if (isDraggingRef.current) {
-      const pageY = e.nativeEvent?.pageY || 0;
-      const dy = pageY - touchStartRef.current.y;
-      onDragMoveRef.current?.(dy, pageY);
-      return;
-    }
-
-    if (longPressTimerRef.current) {
-      const pageX = e.nativeEvent?.pageX || 0;
-      const pageY = e.nativeEvent?.pageY || 0;
-      const dx = pageX - touchStartRef.current.x;
-      const dy = pageY - touchStartRef.current.y;
-
-      if (Math.hypot(dx, dy) > 8) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-    }
-  };
-
-  const handleTouchEnd = () => {
-    if (Platform.OS === 'web') return;
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    if (isDraggingRef.current) {
-      isDraggingRef.current = false;
-      onEndDragRef.current?.();
-    }
-    touchStartRef.current = { x: 0, y: 0 };
-  };
-
-  const handleTouchCancel = () => {
-    if (Platform.OS === 'web') return;
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    if (isDraggingRef.current) {
-      isDraggingRef.current = false;
-      onEndDragRef.current?.();
-    }
-    touchStartRef.current = { x: 0, y: 0 };
-  };
-
-  const nativePanResponder = useMemo(() => {
-    if (Platform.OS === 'web') return null;
-
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onStartShouldSetPanResponderCapture: () => false,
-
-      // Capture all moves if this block is currently being dragged
-      onMoveShouldSetPanResponder: () => isDraggingRef.current,
-      onMoveShouldSetPanResponderCapture: () => isDraggingRef.current,
-
-      // Prevent ScrollView from stealing touch while dragging
-      onPanResponderTerminationRequest: () => !isDraggingRef.current,
-
-      onPanResponderGrant: (evt) => {
-        const pageY = evt?.nativeEvent?.pageY || 0;
-        if (!touchStartRef.current.y && pageY) {
-          touchStartRef.current = { x: evt?.nativeEvent?.pageX || 0, y: pageY };
-        }
-      },
-
-      onPanResponderMove: (evt, gestureState) => {
-        if (isDraggingRef.current) {
-          const clientY = evt?.nativeEvent?.pageY ?? (gestureState.moveY || 0);
-          const dy = touchStartRef.current.y ? (clientY - touchStartRef.current.y) : gestureState.dy;
-          onDragMoveRef.current?.(dy, clientY);
-        }
-      },
-
-      onPanResponderRelease: () => {
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
-        if (isDraggingRef.current) {
-          isDraggingRef.current = false;
-          onEndDragRef.current?.();
-        }
-        touchStartRef.current = { x: 0, y: 0 };
-      },
-
-      onPanResponderTerminate: () => {
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
-        if (isDraggingRef.current) {
-          isDraggingRef.current = false;
-          onEndDragRef.current?.();
-        }
-        touchStartRef.current = { x: 0, y: 0 };
-      },
-    });
-  }, []);
-
-  const activeCleanupRef = useRef<(() => void) | null>(null);
-
-  const localInputRef = useRef<any>(null);
-
-  const adjustWebTextareaHeight = (el: any) => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const domEl = (el && el.tagName === 'TEXTAREA') ? el : el?.querySelector?.('textarea') || el;
-    if (!domEl || !domEl.style) return;
-
-    const apply = () => {
-      try {
-        (domEl.style as any).fieldSizing = 'content';
-        domEl.style.overflow = 'hidden';
-        domEl.style.resize = 'none';
-        if ('rows' in domEl) {
-          domEl.rows = 1;
-        }
-
-        domEl.style.height = 'auto';
-        const scrollH = domEl.scrollHeight;
-        if (scrollH > 0) {
-          domEl.style.height = `${scrollH}px`;
-        }
-      } catch (err) {
-        // ignore
-      }
-    };
-
-    apply();
-    if (typeof requestAnimationFrame !== 'undefined') {
-      requestAnimationFrame(apply);
-    }
-  };
-
-  const setInputRef = (el: any) => {
-    localInputRef.current = el;
-    inputRef?.(el);
-    if (el) {
-      adjustWebTextareaHeight(el);
-    }
-  };
-
-  useEffect(() => {
-    adjustWebTextareaHeight(localInputRef.current);
-  }, [block.content]);
-
-  useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const handleResize = () => {
-      adjustWebTextareaHeight(localInputRef.current);
-    };
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current);
-        longPressTimerRef.current = null;
-      }
-      if (activeCleanupRef.current) {
-        activeCleanupRef.current();
-        activeCleanupRef.current = null;
-      }
-    };
-  }, []);
-
-  // Direct element long-press drag handler for Web
-  const handleBlockPointerDown = (e: any) => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
-
-    // Only handle primary button (left mouse click)
-    if (e.button !== undefined && e.button !== 0) return;
-
-    // Do NOT drag if clicking directly on a text input or textarea
-    const targetTag = e.target?.tagName?.toUpperCase?.() || '';
-    if (targetTag === 'INPUT' || targetTag === 'TEXTAREA' || e.target?.isContentEditable) {
-      return;
-    }
-
-    const startX = e.clientX ?? e.nativeEvent?.clientX ?? 0;
-    const startY = e.clientY ?? e.nativeEvent?.clientY ?? 0;
-
-    let isDragActive = false;
-    let longPressTimer: any = null;
-
-    if (activeCleanupRef.current) {
-      activeCleanupRef.current();
-      activeCleanupRef.current = null;
-    }
-
-    // Start 240ms timer for long press
-    longPressTimer = setTimeout(() => {
-      isDragActive = true;
-      onStartDragRef.current?.(startY);
-    }, 240);
-
-    const onPointerMove = (moveEvt: MouseEvent | PointerEvent) => {
-      const currentX = moveEvt.clientX ?? (moveEvt as any).pageX ?? 0;
-      const currentY = moveEvt.clientY ?? (moveEvt as any).pageY ?? 0;
-      const dx = currentX - startX;
-      const dy = currentY - startY;
-
-      if (!isDragActive) {
-        if (Math.hypot(dx, dy) > 6) {
-          clearTimeout(longPressTimer);
-        }
-      } else {
-        moveEvt.preventDefault();
-        onDragMoveRef.current?.(dy, currentY);
-      }
-    };
-
-    const cleanup = () => {
-      clearTimeout(longPressTimer);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
-      window.removeEventListener('mousemove', onPointerMove);
-      window.removeEventListener('mouseup', onPointerUp);
-      activeCleanupRef.current = null;
-    };
-
-    const onPointerUp = (upEvt: MouseEvent | PointerEvent) => {
-      cleanup();
-      if (isDragActive) {
-        upEvt.preventDefault();
-        onEndDragRef.current?.();
-      } else {
-        onFocus?.();
-      }
-    };
-
-    activeCleanupRef.current = cleanup;
-
-    window.addEventListener('pointermove', onPointerMove, { passive: false });
-    window.addEventListener('pointerup', onPointerUp, { passive: false });
-    window.addEventListener('mousemove', onPointerMove, { passive: false });
-    window.addEventListener('mouseup', onPointerUp, { passive: false });
-  };
-
-
-
-  // 1. Divider Block (Continuous line, no enclosing card)
+  // 1. Divider Block (Continuous line, no enclosing card or drag container)
   if (block.type === 'divider') {
     return (
-      <View 
-        pointerEvents={isAnyDragging ? 'none' : 'auto'}
-        nativeID={`scribex-block-${block.id}`}
-        id={`scribex-block-${block.id}`}
-        dataSet={{ scribexBlockId: block.id }}
-        {...({ 'data-scribex-block-id': block.id } as any)}
-        className="my-6 py-2 flex-row items-center justify-between group"
-      >
-        <View className="flex-1 h-[1px] bg-light-border/80 dark:bg-dark-border/80" />
-        <Pressable
-          onPress={onDelete}
-          accessibilityLabel="Delete Divider"
-          style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
-          className="ml-2 p-1 rounded-full opacity-40 hover:opacity-100"
-        >
-          <Trash2 size={13} color={isDark ? '#B5B5B5' : '#626262'} />
-        </Pressable>
-      </View>
+      <DividerBlock
+        blockId={block.id}
+        isAnyDragging={isAnyDragging}
+        onDelete={onDelete}
+      />
     );
   }
 
-  const dragContainerStyle = useMemo(() => {
-    if (isDragging) {
-      return {
-        transform: [{ translateY: dragAnimY || dragOffsetY || 0 }],
-        zIndex: 999,
-        elevation: 8,
-        opacity: 0.96,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.2,
-        shadowRadius: 10,
-      };
-    }
-    return {
-      transform: [{ translateY: shiftAnim }],
-      zIndex: 1,
-    };
-  }, [isDragging, dragAnimY, dragOffsetY]);
+  // 2. Gesture and Drag State Hook (Mobile PanResponder + Web Pointer tracking)
+  const {
+    dragContainerStyle,
+    touchHandlers,
+    gestureHandlers,
+    handleStartDragFromChild,
+  } = useBlockTouchDrag({
+    blockType: block.type,
+    isActive,
+    isDragging,
+    isAnyDragging,
+    dragOffsetY,
+    dragAnimY,
+    shiftOffset,
+    onStartDrag,
+    onDragMove,
+    onEndDrag,
+    onFocus,
+  });
 
   return (
-    <Animated.View 
+    <Animated.View
       pointerEvents={isAnyDragging ? (isDragging ? 'auto' : 'none') : 'auto'}
       nativeID={`scribex-block-${block.id}`}
       id={`scribex-block-${block.id}`}
@@ -452,20 +121,12 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       onLayout={(e) => onReportHeight?.(e.nativeEvent.layout.height)}
       style={dragContainerStyle}
       className="my-0.5 group relative rounded-2xl"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onTouchCancel={handleTouchCancel}
-      {...(Platform.OS === 'web'
-        ? ({
-            onPointerDown: handleBlockPointerDown,
-            onMouseDown: handleBlockPointerDown,
-          } as any)
-        : (nativePanResponder?.panHandlers || {}))}
+      {...touchHandlers}
+      {...gestureHandlers}
     >
-      {/* Floating Dragging Badge */}
+      {/* Floating Dragging Indicator Badge */}
       {isDragging && (
-        <View 
+        <View
           pointerEvents="none"
           style={{ position: 'absolute', top: -14, left: 12, zIndex: 1000 }}
           className="flex-row items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-note-cyan shadow-md"
@@ -477,65 +138,49 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </View>
       )}
 
-      {/* 2. Heading Block (Pure Typography, No Border) */}
+      {/* Typography: Heading Block */}
       {block.type === 'heading' && (
-        <View 
-          className="pl-2.5 border-l-2" 
-          style={{ borderLeftColor: isActive && !isDragging ? '#06B6D4' : 'transparent' }}
-        >
-          <TextInput
-            ref={setInputRef}
-          multiline
-          scrollEnabled={false}
-          placeholder={`Heading ${block.metadata?.level || 1}...`}
-          placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
-          value={block.content}
-          onChangeText={(text) => {
-            onUpdateContent(text);
-            adjustWebTextareaHeight(localInputRef.current);
-          }}
-          onFocus={() => {
-            onFocus?.();
-            adjustWebTextareaHeight(localInputRef.current);
-          }}
-          selection={focusSelection}
-          onSelectionChange={(e) => {
-            selectionRef.current = e.nativeEvent.selection;
-            if (focusSelection) onClearFocusTarget?.();
-          }}
-          onKeyPress={(e: any) => {
-            const key = e.nativeEvent.key;
-            if (key === 'Enter' && !e.shiftKey) {
-              e.preventDefault?.();
-              onSplitBlock?.(selectionRef.current.start);
-            } else if (key === 'Backspace') {
-              if (selectionRef.current.start === 0 && selectionRef.current.end === 0) {
-                e.preventDefault?.();
-                onBackspaceAtStart?.();
-              }
-            }
-          }}
-          onSubmitEditing={() => onSplitBlock?.(selectionRef.current.start)}
-          className={`font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight py-1 outline-none ${
-            block.metadata?.level === 1 
-              ? 'text-2xl md:text-3xl mt-4 mb-1' 
-              : block.metadata?.level === 2 
-              ? 'text-xl md:text-2xl mt-3 mb-1' 
-              : 'text-lg md:text-xl mt-2 mb-0.5'
-          }`}
+        <HeadingBlock
+          block={block}
+          isActive={isActive}
+          isDragging={isDragging}
+          inputRef={inputRef}
+          focusSelection={focusSelection}
+          onClearFocusTarget={onClearFocusTarget}
+          onSplitBlock={onSplitBlock}
+          onBackspaceAtStart={onBackspaceAtStart}
+          onFocus={onFocus}
+          onUpdateContent={onUpdateContent}
         />
-        </View>
       )}
 
-      {/* 3. Checklist Container Block (Multi-point checklist unit) */}
+      {/* Checklist Container Block */}
       {block.type === 'checklist' && (
         <ChecklistBlock
           items={
             Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
               ? block.metadata.items
               : block.content
-              ? [{ id: block.metadata?.taskId || block.id, text: block.content, checked: !!block.metadata?.checked, priority: block.metadata?.priority || 'none', dueDate: block.metadata?.dueDate || 'Today', style: 'paragraph' }]
-              : [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today', style: 'paragraph' }]
+              ? [
+                  {
+                    id: block.metadata?.taskId || block.id,
+                    text: block.content,
+                    checked: !!block.metadata?.checked,
+                    priority: block.metadata?.priority || 'none',
+                    dueDate: block.metadata?.dueDate || 'Today',
+                    style: 'paragraph',
+                  },
+                ]
+              : [
+                  {
+                    id: `task-${Date.now()}-1`,
+                    text: '',
+                    checked: false,
+                    priority: 'none',
+                    dueDate: 'Today',
+                    style: 'paragraph',
+                  },
+                ]
           }
           isSelected={isActive}
           activeItemId={activePointId}
@@ -559,7 +204,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
-      {/* 4. Code Block */}
+      {/* Code Block */}
       {block.type === 'code' && (
         <UniversalBlockWrapper
           blockType="code"
@@ -582,56 +227,23 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </UniversalBlockWrapper>
       )}
 
-      {/* 5. Blockquote (Editorial Quote, Lavender accent bar) */}
+      {/* Typography: Blockquote */}
       {block.type === 'quote' && (
-        <View 
-          className="pl-4 border-l-4 py-1 my-1" 
-          style={{ borderLeftColor: isActive && !isDragging ? '#06B6D4' : (isDark ? '#B4A7D6' : '#9B87F5') }}
-        >
-          <TextInput
-            ref={setInputRef}
-            multiline
-            scrollEnabled={false}
-            placeholder="Quote or reference text..."
-            placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
-            value={block.content}
-            onChangeText={(text) => {
-              onUpdateContent(text);
-              adjustWebTextareaHeight(localInputRef.current);
-            }}
-            onFocus={() => {
-              onFocus?.();
-              adjustWebTextareaHeight(localInputRef.current);
-            }}
-            selection={focusSelection}
-            onSelectionChange={(e) => {
-              selectionRef.current = e.nativeEvent.selection;
-              if (focusSelection) onClearFocusTarget?.();
-            }}
-            onKeyPress={(e: any) => {
-              const key = e.nativeEvent.key;
-              if (key === 'Backspace') {
-                if (selectionRef.current.start === 0 && selectionRef.current.end === 0) {
-                  e.preventDefault?.();
-                  onBackspaceAtStart?.();
-                }
-              } else if (key === 'Enter') {
-                const curPos = selectionRef.current.start;
-                const textBefore = block.content.slice(0, curPos);
-                if (textBefore.endsWith('\n') || (block.content === '' && curPos === 0)) {
-                  e.preventDefault?.();
-                  const cleanedBefore = textBefore.endsWith('\n') ? textBefore.slice(0, -1) : textBefore;
-                  onUpdateContent(cleanedBefore + block.content.slice(curPos));
-                  onSplitBlock?.(cleanedBefore.length);
-                }
-              }
-            }}
-            className="text-base md:text-lg italic text-light-textSecondary dark:text-dark-textSecondary leading-relaxed py-0 outline-none"
-          />
-        </View>
+        <QuoteBlock
+          block={block}
+          isActive={isActive}
+          isDragging={isDragging}
+          inputRef={inputRef}
+          focusSelection={focusSelection}
+          onClearFocusTarget={onClearFocusTarget}
+          onSplitBlock={onSplitBlock}
+          onBackspaceAtStart={onBackspaceAtStart}
+          onFocus={onFocus}
+          onUpdateContent={onUpdateContent}
+        />
       )}
 
-      {/* 6. Table Block */}
+      {/* Table Block */}
       {block.type === 'table' && (
         <UniversalBlockWrapper
           blockType="table"
@@ -649,14 +261,14 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
               onUpdateMetadata({ ...block.metadata, columns, rows });
               const header = `| ${columns.join(' | ')} |`;
               const sep = `| ${columns.map(() => '---').join(' | ')} |`;
-              const rowLines = rows.map(r => `| ${r.join(' | ')} |`);
+              const rowLines = rows.map((r) => `| ${r.join(' | ')} |`);
               onUpdateContent([header, sep, ...rowLines].join('\n'));
             }}
           />
         </UniversalBlockWrapper>
       )}
 
-      {/* 7. Callout Block */}
+      {/* Callout Block */}
       {block.type === 'callout' && (
         <UniversalBlockWrapper
           blockType="callout"
@@ -676,7 +288,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </UniversalBlockWrapper>
       )}
 
-      {/* 8. Equation Block */}
+      {/* Equation Block */}
       {block.type === 'equation' && (
         <UniversalBlockWrapper
           blockType="equation"
@@ -697,7 +309,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </UniversalBlockWrapper>
       )}
 
-      {/* 9. Drawing Block */}
+      {/* Drawing Block */}
       {block.type === 'drawing' && (
         <UniversalBlockWrapper
           blockType="drawing"
@@ -719,7 +331,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </UniversalBlockWrapper>
       )}
 
-      {/* 10. Audio Block */}
+      {/* Audio Block */}
       {block.type === 'audio' && (
         <UniversalBlockWrapper
           blockType="audio"
@@ -741,7 +353,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </UniversalBlockWrapper>
       )}
 
-      {/* 11. Image / Video Resizable Embed Block */}
+      {/* Image Embed Block */}
       {block.type === 'image' && (
         <ImageBlock
           url={block.content || block.metadata?.url}
@@ -761,7 +373,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
-      {/* 12. File Attachment Block */}
+      {/* File Attachment Block */}
       {block.type === 'file' && (
         <UniversalBlockWrapper
           blockType="file"
@@ -784,7 +396,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </UniversalBlockWrapper>
       )}
 
-      {/* 13. Bookmark Block */}
+      {/* Bookmark Block */}
       {block.type === 'bookmark' && (
         <UniversalBlockWrapper
           blockType="bookmark"
@@ -809,55 +421,20 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         </UniversalBlockWrapper>
       )}
 
-      {/* 14. Standard Continuous Paragraph (Pure Text Sheet) */}
+      {/* Typography: Standard Paragraph */}
       {block.type === 'paragraph' && (
-        <View 
-          className="pl-2.5 border-l-2" 
-          style={{ borderLeftColor: isActive && !isDragging ? '#06B6D4' : 'transparent' }}
-        >
-          <TextInput
-            ref={setInputRef}
-          multiline
-          scrollEnabled={false}
-          placeholder="Start typing your story or use floating dock below..."
-          placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
-          value={block.content}
-          onChangeText={(text) => {
-            onUpdateContent(text);
-            adjustWebTextareaHeight(localInputRef.current);
-          }}
-          onFocus={() => {
-            onFocus?.();
-            adjustWebTextareaHeight(localInputRef.current);
-          }}
-          selection={focusSelection}
-          onSelectionChange={(e) => {
-            selectionRef.current = e.nativeEvent.selection;
-            if (focusSelection) onClearFocusTarget?.();
-          }}
-          onKeyPress={(e: any) => {
-            const key = e.nativeEvent.key;
-            if (key === 'Backspace') {
-              if (selectionRef.current.start === 0 && selectionRef.current.end === 0) {
-                e.preventDefault?.();
-                onBackspaceAtStart?.();
-              }
-            } else if (key === 'Enter') {
-              // Pressing Enter on an empty line (Double Enter) splits into a new block.
-              // A single Enter naturally inserts a cohesive newline (\n) within the same paragraph!
-              const curPos = selectionRef.current.start;
-              const textBefore = block.content.slice(0, curPos);
-              if (textBefore.endsWith('\n') || (block.content === '' && curPos === 0)) {
-                e.preventDefault?.();
-                const cleanedBefore = textBefore.endsWith('\n') ? textBefore.slice(0, -1) : textBefore;
-                onUpdateContent(cleanedBefore + block.content.slice(curPos));
-                onSplitBlock?.(cleanedBefore.length);
-              }
-            }
-          }}
-          className="text-base font-normal leading-relaxed text-light-textPrimary dark:text-dark-textPrimary py-0.5 outline-none"
+        <ParagraphBlock
+          block={block}
+          isActive={isActive}
+          isDragging={isDragging}
+          inputRef={inputRef}
+          focusSelection={focusSelection}
+          onClearFocusTarget={onClearFocusTarget}
+          onSplitBlock={onSplitBlock}
+          onBackspaceAtStart={onBackspaceAtStart}
+          onFocus={onFocus}
+          onUpdateContent={onUpdateContent}
         />
-        </View>
       )}
     </Animated.View>
   );
