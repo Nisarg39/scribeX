@@ -7,6 +7,7 @@ Remaining Tasks to fix
 2 - [x] clear the element selection when the user clicks anywhere else in the screen (COMPLETED)
 3 - [x] make the paragraph element the checkpoint inside the checklist group with H1, H2, Quote, and Text options (COMPLETED)
 4 - make the note editor appear in different screen rather then home screen
+5 - the changes in notes editor are being saved in mobile platforms but not working in web platform
 4 - Adding an action tracking system and then Add undo and redo functionality to the editor for all the blocks . use 3 level metadata system for tracking actions - Tier 1: Note-Level Metadata (The Container) , 2 - Tier 2: Block-Level Metadata (The Elements), Tier 3: Asset Metadata (The Files) . Tier 1 metadata can be added in later stage after we complete the note editor part
 
 

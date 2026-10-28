@@ -30,7 +30,7 @@ export class NativeDatabaseClient {
       }
 
       await db.execAsync(SCHEMA_SQL);
-      await this.seedInitialDataIfEmpty(db);
+      await this.ensureWebDataSync(db);
 
       return db;
     } catch (err) {
@@ -39,14 +39,38 @@ export class NativeDatabaseClient {
     }
   }
 
-  private async seedInitialDataIfEmpty(db: SQLiteDatabase): Promise<void> {
-    const existing = await db.getFirstAsync<{ count: number }>(
-      'SELECT COUNT(*) as count FROM notes;'
-    );
+  private async ensureWebDataSync(db: SQLiteDatabase): Promise<void> {
+    const v = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version;');
+    const currentVersion = v ? v.user_version : 0;
 
-    if (existing && existing.count > 0) return;
+    // Version 2 wipes out old mobile testing notes and matches the web platform data exactly
+    if (currentVersion < 2) {
+      await this.resetToWebDefaults(db);
+      await db.execAsync('PRAGMA user_version = 2;');
+    }
+  }
 
-    await db.runAsync(`
+  public async resetToWebDefaults(db?: SQLiteDatabase): Promise<void> {
+    const targetDb = db || (await this.getDatabase());
+
+    const tablesToClear = [
+      'sync_changelog',
+      'note_tags',
+      'entity_relations',
+      'tasks',
+      'notes',
+      'folders',
+    ];
+
+    for (const table of tablesToClear) {
+      try {
+        await targetDb.execAsync(`DELETE FROM ${table};`);
+      } catch {
+        // Safe fallback if table doesn't exist yet
+      }
+    }
+
+    await targetDb.runAsync(`
       INSERT OR IGNORE INTO folders (id, user_id, name, path, color_token) 
       VALUES 
         ('folder-work', 'user-default', 'ScribeX', 'Work/Projects/ScribeX', 'lime'),
@@ -54,41 +78,41 @@ export class NativeDatabaseClient {
         ('folder-research', 'user-default', 'Research', 'Research', 'lavender');
     `);
 
-    await db.runAsync(`
+    await targetDb.runAsync(`
       INSERT INTO notes (
-        id, user_id, folder_path, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned
+        id, user_id, folder_path, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, created_at, updated_at
       ) VALUES 
       (
         'note-1', 'user-default', 'Work/Projects/ScribeX', 
         'Sprint Checklist & Action Items', 
         'Task engine single source of truth: checklist blocks inside notes reflect instantly on the global task board without data duplication.',
         '[{"id":"b1-1","type":"paragraph","content":"Single source of truth between note checklists and tasks ledger."},{"id":"b1-2","type":"checklist","content":"Configure SQLite WAL mode for sub-5ms latency"},{"id":"b1-3","type":"checklist","content":"Implement two-part Notes & Tasks floating dock"}]',
-        'lime', 1, 1
+        'lime', 1, 1, 'Today', 'Just now'
       ),
       (
         'note-2', 'user-default', 'Work/Projects/ScribeX', 
         'Universal Engine Architecture', 
         'Unifying 42 input methods into composable content blocks. Local-first SQLite WAL ensures sub-5ms latency across all platforms.',
         '[{"id":"b2-1","type":"paragraph","content":"Unifying 42 input methods into composable content blocks."}]',
-        'apricot', 0, 0
+        'apricot', 0, 0, 'Today', '1h ago'
       ),
       (
         'note-3', 'user-default', 'General', 
         'Offline Delta Sync & Git Vault', 
         'Bidirectional sync: local SQLite commits append to sync_changelog. Server pushes Git commits to markdown vault.',
         '[{"id":"b3-1","type":"paragraph","content":"Bidirectional sync engine."}]',
-        'cyan', 1, 0
+        'cyan', 1, 0, 'Yesterday', 'Yesterday'
       ),
       (
         'note-4', 'user-default', 'Research', 
         'Bidirectional Relations & Backlinks', 
         'Knowledge graph links (relates_to, supersedes, derived_from) allow traversal across folder boundaries freely.',
         '[{"id":"b4-1","type":"paragraph","content":"Knowledge graph lateral connections."}]',
-        'lavender', 0, 0
+        'lavender', 0, 0, 'Oct 25', 'Oct 25'
       );
     `);
 
-    await db.runAsync(`
+    await targetDb.runAsync(`
       INSERT INTO tasks (
         id, user_id, note_id, note_title, note_color_token, title, is_completed, priority, due_date
       ) VALUES 
