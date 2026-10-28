@@ -154,7 +154,8 @@ export const EquationBlock: React.FC<EquationBlockProps> = ({
             <Pressable
               key={s.label}
               onPress={() => handleInsertSymbol(s.insert)}
-              className="px-2 py-1 rounded-md bg-light-surface dark:bg-[#252525] border border-light-border/40 dark:border-white/5 active:scale-95"
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+              className="px-2 py-1 rounded-md bg-light-surface dark:bg-[#252525] border border-light-border/40 dark:border-white/5"
             >
               <Text className="text-xs font-mono font-bold text-light-textPrimary dark:text-dark-textPrimary">
                 {s.label}

@@ -116,7 +116,8 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
 
             <Pressable
               onPress={handleSave}
-              className="flex-row items-center gap-1 px-4 py-1.5 rounded-full bg-light-iconBg dark:bg-white active:scale-95"
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+              className="flex-row items-center gap-1 px-4 py-1.5 rounded-full bg-light-iconBg dark:bg-white"
             >
               <Check size={13} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
               <Text className="text-xs font-bold text-white dark:text-[#111111]">
@@ -132,7 +133,7 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
             onFocus?.();
             handleOpenLink();
           }}
-          className="flex-row items-center p-3.5 group active:opacity-90"
+          className="flex-row items-center p-3.5 group"
         >
           {/* Left Text Column */}
           <View className="flex-1 mr-3 justify-between min-h-[70px]">

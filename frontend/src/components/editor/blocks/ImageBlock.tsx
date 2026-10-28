@@ -128,7 +128,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
         onPressOut={onEndDrag}
         delayLongPress={280}
         style={widthStyle} 
-        className={`relative group rounded-2xl transition-all ${
+        className={`relative group rounded-2xl ${
           isSelected ? 'ring-2 ring-note-cyan shadow-md' : ''
         }`}
       >
@@ -136,7 +136,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
         {isSelected && (
           <View
             {...resizePanResponder.panHandlers}
-            className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 rounded-full bg-note-cyan shadow-lg shadow-note-cyan/30 items-center justify-center cursor-ew-resize active:scale-110 z-30"
+            className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 rounded-full bg-note-cyan shadow-lg shadow-note-cyan/30 items-center justify-center cursor-ew-resize z-30"
             accessibilityLabel="Drag horizontally to resize image width"
           >
             <MoveHorizontal size={13} color="#000000" strokeWidth={2.6} />
@@ -243,7 +243,8 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
             />
             <Pressable
               onPress={handleSaveUrl}
-              className="px-3 py-1 rounded-lg bg-light-iconBg dark:bg-white active:scale-95"
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+              className="px-3 py-1 rounded-lg bg-light-iconBg dark:bg-white"
             >
               <Text className="text-xs font-bold text-white dark:text-[#111111]">
                 Apply
@@ -263,34 +264,36 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
       </Pressable>
 
       {/* Fullscreen Lightbox Modal */}
-      <Modal
-        visible={isLightboxOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsLightboxOpen(false)}
-      >
-        <View className="flex-1 bg-black/95 items-center justify-center p-4">
-          <Pressable
-            onPress={() => setIsLightboxOpen(false)}
-            className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/20 backdrop-blur-md items-center justify-center z-10 active:scale-95"
-            accessibilityLabel="Close Lightbox"
-          >
-            <X size={20} color="#FFFFFF" />
-          </Pressable>
+      {isLightboxOpen && (
+        <Modal
+          visible={isLightboxOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsLightboxOpen(false)}
+        >
+          <View className="flex-1 bg-black/95 items-center justify-center p-4">
+            <Pressable
+              onPress={() => setIsLightboxOpen(false)}
+              className="absolute top-6 right-6 w-10 h-10 rounded-full bg-white/20 backdrop-blur-md items-center justify-center z-10"
+              accessibilityLabel="Close Lightbox"
+            >
+              <X size={20} color="#FFFFFF" />
+            </Pressable>
 
-          <Image
-            source={{ uri: imageUrl }}
-            className="w-full h-4/5 object-contain"
-            resizeMode="contain"
-          />
+            <Image
+              source={{ uri: imageUrl }}
+              className="w-full h-4/5 object-contain"
+              resizeMode="contain"
+            />
 
-          {imageCaption ? (
-            <Text className="text-sm text-white/80 mt-4 text-center max-w-lg">
-              {imageCaption}
-            </Text>
-          ) : null}
-        </View>
-      </Modal>
+            {imageCaption ? (
+              <Text className="text-sm text-white/80 mt-4 text-center max-w-lg">
+                {imageCaption}
+              </Text>
+            ) : null}
+          </View>
+        </Modal>
+      )}
     </View>
   );
 };

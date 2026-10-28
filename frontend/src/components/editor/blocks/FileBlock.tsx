@@ -122,7 +122,8 @@ export const FileBlock: React.FC<FileBlockProps> = ({
             window.open(url, '_blank');
           }
         }}
-        className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10 active:scale-95"
+        style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+        className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10"
         accessibilityLabel="Download File"
       >
         <Download size={12} color={isDark ? '#F7F7F7' : '#171717'} />

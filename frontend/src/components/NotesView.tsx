@@ -63,7 +63,6 @@ export const NotesView: React.FC = () => {
 
   const handleNoteUpdated = (updated: NoteItem) => {
     setEditingNote(updated);
-    refreshFromDB();
   };
 
   const handleNoteDeleted = () => {

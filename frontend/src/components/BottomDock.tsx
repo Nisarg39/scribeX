@@ -17,7 +17,7 @@ export const BottomDock: React.FC<BottomDockProps> = ({
   const { isDark } = useTheme();
 
   return (
-    <View className="absolute bottom-6 left-0 right-0 items-center pointer-events-box-none px-4 z-40">
+    <View pointerEvents="box-none" className="absolute bottom-6 left-0 right-0 items-center px-4 z-40">
       {/* Floating Minimalist Capsule Dock */}
       <View 
         className="flex-row items-center p-1.5 rounded-full bg-light-iconBg dark:bg-dark-raised border border-light-border dark:border-dark-border shadow-lg"
@@ -28,7 +28,8 @@ export const BottomDock: React.FC<BottomDockProps> = ({
           accessibilityRole="tab"
           accessibilityState={{ selected: activeTab === 'notes' }}
           accessibilityLabel="Notes Tab"
-          className={`flex-row items-center gap-2 px-5 py-2.5 rounded-full transition-all active:scale-95 ${
+          style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+          className={`flex-row items-center gap-2 px-5 py-2.5 rounded-full ${
             activeTab === 'notes'
               ? 'bg-white/20 dark:bg-white/15'
               : 'opacity-70 hover:opacity-100'
@@ -50,7 +51,8 @@ export const BottomDock: React.FC<BottomDockProps> = ({
           accessibilityRole="tab"
           accessibilityState={{ selected: activeTab === 'tasks' }}
           accessibilityLabel="Tasks Tab"
-          className={`flex-row items-center gap-2 px-5 py-2.5 rounded-full transition-all active:scale-95 ${
+          style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+          className={`flex-row items-center gap-2 px-5 py-2.5 rounded-full ${
             activeTab === 'tasks'
               ? 'bg-white/20 dark:bg-white/15'
               : 'opacity-70 hover:opacity-100'

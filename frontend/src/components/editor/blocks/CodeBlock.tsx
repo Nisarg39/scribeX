@@ -68,7 +68,8 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
           {/* Language Selector Dropdown Trigger */}
           <Pressable
             onPress={() => setShowLangMenu(!showLangMenu)}
-            className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-surface dark:bg-[#252525] border border-light-border/60 dark:border-white/10 active:scale-95"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-surface dark:bg-[#252525] border border-light-border/60 dark:border-white/10"
           >
             <Terminal size={12} color={isDark ? '#8EDCEB' : '#08C4E5'} />
             <Text className="text-xs font-mono font-bold text-light-textPrimary dark:text-dark-textPrimary lowercase">
@@ -90,7 +91,8 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
         {/* Right: Copy Button */}
         <Pressable
           onPress={handleCopy}
-          className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-lg bg-light-surface dark:bg-[#252525] border border-light-border/60 dark:border-white/10 active:scale-95"
+          style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+          className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-lg bg-light-surface dark:bg-[#252525] border border-light-border/60 dark:border-white/10"
           accessibilityLabel="Copy code to clipboard"
         >
           {copied ? (

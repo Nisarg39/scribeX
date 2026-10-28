@@ -122,7 +122,8 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
                 const nextSpeed = speed === 1 ? 1.5 : speed === 1.5 ? 2 : 1;
                 setSpeed(nextSpeed);
               }}
-              className="px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10 active:scale-95"
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+              className="px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10"
             >
               <Text className="text-[10px] font-bold text-light-textSecondary dark:text-dark-textSecondary">
                 {speed}x
@@ -133,7 +134,8 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
           {isRecording ? (
             <Pressable
               onPress={handleStopRecording}
-              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500 active:scale-95 animate-pulse"
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+              className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-500 animate-pulse"
             >
               <Square size={11} color="#FFFFFF" fill="#FFFFFF" />
               <Text className="text-xs font-bold text-white">Stop</Text>
@@ -141,7 +143,8 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
           ) : (
             <Pressable
               onPress={() => setIsRecording(true)}
-              className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10 active:scale-95"
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+              className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10"
             >
               <Mic size={12} color={isDark ? '#F7F7F7' : '#171717'} />
               <Text className="text-[11px] font-semibold text-light-textPrimary dark:text-dark-textPrimary">
@@ -164,7 +167,7 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
                 height: `${Math.max(15, heightPct)}%`,
                 backgroundColor: isPassed ? NoteColors.cyan : isDark ? '#333333' : '#E0E0E0',
               }}
-              className="flex-1 rounded-full transition-all"
+              className="flex-1 rounded-full"
             />
           );
         })}
@@ -175,8 +178,11 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
         <Pressable
           onPress={() => setIsPlaying(!isPlaying)}
           disabled={isRecording}
-          style={{ backgroundColor: NoteColors.cyan }}
-          className="w-9 h-9 rounded-full items-center justify-center active:scale-90"
+          style={({ pressed }) => [
+            { backgroundColor: NoteColors.cyan },
+            pressed ? { transform: [{ scale: 0.9 }] } : undefined,
+          ]}
+          className="w-9 h-9 rounded-full items-center justify-center"
         >
           {isPlaying ? (
             <Pause size={16} color="#191919" fill="#191919" />

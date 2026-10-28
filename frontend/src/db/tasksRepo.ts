@@ -8,6 +8,8 @@ import { DBTask, CreateTaskDTO, TaskFilter } from './types';
 import { TaskItem } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
 
+const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
 export class TasksRepository {
   private mapToTaskItem(dbTask: DBTask): TaskItem {
     return {
@@ -53,9 +55,9 @@ export class TasksRepository {
     ]);
 
     await dbClient.run(
-      `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'task', ?, 'insert', ?);`,
-      [`log-${Date.now()}`, userId, taskId, JSON.stringify({ id: taskId, title: cleanTitle })]
+      [createLogId(), userId, taskId, JSON.stringify({ id: taskId, title: cleanTitle })]
     );
 
     const created = await this.getTaskById(taskId);
@@ -109,9 +111,9 @@ export class TasksRepository {
     );
 
     await dbClient.run(
-      `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'task', ?, 'update', ?);`,
-      [`log-${Date.now()}`, task.userId, id, JSON.stringify({ isCompleted: nextVal })]
+      [createLogId(), task.userId, id, JSON.stringify({ isCompleted: nextVal })]
     );
 
     return nextVal;
@@ -156,9 +158,9 @@ export class TasksRepository {
     await dbClient.run(`DELETE FROM tasks WHERE id = ?;`, [id]);
 
     await dbClient.run(
-      `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'task', ?, 'delete', ?);`,
-      [`log-${Date.now()}`, task.userId, id, JSON.stringify({ id })]
+      [createLogId(), task.userId, id, JSON.stringify({ id })]
     );
   }
 

@@ -21,6 +21,7 @@ export function coalesceChecklistBlocks(blocks: ComposableBlock[]): ComposableBl
             checked: !!block.metadata?.checked,
             priority: block.metadata?.priority || 'none',
             dueDate: block.metadata?.dueDate || 'Today',
+            style: block.metadata?.style || 'paragraph',
           }];
 
       const prev = result[result.length - 1];
@@ -360,13 +361,36 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       let taskId = `task-${Date.now()}-${blocks.length + 1}`;
       let priority = 'none';
       let dueDate = 'Today';
+      let style: any = 'paragraph';
 
-      const taskCommentMatch = rawText.match(/<!--\s*scribex:task\s+id=([^\s]+)(?:\s+priority=([^\s]+))?(?:\s+due=([^\s]+))?\s*-->/);
+      const taskCommentMatch = rawText.match(/<!--\s*scribex:task\s+([^>]+)-->/);
       if (taskCommentMatch) {
-        taskId = taskCommentMatch[1];
-        if (taskCommentMatch[2]) priority = taskCommentMatch[2];
-        if (taskCommentMatch[3]) dueDate = taskCommentMatch[3];
+        const metaStr = taskCommentMatch[1];
+        const idMatch = metaStr.match(/id=([^\s]+)/);
+        const prioMatch = metaStr.match(/priority=([^\s]+)/);
+        const dueMatch = metaStr.match(/due=([^\s]+)/);
+        const styleMatch = metaStr.match(/style=([^\s]+)/);
+
+        if (idMatch) taskId = idMatch[1];
+        if (prioMatch) priority = prioMatch[1];
+        if (dueMatch) dueDate = dueMatch[1];
+        if (styleMatch && ['paragraph', 'h1', 'h2', 'quote'].includes(styleMatch[1])) {
+          style = styleMatch[1];
+        }
         rawText = rawText.replace(/<!--\s*scribex:task.*?-->/, '').trim();
+      }
+
+      if (style === 'paragraph') {
+        if (rawText.startsWith('# ')) {
+          style = 'h1';
+          rawText = rawText.slice(2).trim();
+        } else if (rawText.startsWith('## ')) {
+          style = 'h2';
+          rawText = rawText.slice(3).trim();
+        } else if (rawText.startsWith('> ')) {
+          style = 'quote';
+          rawText = rawText.slice(2).trim();
+        }
       }
 
       const newItem: ChecklistPoint = {
@@ -375,6 +399,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
         checked: isChecked,
         priority: priority as any,
         dueDate,
+        style,
       };
 
       const lastBlock = blocks[blocks.length - 1];
@@ -455,7 +480,8 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
           const taskId = item.id || `task-${Date.now()}`;
           const priority = item.priority && item.priority !== 'none' ? ` priority=${item.priority}` : '';
           const due = item.dueDate ? ` due=${item.dueDate}` : '';
-          return `- [${checked}] ${item.text.trim()} <!-- scribex:task id=${taskId}${priority}${due} -->`;
+          const style = item.style && item.style !== 'paragraph' ? ` style=${item.style}` : '';
+          return `- [${checked}] ${item.text.trim()} <!-- scribex:task id=${taskId}${style}${priority}${due} -->`;
         });
         chunks.push(lines.join('\n'));
         break;

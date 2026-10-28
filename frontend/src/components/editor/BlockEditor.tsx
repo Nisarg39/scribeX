@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform } from 'react-native';
-import { NoteItem, ComposableBlock, BlockType } from '../../types/note';
+import { NoteItem, ComposableBlock, BlockType, ChecklistPoint, ChecklistPointStyle } from '../../types/note';
 import { useTheme, NoteColors, NoteColorToken } from '../../theme';
 import { BlockRenderer } from './BlockRenderer';
 import { notesRepo } from '../../db/notesRepo';
@@ -103,6 +103,11 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const [isFavorite, setIsFavorite] = useState(note.isFavorite);
   const [isPinned, setIsPinned] = useState(note.isPinned);
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
+  const [activeChecklistPointId, setActiveChecklistPointId] = useState<string | null>(null);
+  const activeBlockIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeBlockIdRef.current = activeBlockId;
+  }, [activeBlockId]);
   const [isInsertPaletteOpen, setIsInsertPaletteOpen] = useState(false);
 
   // Focus Handoff State & Input Refs
@@ -366,22 +371,115 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   const handleDeselectAll = () => {
     setActiveBlockId(null);
+    setActiveChecklistPointId(null);
     setDraggingIndex(null);
     setDropTargetIndex(null);
     setDragOffsetY(0);
     draggingIndexRef.current = null;
     dropTargetIndexRef.current = null;
+
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const activeEl = document.activeElement as HTMLElement | null;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+        setTimeout(() => {
+          if (document.activeElement === activeEl) {
+            activeEl.blur();
+          }
+        }, 0);
+      }
+    }
   };
+
+  // Clear element selection when clicking anywhere else on the screen (outside active block & toolbar)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+
+    const handleGlobalPointerDown = (e: MouseEvent | PointerEvent) => {
+      // If no block is currently selected, nothing to deselect
+      if (!activeBlockIdRef.current) return;
+
+      // Only handle primary button (left mouse click or touch)
+      if (e.button !== undefined && e.button !== 0) return;
+
+      // If user is currently dragging to reorder, do not deselect
+      if (draggingIndexRef.current !== null) return;
+
+      const rawTarget = e.target as HTMLElement | null;
+      if (!rawTarget) return;
+      const target = (rawTarget.nodeType === 3 ? rawTarget.parentElement : rawTarget) as HTMLElement | null;
+      if (!target) return;
+
+      // 1. Don't deselect if user clicks on the vertical scrollbar
+      const scrollEl = getScrollElement();
+      if (scrollEl) {
+        const rect = scrollEl.getBoundingClientRect();
+        if (e.clientX >= rect.left + scrollEl.clientWidth && e.clientX <= rect.right) {
+          return;
+        }
+      }
+      if (e.clientX >= document.documentElement.clientWidth) {
+        return;
+      }
+
+      // 2. Check if the click is inside the currently selected active block
+      const currentActiveId = activeBlockIdRef.current;
+      const activeBlockEl = document.getElementById(`scribex-block-${currentActiveId}`);
+      if (activeBlockEl && activeBlockEl.contains(target)) {
+        return;
+      }
+      if (target.closest?.(`[data-scribex-block-id="${currentActiveId}"]`)) {
+        return;
+      }
+
+      // 3. Check if the click is inside the toolbar / command bar / action headers
+      if (target.closest?.('[data-scribex-toolbar]')) {
+        return;
+      }
+
+      // 4. Check if the click is inside an active modal dialog (like Insert Palette)
+      if (target.closest?.('[data-scribex-modal]') || target.closest?.('[role="dialog"]') || target.closest?.('[aria-modal="true"]')) {
+        return;
+      }
+
+      // 5. If the user clicked inside another block, let that block's own click/focus handler run
+      const otherBlockEl = target.closest?.('[data-scribex-block-id]');
+      if (otherBlockEl) {
+        return;
+      }
+
+      // Target was clicked anywhere else in the screen!
+      handleDeselectAll();
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && activeBlockIdRef.current) {
+        handleDeselectAll();
+      }
+    };
+
+    window.addEventListener('pointerdown', handleGlobalPointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('pointerdown', handleGlobalPointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const handleReorderBlock = (fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
-      const nextBlocks = [...prevBlocks];
+      nextBlocks = [...prevBlocks];
       const [moved] = nextBlocks.splice(fromIndex, 1);
       nextBlocks.splice(toIndex, 0, moved);
-      persistChanges(title, colorToken, nextBlocks);
       return nextBlocks;
     });
+    if (nextBlocks.length > 0) {
+      persistChanges(title, colorToken, nextBlocks);
+    }
   };
 
   // Save changes to SQLite / Repository
@@ -433,7 +531,6 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       });
 
       tasksRepo.syncNoteChecklists(note.id, newTitle, newColor, checklistItems)
-        .then(() => refreshFromDB())
         .catch((err) => console.warn('Failed to sync note checklists to tasksRepo:', err));
     } catch (err) {
       console.warn('Failed to persist note changes in BlockEditor:', err);
@@ -442,39 +539,51 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   // Block Mutation Helpers
   const handleUpdateBlock = (blockId: string, updates: Partial<ComposableBlock>) => {
+    let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
-      const nextBlocks = prevBlocks.map((b) =>
+      nextBlocks = prevBlocks.map((b) =>
         b.id === blockId ? { ...b, ...updates } : b
       );
-      persistChanges(title, colorToken, nextBlocks);
       return nextBlocks;
     });
+    if (nextBlocks.length > 0) {
+      persistChanges(title, colorToken, nextBlocks);
+    }
   };
 
   const handleUpdateContent = (blockId: string, content: string) => {
+    let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
-      const nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, content } : b));
-      persistChanges(title, colorToken, nextBlocks);
+      nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, content } : b));
       return nextBlocks;
     });
+    if (nextBlocks.length > 0) {
+      persistChanges(title, colorToken, nextBlocks);
+    }
   };
 
   const handleUpdateMetadata = (blockId: string, metadata: Record<string, any>) => {
+    let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
-      const nextBlocks = prevBlocks.map((b) =>
+      nextBlocks = prevBlocks.map((b) =>
         b.id === blockId ? { ...b, metadata: { ...b.metadata, ...metadata } } : b
       );
-      persistChanges(title, colorToken, nextBlocks);
       return nextBlocks;
     });
+    if (nextBlocks.length > 0) {
+      persistChanges(title, colorToken, nextBlocks);
+    }
   };
 
   const handleChangeType = (blockId: string, type: BlockType) => {
+    let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
-      const nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, type } : b));
-      persistChanges(title, colorToken, nextBlocks);
+      nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, type } : b));
       return nextBlocks;
     });
+    if (nextBlocks.length > 0) {
+      persistChanges(title, colorToken, nextBlocks);
+    }
   };
 
   const handleDeleteBlock = (blockId: string) => {
@@ -521,15 +630,73 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     persistChanges(title, colorToken, nextBlocks);
   };
 
-  // Convert current active block to new type or insert if none active
+  // Convert current active block to new type or apply text style to active checklist point
   const handleSwitchActiveType = (type: BlockType, metadata?: Record<string, any>) => {
-    const defaultMeta = type === 'checklist' && !metadata?.items
-      ? { items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }], ...metadata }
-      : metadata;
     if (!activeBlockId) {
+      const defaultMeta = type === 'checklist' && !metadata?.items
+        ? { items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today', style: 'paragraph' }], ...metadata }
+        : metadata;
       handleInsertBlock(type, defaultMeta);
       return;
     }
+
+    const currentBlock = blocks.find((b) => b.id === activeBlockId);
+
+    // If currently inside a checklist block, apply the text style (paragraph, h1, h2, quote)
+    // to the active checkpoint input rather than removing the checklist element!
+    if (currentBlock && currentBlock.type === 'checklist') {
+      let targetStyle: ChecklistPointStyle = 'paragraph';
+      if (type === 'heading') {
+        targetStyle = metadata?.level === 2 ? 'h2' : 'h1';
+      } else if (type === 'quote') {
+        targetStyle = 'quote';
+      } else {
+        targetStyle = 'paragraph';
+      }
+
+      const items: ChecklistPoint[] = Array.isArray(currentBlock.metadata?.items)
+        ? [...currentBlock.metadata.items]
+        : [{ id: `task-${Date.now()}-1`, text: currentBlock.content || '', checked: false, priority: 'none', dueDate: 'Today', style: 'paragraph' }];
+
+      let updatedItems: ChecklistPoint[];
+      if (activeChecklistPointId) {
+        updatedItems = items.map((item) => {
+          if (item.id === activeChecklistPointId) {
+            const currentStyle = item.style || 'paragraph';
+            const newStyle = currentStyle === targetStyle ? 'paragraph' : targetStyle;
+            return { ...item, style: newStyle };
+          }
+          return item;
+        });
+      } else if (items.length > 0) {
+        const firstStyle = items[0].style || 'paragraph';
+        const newStyle = firstStyle === targetStyle ? 'paragraph' : targetStyle;
+        updatedItems = items.map((item, idx) =>
+          idx === 0 ? { ...item, style: newStyle } : item
+        );
+      } else {
+        updatedItems = items;
+      }
+
+      const nextBlocks = blocks.map((b) =>
+        b.id === activeBlockId
+          ? {
+              ...b,
+              metadata: { ...b.metadata, items: updatedItems },
+              content: updatedItems.map((i) => i.text).join('\n'),
+            }
+          : b
+      );
+
+      setBlocks(nextBlocks);
+      persistChanges(title, colorToken, nextBlocks);
+      return;
+    }
+
+    const defaultMeta = type === 'checklist' && !metadata?.items
+      ? { items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today', style: 'paragraph' }], ...metadata }
+      : metadata;
+
     const nextBlocks = blocks.map((b) =>
       b.id === activeBlockId
         ? { ...b, type, metadata: { ...b.metadata, ...defaultMeta } }
@@ -688,15 +855,43 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     onClose();
   };
 
+  const currentActiveBlock = blocks.find((b) => b.id === activeBlockId);
+  const currentActiveStyle: ChecklistPointStyle | null = (() => {
+    if (!currentActiveBlock) return null;
+    if (currentActiveBlock.type === 'checklist') {
+      const items: ChecklistPoint[] = Array.isArray(currentActiveBlock.metadata?.items)
+        ? currentActiveBlock.metadata.items
+        : [];
+      const activeItem = items.find((i) => i.id === activeChecklistPointId) || items[0];
+      return activeItem?.style || 'paragraph';
+    }
+    if (currentActiveBlock.type === 'heading') {
+      return currentActiveBlock.metadata?.level === 2 ? 'h2' : 'h1';
+    }
+    if (currentActiveBlock.type === 'quote') {
+      return 'quote';
+    }
+    if (currentActiveBlock.type === 'paragraph') {
+      return 'paragraph';
+    }
+    return null;
+  })();
+
   return (
     <View className="flex-1 bg-light-surface dark:bg-dark-surface relative">
       {/* Top Editorial Header Bar */}
-      <View className="flex-row items-center justify-between px-6 py-4 border-b border-light-border dark:border-dark-border z-10 bg-light-surface/90 dark:bg-dark-surface/90 backdrop-blur-md">
+      <View 
+        nativeID="scribex-editor-header"
+        dataSet={{ scribexToolbar: 'true' }}
+        {...({ 'data-scribex-toolbar': 'true' } as any)}
+        className="flex-row items-center justify-between px-6 py-4 border-b border-light-border dark:border-dark-border z-10 bg-light-surface/90 dark:bg-dark-surface/90 backdrop-blur-md"
+      >
         {/* Back Button */}
         <Pressable
           onPress={onClose}
           accessibilityLabel="Back to notes"
-          className="w-10 h-10 rounded-full bg-light-appBg dark:bg-dark-raised items-center justify-center active:scale-95 shadow-sm"
+          className="w-10 h-10 rounded-full bg-light-appBg dark:bg-dark-raised items-center justify-center shadow-sm"
+          style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
         >
           <ArrowLeft size={18} color={isDark ? '#F7F7F7' : '#171717'} strokeWidth={2.2} />
         </Pressable>
@@ -709,8 +904,11 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               <Pressable
                 key={color}
                 onPress={() => handleColorChange(color)}
-                style={{ backgroundColor: NoteColors[color] }}
-                className={`w-6 h-6 rounded-full items-center justify-center active:scale-90 transition-transform ${
+                style={({ pressed }) => [
+                  { backgroundColor: NoteColors[color] },
+                  pressed ? { transform: [{ scale: 0.9 }] } : undefined,
+                ]}
+                className={`w-6 h-6 rounded-full items-center justify-center ${
                   isSelected ? 'border-2 border-black dark:border-white scale-110' : ''
                 }`}
               >
@@ -725,7 +923,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           <Pressable
             onPress={handleTogglePin}
             accessibilityLabel="Toggle Pin"
-            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:scale-90"
+            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
           >
             <Pin 
               size={17} 
@@ -737,7 +936,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           <Pressable
             onPress={handleToggleFavorite}
             accessibilityLabel="Toggle Favorite"
-            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:scale-90"
+            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
           >
             <Star 
               size={18} 
@@ -749,7 +949,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           <Pressable
             onPress={handleDeleteNote}
             accessibilityLabel="Delete Note"
-            className="w-9 h-9 rounded-full items-center justify-center hover:bg-red-500/10 active:scale-90"
+            className="w-9 h-9 rounded-full items-center justify-center hover:bg-red-500/10"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
           >
             <Trash2 size={17} color="#EF4444" />
           </Pressable>
@@ -757,7 +958,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           <Pressable
             onPress={onClose}
             accessibilityLabel="Done"
-            className="px-4 py-1.5 rounded-full bg-light-iconBg dark:bg-white items-center justify-center active:scale-95 ml-1 shadow-sm"
+            className="px-4 py-1.5 rounded-full bg-light-iconBg dark:bg-white items-center justify-center ml-1 shadow-sm"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
           >
             <Text className="text-xs font-bold text-white dark:text-[#111111]">
               Done
@@ -767,11 +969,17 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       </View>
 
       {/* Top Sticky Editorial Command Bar (Zero collision with bottom navigation) */}
-      <View className="flex-row items-center justify-between px-6 py-2.5 border-b border-light-border/70 dark:border-white/10 bg-light-appBg/95 dark:bg-[#18181A]/95 backdrop-blur-md z-20">
+      <View 
+        nativeID="scribex-editor-command-bar"
+        dataSet={{ scribexToolbar: 'true' }}
+        {...({ 'data-scribex-toolbar': 'true' } as any)}
+        className="flex-row items-center justify-between px-6 py-2.5 border-b border-light-border/70 dark:border-white/10 bg-light-appBg/95 dark:bg-[#18181A]/95 backdrop-blur-md z-20"
+      >
         {/* Left: Primary Insert Element */}
         <Pressable
           onPress={() => setIsInsertPaletteOpen(!isInsertPaletteOpen)}
-          className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-iconBg dark:bg-white active:scale-95 shadow-sm"
+          className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-iconBg dark:bg-white shadow-sm"
+          style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
         >
           <Plus size={13} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
           <Text className="text-xs font-bold text-white dark:text-[#111111]">
@@ -783,40 +991,72 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         <View className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5">
           <Pressable
             onPress={() => handleSwitchActiveType('paragraph')}
-            className="px-2.5 py-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            className={`px-2.5 py-1 rounded-full ${
+              currentActiveStyle === 'paragraph'
+                ? 'bg-light-appBg dark:bg-white/15'
+                : 'hover:bg-black/5 dark:hover:bg-white/10'
+            }`}
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
             accessibilityLabel="Normal Text"
           >
-            <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+            <Text className={`text-xs ${
+              currentActiveStyle === 'paragraph'
+                ? 'font-bold text-light-textPrimary dark:text-white'
+                : 'font-semibold text-light-textSecondary dark:text-dark-textSecondary'
+            }`}>
               Text
             </Text>
           </Pressable>
 
           <Pressable
             onPress={() => handleSwitchActiveType('heading', { level: 1 })}
-            className="px-2.5 py-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            className={`px-2.5 py-1 rounded-full ${
+              currentActiveStyle === 'h1'
+                ? 'bg-light-appBg dark:bg-white/15'
+                : 'hover:bg-black/5 dark:hover:bg-white/10'
+            }`}
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
             accessibilityLabel="Heading 1"
           >
-            <Text className="text-xs font-black text-light-textPrimary dark:text-dark-textPrimary">
+            <Text className={`text-xs ${
+              currentActiveStyle === 'h1'
+                ? 'font-black text-light-textPrimary dark:text-white'
+                : 'font-black text-light-textPrimary dark:text-dark-textPrimary opacity-70'
+            }`}>
               H1
             </Text>
           </Pressable>
 
           <Pressable
             onPress={() => handleSwitchActiveType('heading', { level: 2 })}
-            className="px-2.5 py-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            className={`px-2.5 py-1 rounded-full ${
+              currentActiveStyle === 'h2'
+                ? 'bg-light-appBg dark:bg-white/15'
+                : 'hover:bg-black/5 dark:hover:bg-white/10'
+            }`}
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
             accessibilityLabel="Heading 2"
           >
-            <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+            <Text className={`text-xs ${
+              currentActiveStyle === 'h2'
+                ? 'font-bold text-light-textPrimary dark:text-white'
+                : 'font-bold text-light-textPrimary dark:text-dark-textPrimary opacity-70'
+            }`}>
               H2
             </Text>
           </Pressable>
 
           <Pressable
             onPress={() => handleSwitchActiveType('quote')}
-            className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            className={`p-1 rounded-full ${
+              currentActiveStyle === 'quote'
+                ? 'bg-light-appBg dark:bg-white/15'
+                : 'hover:bg-black/5 dark:hover:bg-white/10'
+            }`}
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
             accessibilityLabel="Quote"
           >
-            <QuoteIcon size={13} color={isDark ? '#B5B5B5' : '#626262'} />
+            <QuoteIcon size={13} color={currentActiveStyle === 'quote' ? (isDark ? '#F7F7F7' : '#171717') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
         </View>
 
@@ -827,7 +1067,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
             onPress={() => handleInsertBlock('checklist', {
               items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }]
             })}
-            className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5 active:scale-95"
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
             accessibilityLabel="Add Task Checklist"
           >
             <ListTodo size={12} color={isDark ? '#6EE7B7' : '#059669'} />
@@ -838,7 +1079,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
           <Pressable
             onPress={() => handleInsertBlock('image', { url: 'https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80', caption: '', width: '100%', align: 'center', aspectRatio: 'natural' })}
-            className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5 active:scale-95"
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
             accessibilityLabel="Add Image"
           >
             <ImageIcon size={12} color={isDark ? '#38BDF8' : '#0284C7'} />
@@ -855,7 +1097,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                   const idx = blocks.findIndex((b) => b.id === activeBlockId);
                   if (idx > 0) handleMoveUp(idx);
                 }}
-                className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
+                className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
                 accessibilityLabel="Move Up"
               >
                 <ChevronUp size={13} color={isDark ? '#B5B5B5' : '#626262'} />
@@ -865,14 +1108,16 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                   const idx = blocks.findIndex((b) => b.id === activeBlockId);
                   if (idx < blocks.length - 1) handleMoveDown(idx);
                 }}
-                className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10 active:scale-90"
+                className="p-1 rounded-full hover:bg-black/5 dark:hover:bg-white/10"
+                style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
                 accessibilityLabel="Move Down"
               >
                 <ChevronDown size={13} color={isDark ? '#B5B5B5' : '#626262'} />
               </Pressable>
               <Pressable
                 onPress={() => handleDeleteBlock(activeBlockId)}
-                className="p-1 rounded-full hover:bg-red-500/20 active:scale-90"
+                className="p-1 rounded-full hover:bg-red-500/20"
+                style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
                 accessibilityLabel="Delete Block"
               >
                 <Trash2 size={13} color="#EF4444" />
@@ -888,6 +1133,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         nativeID="scribex-editor-scrollview"
         id="scribex-editor-scrollview"
         scrollEnabled={true}
+        keyboardShouldPersistTaps="handled"
         onScroll={(e) => {
           currentScrollY.current = e.nativeEvent.contentOffset.y;
         }}
@@ -900,7 +1146,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         showsVerticalScrollIndicator={false}
       >
         {/* Folder Badge & Metadata */}
-        <View className="flex-row items-center gap-2 mb-4">
+        <Pressable 
+          onPress={handleDeselectAll}
+          className="flex-row items-center gap-2 mb-4 self-start"
+        >
           <View 
             style={{ backgroundColor: NoteColors[colorToken] }}
             className="flex-row items-center gap-1.5 px-3 py-1 rounded-full shadow-sm"
@@ -913,7 +1162,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
             • Last updated {note.updatedAt || 'Just now'}
           </Text>
-        </View>
+        </Pressable>
 
         {/* Large Bold Editorial Title */}
         <TextInput
@@ -921,6 +1170,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           placeholder="Note Title..."
           placeholderTextColor={isDark ? '#626262' : '#929292'}
           value={title}
+          onFocus={handleDeselectAll}
           onChangeText={(newTitle) => {
             setTitle(newTitle);
             persistChanges(newTitle, colorToken, blocks);
@@ -964,6 +1214,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                   index={idx}
                   totalBlocks={blocks.length}
                   isActive={block.id === activeBlockId}
+                  activePointId={block.id === activeBlockId ? activeChecklistPointId : null}
+                  onFocusPoint={(pointId) => {
+                    setActiveChecklistPointId(pointId);
+                  }}
                   isDragging={isDragging}
                   dragOffsetY={isDragging ? dragOffsetY : 0}
                   inputRef={(el) => {
@@ -989,6 +1243,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                     draggingIndexRef.current = null;
                     dropTargetIndexRef.current = null;
                     setActiveBlockId(block.id);
+                    if (block.type !== 'checklist') {
+                      setActiveChecklistPointId(null);
+                    }
                   }}
                   onEnterPress={() => handleSplitBlock(idx, 0)}
                   onUpdateBlock={(updates) => handleUpdateBlock(block.id, updates)}
@@ -1020,218 +1277,238 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         {/* Empty canvas click area below blocks to deselect */}
         <Pressable
           onPress={handleDeselectAll}
-          className="flex-1 min-h-[350px]"
+          className="flex-1 min-h-[450px] w-full"
           accessibilityLabel="Click canvas to deselect"
         />
       </ScrollView>
 
       {/* Modern Insert Palette Modal (Distraction-Free) */}
-      <Modal
-        visible={isInsertPaletteOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setIsInsertPaletteOpen(false)}
-      >
-        <Pressable
-          onPress={() => setIsInsertPaletteOpen(false)}
-          className="flex-1 bg-black/60 backdrop-blur-sm justify-end md:justify-center items-center p-4"
+      {isInsertPaletteOpen && (
+        <Modal
+          visible={isInsertPaletteOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsInsertPaletteOpen(false)}
         >
           <Pressable
-            onPress={(e) => e.stopPropagation()}
-            className="w-full max-w-xl rounded-3xl bg-light-surface dark:bg-[#1E1E20] border border-light-border dark:border-white/10 shadow-2xl p-6 overflow-hidden"
+            onPress={() => setIsInsertPaletteOpen(false)}
+            className="flex-1 bg-black/60 backdrop-blur-sm justify-end md:justify-center items-center p-4"
           >
-            {/* Header */}
-            <View className="flex-row items-center justify-between pb-4 border-b border-light-border dark:border-white/10 mb-4">
-              <View>
-                <Text className="text-lg font-extrabold text-light-textPrimary dark:text-dark-textPrimary">
-                  Insert Element
+            <Pressable
+              dataSet={{ scribexModal: 'true' }}
+              {...({ 'data-scribex-modal': 'true' } as any)}
+              onPress={(e) => e.stopPropagation()}
+              className="w-full max-w-xl rounded-3xl bg-light-surface dark:bg-[#1E1E20] border border-light-border dark:border-white/10 shadow-2xl p-6 overflow-hidden"
+            >
+              {/* Header */}
+              <View className="flex-row items-center justify-between pb-4 border-b border-light-border dark:border-white/10 mb-4">
+                <View>
+                  <Text className="text-lg font-extrabold text-light-textPrimary dark:text-dark-textPrimary">
+                    Insert Element
+                  </Text>
+                  <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
+                    {activeBlockId ? 'Insert immediately after current selection' : 'Insert at the end of the story'}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setIsInsertPaletteOpen(false)}
+                  style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
+                  className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 items-center justify-center"
+                >
+                  <X size={16} color={isDark ? '#FFFFFF' : '#111111'} />
+                </Pressable>
+              </View>
+
+              <ScrollView className="max-h-[460px]" showsVerticalScrollIndicator={false}>
+                {/* Category: Media & Rich Embeds */}
+                <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-2 px-1">
+                  Media & Rich Embeds
                 </Text>
-                <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
-                  {activeBlockId ? 'Insert immediately after current selection' : 'Insert at the end of the story'}
+                <View className="flex-row flex-wrap gap-2 mb-5">
+                  <Pressable
+                    onPress={() => handleInsertBlock('image', { url: 'https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80', caption: '', width: '100%', align: 'center', aspectRatio: 'natural' })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-sky-500/15 items-center justify-center mb-2">
+                      <ImageIcon size={16} color="#0EA5E9" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Image</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Resizable (33%, 50%, 75%, 100%)</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => handleInsertBlock('audio', { durationSec: 94 })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-purple-500/15 items-center justify-center mb-2">
+                      <Volume2 size={16} color="#A855F7" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Voice Note</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Waveform & transcript</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => handleInsertBlock('file', { fileName: 'Specification.pdf', sizeBytes: 1845600 })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-amber-500/15 items-center justify-center mb-2">
+                      <Paperclip size={16} color="#F59E0B" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Attachment</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">PDF or file document</Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => handleInsertBlock('bookmark', { url: 'https://reactnative.dev' })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-indigo-500/15 items-center justify-center mb-2">
+                      <Globe size={16} color="#6366F1" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Web Link</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Rich bookmark card</Text>
+                  </Pressable>
+                </View>
+
+                {/* Category: Writing & Structure */}
+                <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-2 px-1">
+                  Writing & Structure
                 </Text>
-              </View>
-              <Pressable
-                onPress={() => setIsInsertPaletteOpen(false)}
-                className="w-8 h-8 rounded-full bg-black/5 dark:bg-white/10 items-center justify-center active:scale-90"
-              >
-                <X size={16} color={isDark ? '#FFFFFF' : '#111111'} />
-              </Pressable>
-            </View>
+                <View className="flex-row flex-wrap gap-2 mb-5">
+                  <Pressable
+                    onPress={() => handleInsertBlock('paragraph')}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <Type size={16} color={isDark ? '#E5E5E5' : '#171717'} className="mb-2" />
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Paragraph</Text>
+                  </Pressable>
 
-            <ScrollView className="max-h-[460px]" showsVerticalScrollIndicator={false}>
-              {/* Category: Media & Rich Embeds */}
-              <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-2 px-1">
-                Media & Rich Embeds
-              </Text>
-              <View className="flex-row flex-wrap gap-2 mb-5">
-                <Pressable
-                  onPress={() => handleInsertBlock('image', { url: 'https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=1200&q=80', caption: '', width: '100%', align: 'center', aspectRatio: 'natural' })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-sky-500/15 items-center justify-center mb-2">
-                    <ImageIcon size={16} color="#0EA5E9" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Image</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Resizable (33%, 50%, 75%, 100%)</Text>
-                </Pressable>
+                  <Pressable
+                    onPress={() => handleInsertBlock('heading', { level: 1 })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <Heading size={16} color={isDark ? '#E5E5E5' : '#171717'} className="mb-2" />
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Heading 1</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => handleInsertBlock('audio', { durationSec: 94 })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-purple-500/15 items-center justify-center mb-2">
-                    <Volume2 size={16} color="#A855F7" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Voice Note</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Waveform & transcript</Text>
-                </Pressable>
+                  <Pressable
+                    onPress={() => handleInsertBlock('heading', { level: 2 })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <Heading size={14} color={isDark ? '#E5E5E5' : '#171717'} className="mb-2" />
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Heading 2</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => handleInsertBlock('file', { fileName: 'Specification.pdf', sizeBytes: 1845600 })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-amber-500/15 items-center justify-center mb-2">
-                    <Paperclip size={16} color="#F59E0B" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Attachment</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">PDF or file document</Text>
-                </Pressable>
+                  <Pressable
+                    onPress={() => handleInsertBlock('quote')}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <QuoteIcon size={16} color="#A78BFA" className="mb-2" />
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Quote</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => handleInsertBlock('bookmark', { url: 'https://reactnative.dev' })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-indigo-500/15 items-center justify-center mb-2">
-                    <Globe size={16} color="#6366F1" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Web Link</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Rich bookmark card</Text>
-                </Pressable>
-              </View>
+                  <Pressable
+                    onPress={() => handleInsertBlock('divider')}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <Minus size={16} color={isDark ? '#9CA3AF' : '#6B7280'} className="mb-2" />
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Divider</Text>
+                  </Pressable>
+                </View>
 
-              {/* Category: Writing & Structure */}
-              <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-2 px-1">
-                Writing & Structure
-              </Text>
-              <View className="flex-row flex-wrap gap-2 mb-5">
-                <Pressable
-                  onPress={() => handleInsertBlock('paragraph')}
-                  className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <Type size={16} color={isDark ? '#E5E5E5' : '#171717'} className="mb-2" />
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Paragraph</Text>
-                </Pressable>
+                {/* Category: Productivity & Technical */}
+                <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-2 px-1">
+                  Productivity & Technical
+                </Text>
+                <View className="flex-row flex-wrap gap-2 mb-2">
+                  <Pressable
+                    onPress={() => handleInsertBlock('checklist', {
+                      items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }]
+                    })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-emerald-500/15 items-center justify-center mb-2">
+                      <ListTodo size={16} color="#10B981" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Checklist Task</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Syncs with global Tasks</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => handleInsertBlock('heading', { level: 1 })}
-                  className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <Heading size={16} color={isDark ? '#E5E5E5' : '#171717'} className="mb-2" />
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Heading 1</Text>
-                </Pressable>
+                  <Pressable
+                    onPress={() => handleInsertBlock('code', { language: 'typescript' })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center mb-2">
+                      <Code2 size={16} color="#06B6D4" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Code Block</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Syntax highlighted</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => handleInsertBlock('heading', { level: 2 })}
-                  className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <Heading size={14} color={isDark ? '#E5E5E5' : '#171717'} className="mb-2" />
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Heading 2</Text>
-                </Pressable>
+                  <Pressable
+                    onPress={() => handleInsertBlock('table', { columns: ['Header 1', 'Header 2'], rows: [['', '']] })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-blue-500/15 items-center justify-center mb-2">
+                      <Table size={16} color="#3B82F6" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Data Table</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Matrix grid editor</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => handleInsertBlock('quote')}
-                  className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <QuoteIcon size={16} color="#A78BFA" className="mb-2" />
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Quote</Text>
-                </Pressable>
+                  <Pressable
+                    onPress={() => handleInsertBlock('callout', { variant: 'info' })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mb-2">
+                      <AlertCircle size={16} color="#F43F5E" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Callout</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Highlighted note box</Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => handleInsertBlock('divider')}
-                  className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <Minus size={16} color={isDark ? '#9CA3AF' : '#6B7280'} className="mb-2" />
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Divider</Text>
-                </Pressable>
-              </View>
+                  <Pressable
+                    onPress={() => handleInsertBlock('equation', { displayMode: true })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-orange-500/15 items-center justify-center mb-2">
+                      <Sigma size={16} color="#F97316" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">LaTeX Formula</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Math equation</Text>
+                  </Pressable>
 
-              {/* Category: Productivity & Technical */}
-              <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-2 px-1">
-                Productivity & Technical
-              </Text>
-              <View className="flex-row flex-wrap gap-2 mb-2">
-                <Pressable
-                  onPress={() => handleInsertBlock('checklist', {
-                    items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }]
-                  })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-emerald-500/15 items-center justify-center mb-2">
-                    <ListTodo size={16} color="#10B981" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Checklist Task</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Syncs with global Tasks</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => handleInsertBlock('code', { language: 'typescript' })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center mb-2">
-                    <Code2 size={16} color="#06B6D4" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Code Block</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Syntax highlighted</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => handleInsertBlock('table', { columns: ['Header 1', 'Header 2'], rows: [['', '']] })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-blue-500/15 items-center justify-center mb-2">
-                    <Table size={16} color="#3B82F6" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Data Table</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Matrix grid editor</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => handleInsertBlock('callout', { variant: 'info' })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mb-2">
-                    <AlertCircle size={16} color="#F43F5E" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Callout</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Highlighted note box</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => handleInsertBlock('equation', { displayMode: true })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-orange-500/15 items-center justify-center mb-2">
-                    <Sigma size={16} color="#F97316" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">LaTeX Formula</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Math equation</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => handleInsertBlock('drawing', { paths: [] })}
-                  className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5 active:scale-95"
-                >
-                  <View className="w-8 h-8 rounded-xl bg-teal-500/15 items-center justify-center mb-2">
-                    <PenTool size={16} color="#14B8A6" />
-                  </View>
-                  <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Canvas Sketch</Text>
-                  <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Hand-drawn sketch</Text>
-                </Pressable>
-              </View>
-            </ScrollView>
+                  <Pressable
+                    onPress={() => handleInsertBlock('drawing', { paths: [] })}
+                    style={({ pressed }) => pressed ? { transform: [{ scale: 0.97 }] } : undefined}
+                    className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+                  >
+                    <View className="w-8 h-8 rounded-xl bg-teal-500/15 items-center justify-center mb-2">
+                      <PenTool size={16} color="#14B8A6" />
+                    </View>
+                    <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">Canvas Sketch</Text>
+                    <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">Hand-drawn sketch</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </Pressable>
           </Pressable>
-        </Pressable>
-      </Modal>
+        </Modal>
+      )}
     </View>
   );
 };

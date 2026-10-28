@@ -6,6 +6,8 @@
 import { dbClient } from './client';
 import { DBFolder, CreateFolderDTO, FolderTreeNode } from './types';
 
+const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
 export class FoldersRepository {
   public async createFolder(dto: CreateFolderDTO): Promise<DBFolder> {
     const id = dto.id || `folder-${Date.now()}`;
@@ -28,9 +30,9 @@ export class FoldersRepository {
     ]);
 
     await dbClient.run(
-      `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'folder', ?, 'insert', ?);`,
-      [`log-${Date.now()}`, userId, id, JSON.stringify(dto)]
+      [createLogId(), userId, id, JSON.stringify(dto)]
     );
 
     const created = await this.getFolderById(id);

@@ -115,7 +115,8 @@ export const TableBlock: React.FC<TableBlockProps> = ({
 
           <Pressable
             onPress={() => { onFocus?.(); handleAddRow(); }}
-            className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border active:scale-95"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border"
           >
             <Plus size={12} color={isDark ? '#F7F7F7' : '#171717'} />
             <Text className="text-[11px] font-bold text-light-textPrimary dark:text-dark-textPrimary">
@@ -125,7 +126,8 @@ export const TableBlock: React.FC<TableBlockProps> = ({
 
           <Pressable
             onPress={() => { onFocus?.(); handleAddColumn(); }}
-            className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border active:scale-95"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border"
           >
             <Plus size={12} color={isDark ? '#F7F7F7' : '#171717'} />
             <Text className="text-[11px] font-bold text-light-textPrimary dark:text-dark-textPrimary">
@@ -135,7 +137,8 @@ export const TableBlock: React.FC<TableBlockProps> = ({
 
           <Pressable
             onPress={() => { onFocus?.(); setCsvModalVisible(true); }}
-            className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border active:scale-95"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border"
           >
             <FileSpreadsheet size={12} color={isDark ? '#8EDCEB' : '#08C4E5'} />
             <Text className="text-[11px] font-bold text-light-textPrimary dark:text-dark-textPrimary">
@@ -217,64 +220,66 @@ export const TableBlock: React.FC<TableBlockProps> = ({
       </ScrollView>
 
       {/* CSV Import Modal */}
-      <Modal
-        visible={csvModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCsvModalVisible(false)}
-      >
-        <View className="flex-1 bg-black/60 items-center justify-center p-4">
-          <View className="w-full max-w-md p-5 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-2xl">
-            <View className="flex-row items-center justify-between mb-3">
-              <Text className="text-base font-bold text-light-textPrimary dark:text-dark-textPrimary">
-                Paste CSV or Tab-Separated Data
+      {csvModalVisible && (
+        <Modal
+          visible={csvModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setCsvModalVisible(false)}
+        >
+          <View className="flex-1 bg-black/60 items-center justify-center p-4">
+            <View className="w-full max-w-md p-5 rounded-3xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border shadow-2xl">
+              <View className="flex-row items-center justify-between mb-3">
+                <Text className="text-base font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Paste CSV or Tab-Separated Data
+                </Text>
+                <Pressable
+                  onPress={() => setCsvModalVisible(false)}
+                  className="w-8 h-8 rounded-full bg-light-appBg dark:bg-dark-raised items-center justify-center"
+                >
+                  <X size={15} color={isDark ? '#F7F7F7' : '#171717'} />
+                </Pressable>
+              </View>
+
+              <Text className="text-xs text-light-textSecondary dark:text-dark-textSecondary mb-3">
+                First row will be treated as column headers. Supports comma, tab, and pipe delimiters.
               </Text>
-              <Pressable
-                onPress={() => setCsvModalVisible(false)}
-                className="w-8 h-8 rounded-full bg-light-appBg dark:bg-dark-raised items-center justify-center"
-              >
-                <X size={15} color={isDark ? '#F7F7F7' : '#171717'} />
-              </Pressable>
-            </View>
 
-            <Text className="text-xs text-light-textSecondary dark:text-dark-textSecondary mb-3">
-              First row will be treated as column headers. Supports comma, tab, and pipe delimiters.
-            </Text>
+              <TextInput
+                multiline
+                numberOfLines={6}
+                value={csvInput}
+                onChangeText={setCsvInput}
+                placeholder="Name, Role, Location&#10;Alice, Engineer, NYC&#10;Bob, Designer, London"
+                placeholderTextColor={isDark ? '#858585' : '#929292'}
+                className="p-3 rounded-2xl bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border font-mono text-xs text-light-textPrimary dark:text-dark-textPrimary min-h-[120px] mb-4"
+                textAlignVertical="top"
+              />
 
-            <TextInput
-              multiline
-              numberOfLines={6}
-              value={csvInput}
-              onChangeText={setCsvInput}
-              placeholder="Name, Role, Location&#10;Alice, Engineer, NYC&#10;Bob, Designer, London"
-              placeholderTextColor={isDark ? '#858585' : '#929292'}
-              className="p-3 rounded-2xl bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border font-mono text-xs text-light-textPrimary dark:text-dark-textPrimary min-h-[120px] mb-4"
-              textAlignVertical="top"
-            />
+              <View className="flex-row items-center justify-end gap-2">
+                <Pressable
+                  onPress={() => setCsvModalVisible(false)}
+                  className="px-4 py-2 rounded-full bg-light-appBg dark:bg-dark-raised"
+                >
+                  <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+                    Cancel
+                  </Text>
+                </Pressable>
 
-            <View className="flex-row items-center justify-end gap-2">
-              <Pressable
-                onPress={() => setCsvModalVisible(false)}
-                className="px-4 py-2 rounded-full bg-light-appBg dark:bg-dark-raised active:scale-95"
-              >
-                <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
-                  Cancel
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleImportCsv}
-                className="flex-row items-center gap-1.5 px-4 py-2 rounded-full bg-light-iconBg dark:bg-white active:scale-95"
-              >
-                <Check size={14} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
-                <Text className="text-xs font-bold text-white dark:text-[#111111]">
-                  Import Table
-                </Text>
-              </Pressable>
+                <Pressable
+                  onPress={handleImportCsv}
+                  className="flex-row items-center gap-1.5 px-4 py-2 rounded-full bg-light-iconBg dark:bg-white"
+                >
+                  <Check size={14} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
+                  <Text className="text-xs font-bold text-white dark:text-[#111111]">
+                    Import Table
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
+        </Modal>
+      )}
     </View>
   );
 };

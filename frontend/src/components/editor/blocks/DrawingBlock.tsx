@@ -106,11 +106,9 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
 
           if (tool === 'eraser') {
             // Remove the last stroke or near stroke
-            setPaths((prev) => {
-              const next = prev.slice(0, -1);
-              onUpdateDrawing(next);
-              return next;
-            });
+            const next = paths.slice(0, -1);
+            setPaths(next);
+            onUpdateDrawing(next);
           } else {
             const newStroke: StrokePath = {
               id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -120,12 +118,10 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
               opacity: activeOpacity,
             };
 
-            setPaths((prev) => {
-              const next = [...prev, newStroke];
-              onUpdateDrawing(next);
-              return next;
-            });
+            const next = [...paths, newStroke];
+            setPaths(next);
             setRedoStack([]);
+            onUpdateDrawing(next);
           }
 
           currentPathRef.current = null;
@@ -170,9 +166,10 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
           <View className="flex-row items-center gap-1">
             <Pressable
               onPress={() => { onFocus?.(); setTool('pen'); }}
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
               className={`p-1.5 rounded-lg ${
                 tool === 'pen' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
-              } active:scale-90`}
+              }`}
               accessibilityLabel="Pen Tool"
             >
               <PenTool 
@@ -183,9 +180,10 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
 
             <Pressable
               onPress={() => { onFocus?.(); setTool('highlighter'); }}
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
               className={`p-1.5 rounded-lg ${
                 tool === 'highlighter' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
-              } active:scale-90`}
+              }`}
               accessibilityLabel="Highlighter Tool"
             >
               <Highlighter 
@@ -196,9 +194,10 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
 
             <Pressable
               onPress={() => { onFocus?.(); setTool('eraser'); }}
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
               className={`p-1.5 rounded-lg ${
                 tool === 'eraser' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
-              } active:scale-90`}
+              }`}
               accessibilityLabel="Eraser Tool"
             >
               <Eraser 

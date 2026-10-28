@@ -6,6 +6,13 @@ import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '../src/theme';
 import { AuthProvider } from '../src/context';
 import { View } from 'react-native';
+import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+
+// Disable Reanimated strict logger warning flood in DEV to protect JS bridge responsiveness
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
 
 function RootContent() {
   const { isDark } = useTheme();

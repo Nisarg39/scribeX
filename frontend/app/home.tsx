@@ -56,7 +56,8 @@ function HomeContainerContent() {
                 onPress={toggleTheme}
                 accessibilityRole="button"
                 accessibilityLabel="Toggle Theme"
-                className="w-10 h-10 rounded-full bg-light-iconBg dark:bg-dark-iconBg items-center justify-center active:scale-95 transition-transform"
+                style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+                className="w-10 h-10 rounded-full bg-light-iconBg dark:bg-dark-iconBg items-center justify-center"
               >
                 {isDark ? (
                   <Sun size={18} color="#FFFFFF" strokeWidth={2} />
@@ -70,7 +71,8 @@ function HomeContainerContent() {
                 onPress={handleSignOut}
                 accessibilityRole="button"
                 accessibilityLabel="Sign Out"
-                className="w-10 h-10 rounded-full bg-light-border dark:bg-dark-raised items-center justify-center active:scale-95 transition-transform"
+                style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+                className="w-10 h-10 rounded-full bg-light-border dark:bg-dark-raised items-center justify-center"
               >
                 <LogOut size={16} color={isDark ? '#B5B5B5' : '#626262'} strokeWidth={2} />
               </Pressable>

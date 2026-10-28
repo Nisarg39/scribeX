@@ -75,7 +75,7 @@ export const UniversalBlockWrapper: React.FC<UniversalBlockWrapperProps> = ({
       onLongPress={onLongPress}
       delayLongPress={280}
       style={style}
-      className={`my-2 rounded-2xl transition-all cursor-default overflow-hidden ${
+      className={`my-2 rounded-2xl cursor-default overflow-hidden ${
         isSelected
           ? 'bg-light-appBg/90 dark:bg-white/[0.06] border-2 border-note-cyan/80 dark:border-note-cyan/60 shadow-md ring-2 ring-note-cyan/20'
           : 'bg-light-surface dark:bg-[#181818] border border-light-border dark:border-white/10 hover:border-black/20 dark:hover:border-white/20'

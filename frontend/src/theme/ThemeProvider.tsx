@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useColorScheme as useRNColorScheme } from 'react-native';
-import { useColorScheme as useNativeWindColorScheme } from 'nativewind';
+import { colorScheme } from 'nativewind';
 import { ThemeColors, ThemeColorPalette, ThemeMode } from './tokens';
 
 interface ThemeContextValue {
@@ -21,7 +21,6 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const rnScheme = useRNColorScheme();
-  const { setColorScheme: setNWColorScheme } = useNativeWindColorScheme();
 
   const [mode, setMode] = useState<ThemeMode>(() => {
     if (typeof window !== 'undefined' && window.matchMedia) {
@@ -33,7 +32,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Sync DOM classes and NativeWind scheme safely inside useEffect
   useEffect(() => {
     try {
-      setNWColorScheme(mode);
+      colorScheme.set(mode);
     } catch {
       // NativeWind sync fallback if not supported
     }
@@ -49,10 +48,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         root.classList.remove('dark');
       }
     }
-  }, [mode, setNWColorScheme]);
+  }, [mode]);
 
   const toggleTheme = () => {
-    setMode((prev) => (prev === 'dark' ? 'light' : 'dark'));
+    setMode((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      try {
+        colorScheme.set(next);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
   };
 
   const colors = ThemeColors[mode];

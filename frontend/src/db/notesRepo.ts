@@ -8,6 +8,8 @@ import { DBNote, CreateNoteDTO, UpdateNoteDTO, NoteFilter } from './types';
 import { NoteItem, ComposableBlock } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
 
+const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
 export class NotesRepository {
   private mapToNoteItem(dbNote: DBNote, tags: string[] = []): NoteItem {
     let parsedBlocks: ComposableBlock[] = [];
@@ -78,9 +80,9 @@ export class NotesRepository {
 
     // Append to sync changelog
     await dbClient.run(
-      `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'note', ?, 'insert', ?);`,
-      [`log-${Date.now()}`, userId, noteId, JSON.stringify({ id: noteId, title, content, colorToken })]
+      [createLogId(), userId, noteId, JSON.stringify({ id: noteId, title, content, colorToken })]
     );
 
     const created = await this.getNoteById(noteId);
@@ -196,9 +198,9 @@ export class NotesRepository {
 
     // Append changelog
     await dbClient.run(
-      `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
-      [`log-${Date.now()}`, existing.userId, id, JSON.stringify(dto)]
+      [createLogId(), existing.userId, id, JSON.stringify(dto)]
     );
 
     const updated = await this.getNoteById(id);
@@ -226,9 +228,9 @@ export class NotesRepository {
     );
 
     await dbClient.run(
-      `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
-      [`log-${Date.now()}`, note.userId, id, JSON.stringify({ isFavorite: nextVal })]
+      [createLogId(), note.userId, id, JSON.stringify({ isFavorite: nextVal })]
     );
 
     return nextVal;
@@ -259,9 +261,9 @@ export class NotesRepository {
     );
 
     await dbClient.run(
-      `INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'note', ?, 'delete', ?);`,
-      [`log-${Date.now()}`, note.userId, id, JSON.stringify({ status: 'trashed' })]
+      [createLogId(), note.userId, id, JSON.stringify({ status: 'trashed' })]
     );
   }
 

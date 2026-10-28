@@ -13,6 +13,7 @@ export type RelationType =
   | 'contradicts';
 
 export type TaskPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
+export type ChecklistPointStyle = 'paragraph' | 'h1' | 'h2' | 'quote';
 
 export interface ChecklistPoint {
   id: string;
@@ -20,6 +21,7 @@ export interface ChecklistPoint {
   checked: boolean;
   priority?: TaskPriority;
   dueDate?: string;
+  style?: ChecklistPointStyle;
 }
 
 export interface TaskItem {

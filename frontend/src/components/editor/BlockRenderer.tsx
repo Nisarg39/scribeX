@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, TextInput, Pressable, PanResponder, Text, Platform } from 'react-native';
+import { View, TextInput, Pressable, Text, Platform } from 'react-native';
 import { ComposableBlock, BlockType } from '../../types/note';
 import { useTheme } from '../../theme';
 import { Trash2, MoveVertical } from 'lucide-react-native';
@@ -22,6 +22,8 @@ interface BlockRendererProps {
   index: number;
   totalBlocks: number;
   isActive?: boolean;
+  activePointId?: string | null;
+  onFocusPoint?: (pointId: string) => void;
   isDragging?: boolean;
   dragOffsetY?: number;
   inputRef?: (el: any) => void;
@@ -49,6 +51,8 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   index,
   totalBlocks,
   isActive,
+  activePointId,
+  onFocusPoint,
   isDragging = false,
   dragOffsetY = 0,
   inputRef,
@@ -216,75 +220,24 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
     window.addEventListener('mouseup', onPointerUp, { passive: false });
   };
 
-  // Cross-platform touch drag handler for Android & iOS
-  const panResponder = useMemo(() => {
-    if (Platform.OS === 'web') return null;
 
-    let isDragActive = false;
-    let longPressTimer: any = null;
-    let startPageY = 0;
-
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: () => isDragActive,
-      onStartShouldSetPanResponderCapture: (evt, gestureState) => {
-        const target = evt.target as any;
-        if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') {
-          return false;
-        }
-        startPageY = evt.nativeEvent.pageY || gestureState.y0 || 0;
-        clearTimeout(longPressTimer);
-        longPressTimer = setTimeout(() => {
-          isDragActive = true;
-          onStartDragRef.current?.(startPageY);
-        }, 260);
-        return false;
-      },
-      onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
-        if (!isDragActive) {
-          if (Math.hypot(gestureState.dx, gestureState.dy) > 10) {
-            clearTimeout(longPressTimer);
-          }
-          return false;
-        }
-        return true;
-      },
-      onPanResponderGrant: () => {},
-      onPanResponderMove: (evt, gestureState) => {
-        if (isDragActive) {
-          const currentY = evt.nativeEvent.pageY || gestureState.moveY;
-          onDragMoveRef.current?.(gestureState.dy, currentY);
-        }
-      },
-      onPanResponderRelease: () => {
-        clearTimeout(longPressTimer);
-        if (isDragActive) {
-          isDragActive = false;
-          onEndDragRef.current?.();
-        } else {
-          onFocus?.();
-        }
-      },
-      onPanResponderTerminate: () => {
-        clearTimeout(longPressTimer);
-        if (isDragActive) {
-          isDragActive = false;
-          onEndDragRef.current?.();
-        }
-      },
-      onPanResponderTerminationRequest: () => !isDragActive,
-    });
-  }, []);
 
   // 1. Divider Block (Continuous line, no enclosing card)
   if (block.type === 'divider') {
     return (
-      <View className="my-6 py-2 flex-row items-center justify-between group">
+      <View 
+        nativeID={`scribex-block-${block.id}`}
+        id={`scribex-block-${block.id}`}
+        dataSet={{ scribexBlockId: block.id }}
+        {...({ 'data-scribex-block-id': block.id } as any)}
+        className="my-6 py-2 flex-row items-center justify-between group"
+      >
         <View className="flex-1 h-[1px] bg-light-border/80 dark:bg-dark-border/80" />
         <Pressable
           onPress={onDelete}
           accessibilityLabel="Delete Divider"
-          className="ml-2 p-1 rounded-full opacity-30 hover:opacity-100 active:scale-90"
+          style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
+          className="ml-2 p-1 rounded-full opacity-40 hover:opacity-100"
         >
           <Trash2 size={13} color={isDark ? '#B5B5B5' : '#626262'} />
         </Pressable>
@@ -294,9 +247,13 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
   return (
     <View 
+      nativeID={`scribex-block-${block.id}`}
+      id={`scribex-block-${block.id}`}
+      dataSet={{ scribexBlockId: block.id }}
+      {...({ 'data-scribex-block-id': block.id } as any)}
       onLayout={(e) => onReportHeight?.(e.nativeEvent.layout.height)}
       style={isDragging ? { transform: [{ translateY: dragOffsetY }, { scale: 1.02 }], zIndex: 999 } : undefined}
-      className={`my-0.5 group relative transition-all ${
+      className={`my-0.5 group relative ${
         isDragging
           ? 'border-2 border-note-cyan bg-light-appBg/95 dark:bg-[#1E1E22]/95 shadow-2xl ring-4 ring-note-cyan/20 rounded-2xl p-2.5 opacity-95 my-2'
           : ''
@@ -306,7 +263,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
             onPointerDown: handleBlockPointerDown,
             onMouseDown: handleBlockPointerDown,
           } as any)
-        : (panResponder ? panResponder.panHandlers : {}))}
+        : {})}
     >
       {/* Floating Dragging Badge */}
       {isDragging && (
@@ -319,7 +276,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       )}
       {/* 2. Heading Block (Pure Typography, No Border) */}
       {block.type === 'heading' && (
-        <View className={`transition-all pl-2.5 border-l-2 ${isActive && !isDragging ? 'border-note-cyan/80' : 'border-transparent'}`}>
+        <View className={`pl-2.5 border-l-2 ${isActive && !isDragging ? 'border-note-cyan/80' : 'border-transparent'}`}>
           <TextInput
             ref={setInputRef}
           multiline
@@ -371,10 +328,12 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
             Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
               ? block.metadata.items
               : block.content
-              ? [{ id: block.metadata?.taskId || block.id, text: block.content, checked: !!block.metadata?.checked, priority: block.metadata?.priority || 'none', dueDate: block.metadata?.dueDate || 'Today' }]
-              : [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today' }]
+              ? [{ id: block.metadata?.taskId || block.id, text: block.content, checked: !!block.metadata?.checked, priority: block.metadata?.priority || 'none', dueDate: block.metadata?.dueDate || 'Today', style: 'paragraph' }]
+              : [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today', style: 'paragraph' }]
           }
           isSelected={isActive}
+          activeItemId={activePointId}
+          onFocusItem={onFocusPoint}
           onUpdateItems={(items) => {
             if (onUpdateBlock) {
               onUpdateBlock({
@@ -419,7 +378,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
       {/* 5. Blockquote (Editorial Quote, Lavender accent bar) */}
       {block.type === 'quote' && (
-        <View className={`pl-4 border-l-4 ${isActive && !isDragging ? 'border-note-cyan shadow-sm' : 'border-note-lavender'} py-1 my-1 transition-colors`}>
+        <View className={`pl-4 border-l-4 ${isActive && !isDragging ? 'border-note-cyan shadow-sm' : 'border-note-lavender'} py-1 my-1`}>
           <TextInput
             ref={setInputRef}
             multiline
@@ -643,7 +602,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
       {/* 14. Standard Continuous Paragraph (Pure Text Sheet) */}
       {block.type === 'paragraph' && (
-        <View className={`transition-all pl-2.5 border-l-2 ${isActive && !isDragging ? 'border-note-cyan/80' : 'border-transparent'}`}>
+        <View className={`pl-2.5 border-l-2 ${isActive && !isDragging ? 'border-note-cyan/80' : 'border-transparent'}`}>
           <TextInput
             ref={setInputRef}
           multiline

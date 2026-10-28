@@ -124,14 +124,17 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
               <Pressable
                 key={v}
                 onPress={() => { onFocus?.(); onUpdateVariant(v); }}
-                style={{
-                  backgroundColor: isVariantActive ? vConf.color : 'transparent',
-                }}
+                style={({ pressed }) => [
+                  {
+                    backgroundColor: isVariantActive ? vConf.color : 'transparent',
+                  },
+                  pressed ? { transform: [{ scale: 0.9 }] } : undefined,
+                ]}
                 className={`px-2 py-0.5 rounded-full border ${
                   isVariantActive 
                     ? 'border-transparent' 
                     : 'border-light-border dark:border-white/10'
-                } active:scale-90`}
+                }`}
               >
                 <Text
                   style={{
