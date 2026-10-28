@@ -4,18 +4,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../src/theme';
 import { useAuth } from '../src/context';
-import { NotesProvider, useNotesStore } from '../src/state/useNotesStore';
+import { useNotesStore } from '../src/state/useNotesStore';
 import { NotesView } from '../src/components/NotesView';
 import { TasksView } from '../src/components/TasksView';
 import { BottomDock } from '../src/components/BottomDock';
 import { Sun, Moon, LogOut } from 'lucide-react-native';
 
-function HomeContainerContent() {
+export default function HomeContainerScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isDark, toggleTheme } = useTheme();
   const { signOut } = useAuth();
-  const { tasks, isEditingNote } = useNotesStore();
+  const { tasks } = useNotesStore();
 
   const [activeTab, setActiveTab] = useState<'notes' | 'tasks'>('notes');
   const pendingCount = tasks.filter((t) => !t.isCompleted).length;
@@ -84,25 +84,15 @@ function HomeContainerContent() {
             {activeTab === 'notes' ? <NotesView /> : <TasksView />}
           </View>
 
-          {/* Floating Bottom Navigation Dock (Hidden during note editing) */}
-          {!isEditingNote && (
-            <BottomDock 
-              activeTab={activeTab} 
-              onTabChange={setActiveTab} 
-              pendingTasksCount={pendingCount} 
-            />
-          )}
+          {/* Floating Bottom Navigation Dock */}
+          <BottomDock 
+            activeTab={activeTab} 
+            onTabChange={setActiveTab} 
+            pendingTasksCount={pendingCount} 
+          />
 
         </View>
       </View>
     </View>
-  );
-}
-
-export default function HomeContainerScreen() {
-  return (
-    <NotesProvider>
-      <HomeContainerContent />
-    </NotesProvider>
   );
 }

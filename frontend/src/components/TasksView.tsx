@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useTheme, NoteColors } from '../theme';
 import { useNotesStore } from '../state/useNotesStore';
 import { TaskPriority } from '../types/note';
@@ -39,6 +40,7 @@ const PRIORITY_CONFIG: Record<TaskPriority, { color: string; label: string }> = 
 };
 
 export const TasksView: React.FC = () => {
+  const router = useRouter();
   const { isDark } = useTheme();
   const { tasks, addTask, toggleTask, updateTaskPriority, updateTaskDueDate, deleteTask } = useNotesStore();
 
@@ -269,15 +271,24 @@ export const TasksView: React.FC = () => {
                     <View className="flex-row items-center gap-2 mt-1.5 flex-wrap">
                       {/* Origin Note Pastel Chip */}
                       {task.noteTitle && (
-                        <View 
-                          style={{ backgroundColor: originColor || '#E5F28B' }}
-                          className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full"
+                        <Pressable 
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            if (task.noteId) {
+                              router.push(`/note/${task.noteId}`);
+                            }
+                          }}
+                          style={({ pressed }) => [
+                            { backgroundColor: originColor || '#E5F28B' },
+                            pressed ? { transform: [{ scale: 0.95 }] } : undefined,
+                          ]}
+                          className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full cursor-pointer"
                         >
                           <FileText size={10} color="#191919" />
                           <Text className="text-[10px] font-bold text-[#191919]">
                             {task.noteTitle}
                           </Text>
-                        </View>
+                        </Pressable>
                       )}
 
                       {/* Priority Chip with inline cycle on tap */}

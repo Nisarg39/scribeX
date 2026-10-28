@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '../src/theme';
 import { AuthProvider } from '../src/context';
+import { NotesProvider } from '../src/state/useNotesStore';
 import { View } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 
@@ -41,7 +42,9 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
-          <RootContent />
+          <NotesProvider>
+            <RootContent />
+          </NotesProvider>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>

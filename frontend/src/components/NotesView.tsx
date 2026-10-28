@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useTheme, NoteColors } from '../theme';
 import { useNotesStore } from '../state/useNotesStore';
 import { NoteItem } from '../types/note';
-import { BlockEditor } from './editor/BlockEditor';
 import { 
   Star, 
   Pencil, 
@@ -15,71 +15,33 @@ import {
 } from 'lucide-react-native';
 
 export const NotesView: React.FC = () => {
+  const router = useRouter();
   const { isDark } = useTheme();
-  const { notes, activeFilter, setActiveFilter, addNote, toggleFavorite, refreshFromDB, setIsEditingNote } = useNotesStore();
+  const { notes, activeFilter, setActiveFilter, addNote, toggleFavorite } = useNotesStore();
   const [quickThought, setQuickThought] = useState('');
-  const [editingNote, setEditingNote] = useState<NoteItem | null>(null);
 
   const handleOpenNote = (note: NoteItem) => {
-    setEditingNote(note);
-    setIsEditingNote(true);
+    router.push(`/note/${note.id}`);
   };
 
-  const handleCloseNote = () => {
-    setEditingNote(null);
-    setIsEditingNote(false);
-    refreshFromDB();
-  };
-
-  const handleQuickCapture = () => {
+  const handleQuickCapture = async () => {
     if (!quickThought.trim()) return;
     const parts = quickThought.trim().split('\n');
     const title = parts[0].slice(0, 48);
     const content = quickThought.trim();
-    addNote(title, content);
+    const created = await addNote(title, content);
     setQuickThought('');
+    if (created?.id) {
+      router.push(`/note/${created.id}`);
+    }
   };
 
   const handleCreateNewBlankNote = async () => {
-    const tempId = `note-${Date.now()}`;
-    const newNote: NoteItem = {
-      id: tempId,
-      userId: 'user-default',
-      folderPath: 'General',
-      title: 'Untitled Note',
-      contentMarkdown: '',
-      blocks: [{ id: `b-${Date.now()}`, type: 'paragraph', content: '' }],
-      colorToken: 'apricot',
-      isFavorite: false,
-      isPinned: false,
-      status: 'active',
-      tags: [],
-      createdAt: 'Just now',
-      updatedAt: 'Just now',
-    };
-    await addNote(newNote.title, '', newNote.colorToken, newNote.folderPath);
-    handleOpenNote(newNote);
+    const created = await addNote('Untitled Note', '', 'apricot', 'General');
+    if (created?.id) {
+      router.push(`/note/${created.id}`);
+    }
   };
-
-  const handleNoteUpdated = (updated: NoteItem) => {
-    setEditingNote(updated);
-  };
-
-  const handleNoteDeleted = () => {
-    handleCloseNote();
-  };
-
-  // If editing, render BlockEditor canvas full-screen
-  if (editingNote) {
-    return (
-      <BlockEditor
-        note={editingNote}
-        onClose={handleCloseNote}
-        onNoteUpdated={handleNoteUpdated}
-        onNoteDeleted={handleNoteDeleted}
-      />
-    );
-  }
 
   // Filter notes based on active filter
   const filteredNotes = notes.filter((n) => {

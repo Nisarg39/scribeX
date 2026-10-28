@@ -11,7 +11,9 @@ interface NotesContextValue {
   activeFilter: string;
   isLoading: boolean;
   setActiveFilter: (filter: string) => void;
-  addNote: (title: string, content: string, colorToken?: NoteColorToken, folderPath?: string) => Promise<void>;
+  addNote: (title: string, content: string, colorToken?: NoteColorToken, folderPath?: string) => Promise<NoteItem>;
+  updateNote: (updated: NoteItem) => void;
+  deleteNote: (noteId: string) => Promise<void>;
   toggleFavorite: (noteId: string) => Promise<void>;
   addTask: (
     title: string, 
@@ -48,7 +50,9 @@ const NotesContext = createContext<NotesContextValue>({
   isEditingNote: false,
   setIsEditingNote: () => {},
   setActiveFilter: () => {},
-  addNote: async () => {},
+  addNote: async () => ({} as NoteItem),
+  updateNote: () => {},
+  deleteNote: async () => {},
   toggleFavorite: async () => {},
   addTask: async () => {},
   toggleTask: async () => {},
@@ -90,7 +94,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     content: string,
     colorToken?: NoteColorToken,
     folderPath: string = 'General'
-  ) => {
+  ): Promise<NoteItem> => {
     const nextColor = colorToken || PASTEL_PALETTE[notes.length % PASTEL_PALETTE.length];
     const cleanTitle = title.trim() || 'Untitled Note';
     const cleanContent = content.trim();
@@ -125,8 +129,26 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
 
       setNotes((prev) => prev.map((n) => (n.id === tempId ? created : n)));
+      return created;
     } catch (err) {
       console.warn('Failed to persist note via notesRepo:', err);
+      return optimisticNote;
+    }
+  };
+
+  const updateNote = (updated: NoteItem) => {
+    setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+  };
+
+  const deleteNote = async (noteId: string) => {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+    setTasks((prev) => prev.filter((t) => t.noteId !== noteId));
+    try {
+      await notesRepo.softDeleteNote(noteId);
+      await tasksRepo.syncNoteChecklists(noteId, '', 'apricot', []);
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to delete note via notesRepo:', err);
     }
   };
 
@@ -358,6 +380,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isLoading,
         setActiveFilter,
         addNote,
+        updateNote,
+        deleteNote,
         toggleFavorite,
         addTask,
         toggleTask,

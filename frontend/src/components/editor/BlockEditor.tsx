@@ -52,6 +52,20 @@ const PASTEL_PALETTE: NoteColorToken[] = [
   'sky',
 ];
 
+const COLOR_BG_CLASSES: Partial<Record<NoteColorToken, string>> = {
+  lime: 'bg-note-lime',
+  apricot: 'bg-note-apricot',
+  cyan: 'bg-note-cyan',
+  coral: 'bg-note-coral',
+  lavender: 'bg-note-lavender',
+  pink: 'bg-note-pink',
+  sky: 'bg-note-sky',
+};
+
+const isTextTransformableBlock = (type?: BlockType): boolean => {
+  return type === 'paragraph' || type === 'heading' || type === 'quote' || type === 'checklist';
+};
+
 const getDefaultBlockHeight = (type?: string): number => {
   switch (type) {
     case 'image':
@@ -510,17 +524,6 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     requestAnimationFrame(() => {
       dragAnimY.setValue(0);
     });
-
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const activeEl = document.activeElement as HTMLElement | null;
-      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-        setTimeout(() => {
-          if (document.activeElement === activeEl) {
-            activeEl.blur();
-          }
-        }, 0);
-      }
-    }
   };
 
   // Clear element selection when clicking anywhere else on the screen (outside active block & toolbar)
@@ -544,7 +547,17 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       const target = (rawTarget.nodeType === 3 ? rawTarget.parentElement : rawTarget) as HTMLElement | null;
       if (!target) return;
 
-      // 1. Don't deselect if user clicks on the vertical scrollbar
+      // 1. Don't deselect if user clicks on any input, textarea, or editable element (e.g. note title input)
+      if (
+        target.tagName === 'INPUT' || 
+        target.tagName === 'TEXTAREA' || 
+        target.isContentEditable || 
+        target.closest?.('input, textarea, [contenteditable="true"]')
+      ) {
+        return;
+      }
+
+      // 2. Don't deselect if user clicks on the vertical scrollbar
       const scrollEl = getScrollElement();
       if (scrollEl) {
         const rect = scrollEl.getBoundingClientRect();
@@ -556,7 +569,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         return;
       }
 
-      // 2. Check if the click is inside the currently selected active block
+      // 3. Check if the click is inside the currently selected active block
       const currentActiveId = activeBlockIdRef.current;
       const activeBlockEl = document.getElementById(`scribex-block-${currentActiveId}`);
       if (activeBlockEl && activeBlockEl.contains(target)) {
@@ -566,17 +579,17 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         return;
       }
 
-      // 3. Check if the click is inside the toolbar / command bar / action headers
+      // 4. Check if the click is inside the toolbar / command bar / action headers
       if (target.closest?.('[data-scribex-toolbar]')) {
         return;
       }
 
-      // 4. Check if the click is inside an active modal dialog (like Insert Palette)
+      // 5. Check if the click is inside an active modal dialog (like Insert Palette)
       if (target.closest?.('[data-scribex-modal]') || target.closest?.('[role="dialog"]') || target.closest?.('[aria-modal="true"]')) {
         return;
       }
 
-      // 5. If the user clicked inside another block, let that block's own click/focus handler run
+      // 6. If the user clicked inside another block, let that block's own click/focus handler run
       const otherBlockEl = target.closest?.('[data-scribex-block-id]');
       if (otherBlockEl) {
         return;
@@ -589,6 +602,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && activeBlockIdRef.current) {
         handleDeselectAll();
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
       }
     };
 
@@ -774,10 +790,16 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     }
 
     const currentBlock = blocks.find((b) => b.id === activeBlockId);
+    if (!currentBlock) return;
+
+    // Strict Guard: Never transform or replace non-text elements (image, audio, file, bookmark, table, code, equation, drawing, divider, etc.)
+    if (!isTextTransformableBlock(currentBlock.type)) {
+      return;
+    }
 
     // If currently inside a checklist block, apply the text style (paragraph, h1, h2, quote)
     // to the active checkpoint input rather than removing the checklist element!
-    if (currentBlock && currentBlock.type === 'checklist') {
+    if (currentBlock.type === 'checklist') {
       let targetStyle: ChecklistPointStyle = 'paragraph';
       if (type === 'heading') {
         targetStyle = metadata?.level === 2 ? 'h2' : 'h1';
@@ -985,10 +1007,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const handleDeleteNote = async () => {
     await notesRepo.softDeleteNote(note.id);
     onNoteDeleted(note.id);
-    onClose();
   };
 
   const currentActiveBlock = blocks.find((b) => b.id === activeBlockId);
+  const isTextFormatApplicable = !currentActiveBlock || isTextTransformableBlock(currentActiveBlock.type);
   const currentActiveStyle: ChecklistPointStyle | null = (() => {
     if (!currentActiveBlock) return null;
     if (currentActiveBlock.type === 'checklist') {
@@ -1011,7 +1033,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   })();
 
   return (
-    <View className="flex-1 bg-light-surface dark:bg-dark-surface relative">
+    <View className="flex-1 w-full bg-light-surface dark:bg-dark-surface relative">
       {/* Top Editorial Header Bar */}
       <View 
         nativeID="scribex-editor-header"
@@ -1030,18 +1052,19 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         </Pressable>
 
         {/* Pastel Color Swatches */}
-        <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/5">
+        <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/5 shrink-0">
           {PASTEL_PALETTE.map((color) => {
             const isSelected = colorToken === color;
             return (
               <Pressable
                 key={color}
                 onPress={() => handleColorChange(color)}
+                accessibilityLabel={`Color ${color}`}
                 style={({ pressed }) => [
                   { backgroundColor: NoteColors[color] },
                   pressed ? { transform: [{ scale: 0.9 }] } : undefined,
                 ]}
-                className={`w-6 h-6 rounded-full items-center justify-center ${
+                className={`w-6 h-6 rounded-full items-center justify-center shrink-0 ${COLOR_BG_CLASSES[color] || ''} ${
                   isSelected ? 'border-2 border-black dark:border-white scale-110' : ''
                 }`}
               >
@@ -1121,16 +1144,19 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         </Pressable>
 
         {/* Center: Style Switchers */}
-        <View className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5">
+        <View className={`flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5 ${
+          isTextFormatApplicable ? 'opacity-100' : 'opacity-40'
+        }`}>
           <Pressable
+            disabled={!isTextFormatApplicable}
             onPress={() => handleSwitchActiveType('paragraph')}
             className={`px-2.5 py-1 rounded-full ${
               currentActiveStyle === 'paragraph'
                 ? 'bg-light-appBg dark:bg-white/15'
-                : 'hover:bg-black/5 dark:hover:bg-white/10'
+                : isTextFormatApplicable ? 'hover:bg-black/5 dark:hover:bg-white/10' : ''
             }`}
-            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
-            accessibilityLabel="Normal Text"
+            style={({ pressed }) => pressed && isTextFormatApplicable ? { transform: [{ scale: 0.95 }] } : undefined}
+            accessibilityLabel={isTextFormatApplicable ? "Normal Text" : "Text styling not applicable"}
           >
             <Text className={`text-xs ${
               currentActiveStyle === 'paragraph'
@@ -1142,14 +1168,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           </Pressable>
 
           <Pressable
+            disabled={!isTextFormatApplicable}
             onPress={() => handleSwitchActiveType('heading', { level: 1 })}
             className={`px-2.5 py-1 rounded-full ${
               currentActiveStyle === 'h1'
                 ? 'bg-light-appBg dark:bg-white/15'
-                : 'hover:bg-black/5 dark:hover:bg-white/10'
+                : isTextFormatApplicable ? 'hover:bg-black/5 dark:hover:bg-white/10' : ''
             }`}
-            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
-            accessibilityLabel="Heading 1"
+            style={({ pressed }) => pressed && isTextFormatApplicable ? { transform: [{ scale: 0.95 }] } : undefined}
+            accessibilityLabel={isTextFormatApplicable ? "Heading 1" : "Text styling not applicable"}
           >
             <Text className={`text-xs ${
               currentActiveStyle === 'h1'
@@ -1161,14 +1188,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           </Pressable>
 
           <Pressable
+            disabled={!isTextFormatApplicable}
             onPress={() => handleSwitchActiveType('heading', { level: 2 })}
             className={`px-2.5 py-1 rounded-full ${
               currentActiveStyle === 'h2'
                 ? 'bg-light-appBg dark:bg-white/15'
-                : 'hover:bg-black/5 dark:hover:bg-white/10'
+                : isTextFormatApplicable ? 'hover:bg-black/5 dark:hover:bg-white/10' : ''
             }`}
-            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
-            accessibilityLabel="Heading 2"
+            style={({ pressed }) => pressed && isTextFormatApplicable ? { transform: [{ scale: 0.95 }] } : undefined}
+            accessibilityLabel={isTextFormatApplicable ? "Heading 2" : "Text styling not applicable"}
           >
             <Text className={`text-xs ${
               currentActiveStyle === 'h2'
@@ -1180,14 +1208,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           </Pressable>
 
           <Pressable
+            disabled={!isTextFormatApplicable}
             onPress={() => handleSwitchActiveType('quote')}
             className={`p-1 rounded-full ${
               currentActiveStyle === 'quote'
                 ? 'bg-light-appBg dark:bg-white/15'
-                : 'hover:bg-black/5 dark:hover:bg-white/10'
+                : isTextFormatApplicable ? 'hover:bg-black/5 dark:hover:bg-white/10' : ''
             }`}
-            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
-            accessibilityLabel="Quote"
+            style={({ pressed }) => pressed && isTextFormatApplicable ? { transform: [{ scale: 0.95 }] } : undefined}
+            accessibilityLabel={isTextFormatApplicable ? "Quote" : "Text styling not applicable"}
           >
             <QuoteIcon size={13} color={currentActiveStyle === 'quote' ? (isDark ? '#F7F7F7' : '#171717') : (isDark ? '#B5B5B5' : '#626262')} />
           </Pressable>
@@ -1277,8 +1306,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         onLayout={(e) => {
           scrollViewLayoutRef.current = e.nativeEvent.layout;
         }}
-        className="flex-1 px-6 md:px-16 lg:px-24 pt-6"
-        contentContainerStyle={{ paddingBottom: 140, flexGrow: 1 }}
+        className="flex-1 w-full px-6 md:px-16 lg:px-24 pt-6"
+        contentContainerStyle={{ paddingBottom: 120, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Folder Badge & Metadata */}
@@ -1303,10 +1332,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         {/* Large Bold Editorial Title */}
         <TextInput
           ref={titleInputRef}
+          nativeID="scribex-note-title-input"
+          id="scribex-note-title-input"
           placeholder="Note Title..."
           placeholderTextColor={isDark ? '#626262' : '#929292'}
           value={title}
-          onFocus={handleDeselectAll}
+          onFocus={() => {
+            setActiveBlockId(null);
+            setActiveChecklistPointId(null);
+          }}
           onChangeText={(newTitle) => {
             setTitle(newTitle);
             persistChanges(newTitle, colorToken, blocks);
@@ -1324,7 +1358,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         />
 
         {/* Continuous Stream of Editorial Blocks (No Outer Card Wrappers) */}
-        <View className="mb-12">
+        <View className="mb-4">
           {blocks.map((block, idx) => {
             const isDragging = draggingIndex === idx;
             const shiftOffset = calculateBlockShift(idx, draggingIndex, dropTargetIndex, blocks, blockHeightsRef.current);
@@ -1385,10 +1419,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           })}
         </View>
 
-        {/* Empty canvas click area below blocks to deselect */}
+        {/* Canvas tap area below blocks */}
         <Pressable
           onPress={handleDeselectAll}
-          className="flex-1 min-h-[450px] w-full"
+          className="w-full h-8"
           accessibilityLabel="Click canvas to deselect"
         />
       </ScrollView>
