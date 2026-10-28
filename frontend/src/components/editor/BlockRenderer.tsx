@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { View, TextInput, Pressable, Text, Platform, PanResponder, Animated } from 'react-native';
+import { View, TextInput, Pressable, Text, Platform, PanResponder, Animated, Easing } from 'react-native';
 import { ComposableBlock, BlockType } from '../../types/note';
 import { useTheme } from '../../theme';
 import { Trash2, MoveVertical } from 'lucide-react-native';
@@ -25,8 +25,10 @@ interface BlockRendererProps {
   activePointId?: string | null;
   onFocusPoint?: (pointId: string) => void;
   isDragging?: boolean;
+  isAnyDragging?: boolean;
   dragOffsetY?: number;
   dragAnimY?: Animated.Value;
+  shiftOffset?: number;
   inputRef?: (el: any) => void;
   focusSelection?: { start: number; end: number };
   onClearFocusTarget?: () => void;
@@ -55,8 +57,10 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   activePointId,
   onFocusPoint,
   isDragging = false,
+  isAnyDragging = false,
   dragOffsetY = 0,
   dragAnimY,
+  shiftOffset = 0,
   inputRef,
   focusSelection,
   onClearFocusTarget,
@@ -91,12 +95,38 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   const longPressTimerRef = useRef<any>(null);
   const touchStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
+  const shiftAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    shiftAnim.stopAnimation();
+    if (isDragging) {
+      shiftAnim.setValue(0);
+      return;
+    }
+    // When no drag is active across the editor (drop occurred), snap to 0 immediately
+    // so there's zero transition lag after React commits the reordered blocks
+    if (!isAnyDragging) {
+      shiftAnim.setValue(0);
+      return;
+    }
+    // While dragging is active, smoothly animate slot shifts in and out
+    Animated.timing(shiftAnim, {
+      toValue: shiftOffset,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [shiftOffset, isDragging, isAnyDragging]);
+
   const handleStartDragFromChild = (clientY?: number) => {
     if (longPressTimerRef.current) {
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
     isDraggingRef.current = true;
+    if (clientY) {
+      touchStartRef.current = { x: 0, y: clientY };
+    }
     onStartDragRef.current?.(clientY);
   };
 
@@ -125,7 +155,14 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   const handleTouchMove = (e: any) => {
     if (Platform.OS === 'web') return;
 
-    if (!isDraggingRef.current && longPressTimerRef.current) {
+    if (isDraggingRef.current) {
+      const pageY = e.nativeEvent?.pageY || 0;
+      const dy = pageY - touchStartRef.current.y;
+      onDragMoveRef.current?.(dy, pageY);
+      return;
+    }
+
+    if (longPressTimerRef.current) {
       const pageX = e.nativeEvent?.pageX || 0;
       const pageY = e.nativeEvent?.pageY || 0;
       const dx = pageX - touchStartRef.current.x;
@@ -144,6 +181,11 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      onEndDragRef.current?.();
+    }
+    touchStartRef.current = { x: 0, y: 0 };
   };
 
   const handleTouchCancel = () => {
@@ -152,6 +194,11 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       clearTimeout(longPressTimerRef.current);
       longPressTimerRef.current = null;
     }
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      onEndDragRef.current?.();
+    }
+    touchStartRef.current = { x: 0, y: 0 };
   };
 
   const nativePanResponder = useMemo(() => {
@@ -168,12 +215,18 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       // Prevent ScrollView from stealing touch while dragging
       onPanResponderTerminationRequest: () => !isDraggingRef.current,
 
-      onPanResponderGrant: () => {},
+      onPanResponderGrant: (evt) => {
+        const pageY = evt?.nativeEvent?.pageY || 0;
+        if (!touchStartRef.current.y && pageY) {
+          touchStartRef.current = { x: evt?.nativeEvent?.pageX || 0, y: pageY };
+        }
+      },
 
       onPanResponderMove: (evt, gestureState) => {
         if (isDraggingRef.current) {
-          const clientY = evt?.nativeEvent?.pageY || 0;
-          onDragMoveRef.current?.(gestureState.dy, clientY);
+          const clientY = evt?.nativeEvent?.pageY ?? (gestureState.moveY || 0);
+          const dy = touchStartRef.current.y ? (clientY - touchStartRef.current.y) : gestureState.dy;
+          onDragMoveRef.current?.(dy, clientY);
         }
       },
 
@@ -186,6 +239,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           isDraggingRef.current = false;
           onEndDragRef.current?.();
         }
+        touchStartRef.current = { x: 0, y: 0 };
       },
 
       onPanResponderTerminate: () => {
@@ -197,6 +251,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           isDraggingRef.current = false;
           onEndDragRef.current?.();
         }
+        touchStartRef.current = { x: 0, y: 0 };
       },
     });
   }, []);
@@ -348,6 +403,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   if (block.type === 'divider') {
     return (
       <View 
+        pointerEvents={isAnyDragging ? 'none' : 'auto'}
         nativeID={`scribex-block-${block.id}`}
         id={`scribex-block-${block.id}`}
         dataSet={{ scribexBlockId: block.id }}
@@ -368,27 +424,27 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   }
 
   const dragContainerStyle = useMemo(() => {
-    if (!isDragging) return undefined;
+    if (isDragging) {
+      return {
+        transform: [{ translateY: dragAnimY || dragOffsetY || 0 }],
+        zIndex: 999,
+        elevation: 8,
+        opacity: 0.96,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.2,
+        shadowRadius: 10,
+      };
+    }
     return {
-      transform: [{ translateY: dragAnimY || dragOffsetY || 0 }, { scale: 1.02 }],
-      zIndex: 999,
-      elevation: 10,
-      borderWidth: 2,
-      borderColor: '#06B6D4',
-      backgroundColor: isDark ? 'rgba(30, 30, 34, 0.95)' : 'rgba(255, 255, 255, 0.95)',
-      borderRadius: 16,
-      padding: 10,
-      marginVertical: 8,
-      opacity: 0.95,
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 10 },
-      shadowOpacity: 0.25,
-      shadowRadius: 15,
+      transform: [{ translateY: shiftAnim }],
+      zIndex: 1,
     };
-  }, [isDragging, dragAnimY, dragOffsetY, isDark]);
+  }, [isDragging, dragAnimY, dragOffsetY]);
 
   return (
     <Animated.View 
+      pointerEvents={isAnyDragging ? (isDragging ? 'auto' : 'none') : 'auto'}
       nativeID={`scribex-block-${block.id}`}
       id={`scribex-block-${block.id}`}
       dataSet={{ scribexBlockId: block.id }}
@@ -409,16 +465,24 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
     >
       {/* Floating Dragging Badge */}
       {isDragging && (
-        <View className="flex-row items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-note-cyan self-start mb-2 shadow-sm">
+        <View 
+          pointerEvents="none"
+          style={{ position: 'absolute', top: -14, left: 12, zIndex: 1000 }}
+          className="flex-row items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-note-cyan shadow-md"
+        >
           <MoveVertical size={11} color="#000000" strokeWidth={2.5} />
           <Text className="text-[10px] font-black text-black tracking-wider uppercase">
             Dragging • Move to reorder
           </Text>
         </View>
       )}
+
       {/* 2. Heading Block (Pure Typography, No Border) */}
       {block.type === 'heading' && (
-        <View className={`pl-2.5 border-l-2 ${isActive && !isDragging ? 'border-note-cyan/80' : 'border-transparent'}`}>
+        <View 
+          className="pl-2.5 border-l-2" 
+          style={{ borderLeftColor: isActive && !isDragging ? '#06B6D4' : 'transparent' }}
+        >
           <TextInput
             ref={setInputRef}
           multiline
@@ -520,7 +584,10 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
       {/* 5. Blockquote (Editorial Quote, Lavender accent bar) */}
       {block.type === 'quote' && (
-        <View className={`pl-4 border-l-4 ${isActive && !isDragging ? 'border-note-cyan' : 'border-note-lavender'} py-1 my-1`}>
+        <View 
+          className="pl-4 border-l-4 py-1 my-1" 
+          style={{ borderLeftColor: isActive && !isDragging ? '#06B6D4' : (isDark ? '#B4A7D6' : '#9B87F5') }}
+        >
           <TextInput
             ref={setInputRef}
             multiline
@@ -744,7 +811,10 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
       {/* 14. Standard Continuous Paragraph (Pure Text Sheet) */}
       {block.type === 'paragraph' && (
-        <View className={`pl-2.5 border-l-2 ${isActive && !isDragging ? 'border-note-cyan/80' : 'border-transparent'}`}>
+        <View 
+          className="pl-2.5 border-l-2" 
+          style={{ borderLeftColor: isActive && !isDragging ? '#06B6D4' : 'transparent' }}
+        >
           <TextInput
             ref={setInputRef}
           multiline

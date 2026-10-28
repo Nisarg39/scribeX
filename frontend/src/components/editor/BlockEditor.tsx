@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform, Animated, Keyboard } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform, Animated, Keyboard, Easing, Dimensions } from 'react-native';
 import { NoteItem, ComposableBlock, BlockType, ChecklistPoint, ChecklistPointStyle } from '../../types/note';
 import { useTheme, NoteColors, NoteColorToken } from '../../theme';
 import { BlockRenderer } from './BlockRenderer';
@@ -52,19 +52,52 @@ const PASTEL_PALETTE: NoteColorToken[] = [
   'sky',
 ];
 
+const getDefaultBlockHeight = (type?: string): number => {
+  switch (type) {
+    case 'image':
+      return 280;
+    case 'bookmark':
+      return 140;
+    case 'code':
+      return 150;
+    case 'table':
+      return 130;
+    case 'checklist':
+      return 70;
+    case 'audio':
+      return 90;
+    case 'file':
+      return 90;
+    case 'callout':
+      return 90;
+    case 'equation':
+      return 90;
+    case 'drawing':
+      return 260;
+    case 'heading':
+      return 50;
+    case 'quote':
+      return 55;
+    case 'paragraph':
+    default:
+      return 45;
+  }
+};
+
 const calculateTargetIndex = (
   fromIndex: number,
   dy: number,
-  heights: { [idx: number]: number },
-  totalBlocks: number
+  blocks: ComposableBlock[],
+  heights: { [blockId: string]: number }
 ): number => {
-  if (dy === 0) return fromIndex;
+  if (dy === 0 || fromIndex < 0 || fromIndex >= blocks.length) return fromIndex;
 
   if (dy < 0) {
     let currentY = dy;
     let target = fromIndex;
     for (let i = fromIndex - 1; i >= 0; i--) {
-      const prevHeight = heights[i] || 60;
+      const prevBlock = blocks[i];
+      const prevHeight = (prevBlock ? heights[prevBlock.id] || getDefaultBlockHeight(prevBlock.type) : 60);
       if (currentY < -prevHeight / 2) {
         target = i;
         currentY += prevHeight;
@@ -76,8 +109,9 @@ const calculateTargetIndex = (
   } else {
     let currentY = dy;
     let target = fromIndex;
-    for (let i = fromIndex + 1; i < totalBlocks; i++) {
-      const nextHeight = heights[i] || 60;
+    for (let i = fromIndex + 1; i < blocks.length; i++) {
+      const nextBlock = blocks[i];
+      const nextHeight = (nextBlock ? heights[nextBlock.id] || getDefaultBlockHeight(nextBlock.type) : 60);
       if (currentY > nextHeight / 2) {
         target = i;
         currentY -= nextHeight;
@@ -85,8 +119,41 @@ const calculateTargetIndex = (
         break;
       }
     }
-    return Math.min(totalBlocks - 1, target);
+    return Math.min(blocks.length - 1, target);
   }
+};
+
+const calculateBlockShift = (
+  idx: number,
+  draggingIdx: number | null,
+  targetIdx: number | null,
+  blocks: ComposableBlock[],
+  heights: { [blockId: string]: number }
+): number => {
+  if (draggingIdx === null || targetIdx === null || draggingIdx === targetIdx) {
+    return 0;
+  }
+  if (idx === draggingIdx) {
+    return 0;
+  }
+
+  const draggedBlock = blocks[draggingIdx];
+  if (!draggedBlock) return 0;
+  const draggedHeight = (heights[draggedBlock.id] || getDefaultBlockHeight(draggedBlock.type)) + 4;
+
+  if (targetIdx > draggingIdx) {
+    // Dragging downwards: blocks between draggingIdx + 1 and targetIdx slide upwards
+    if (idx > draggingIdx && idx <= targetIdx) {
+      return -draggedHeight;
+    }
+  } else if (targetIdx < draggingIdx) {
+    // Dragging upwards: blocks between targetIdx and draggingIdx - 1 slide downwards
+    if (idx >= targetIdx && idx < draggingIdx) {
+      return draggedHeight;
+    }
+  }
+
+  return 0;
 };
 
 export const BlockEditor: React.FC<BlockEditorProps> = ({
@@ -141,7 +208,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const dragAnimY = useRef(new Animated.Value(0)).current;
   const draggingIndexRef = useRef<number | null>(null);
   const dropTargetIndexRef = useRef<number | null>(null);
-  const blockHeightsRef = useRef<{ [idx: number]: number }>({});
+  const blockHeightsRef = useRef<{ [blockId: string]: number }>({});
   const scrollViewRef = useRef<ScrollView>(null);
 
   const currentScrollY = useRef(0);
@@ -149,6 +216,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const currentPointerY = useRef(0);
   const rawDyRef = useRef(0);
   const scrollViewLayoutRef = useRef<{ y: number; height: number }>({ y: 0, height: 600 });
+  const scrollContentHeightRef = useRef<number>(0);
   const scrollAnimationRef = useRef<number | null>(null);
   const autoScrollActiveRef = useRef(false);
 
@@ -158,6 +226,11 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       : [{ id: `b-${Date.now()}-1`, type: 'paragraph', content: note.contentMarkdown || '' }];
     return coalesceChecklistBlocks(rawBlocks);
   });
+
+  const blocksRef = useRef<ComposableBlock[]>(blocks);
+  useEffect(() => {
+    blocksRef.current = blocks;
+  }, [blocks]);
 
   const getScrollElement = (): HTMLElement | null => {
     if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
@@ -187,15 +260,22 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         };
       }
       return {
-        top: 100,
-        bottom: window.innerHeight - 50,
-        height: window.innerHeight - 150,
+        top: 110,
+        bottom: window.innerHeight - 20,
+        height: window.innerHeight - 130,
       };
     }
+
+    const windowHeight = Dimensions.get('window').height;
+    const topY = scrollViewLayoutRef.current.y > 0 ? scrollViewLayoutRef.current.y : 110;
+    const bottomY = scrollViewLayoutRef.current.height > 0
+      ? topY + scrollViewLayoutRef.current.height
+      : windowHeight;
+
     return {
-      top: scrollViewLayoutRef.current.y || 80,
-      bottom: (scrollViewLayoutRef.current.y || 80) + (scrollViewLayoutRef.current.height || 600),
-      height: scrollViewLayoutRef.current.height || 600,
+      top: topY,
+      bottom: Math.min(bottomY, windowHeight),
+      height: bottomY - topY,
     };
   };
 
@@ -212,26 +292,51 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     autoScrollActiveRef.current = true;
 
     const step = () => {
-      if (draggingIndexRef.current === null) {
+      const fromIndex = draggingIndexRef.current;
+      if (fromIndex === null) {
         stopAutoScrollLoop();
         return;
       }
 
+      const currentBlocks = blocksRef.current;
       const bounds = getViewportBounds();
       const clientY = currentPointerY.current;
-      const BOUNDS_THRESHOLD = 110;
+      // Tight, intentional 50px boundary zone so autoscroll only triggers at the true edge
+      const BOUNDS_THRESHOLD = 50;
 
       let velocity = 0;
-      if (clientY < bounds.top + BOUNDS_THRESHOLD) {
-        // Upper edge or out of bounds above viewport
+      // Scroll UP: Only if finger is near top boundary AND user has actively dragged upwards
+      if (clientY < bounds.top + BOUNDS_THRESHOLD && rawDyRef.current < -10) {
         const dist = (bounds.top + BOUNDS_THRESHOLD) - clientY;
-        const intensity = Math.min(Math.max(dist / BOUNDS_THRESHOLD, 0.25), 3.0);
-        velocity = -Math.round(intensity * 18);
-      } else if (clientY > bounds.bottom - BOUNDS_THRESHOLD) {
-        // Lower edge or out of bounds below viewport
+        const progress = Math.min(Math.max(dist / BOUNDS_THRESHOLD, 0), 1.5);
+        velocity = -Math.round(2 + progress * 10);
+      } 
+      // Scroll DOWN: Only if finger is near bottom boundary AND user has actively dragged downwards
+      else if (clientY > bounds.bottom - BOUNDS_THRESHOLD && rawDyRef.current > 10) {
         const dist = clientY - (bounds.bottom - BOUNDS_THRESHOLD);
-        const intensity = Math.min(Math.max(dist / BOUNDS_THRESHOLD, 0.25), 3.0);
-        velocity = Math.round(intensity * 18);
+        const progress = Math.min(Math.max(dist / BOUNDS_THRESHOLD, 0), 1.5);
+        velocity = Math.round(2 + progress * 10);
+      }
+
+      // Autoscroll Boundary Limits: halt autoscroll ONLY when the container is physically at its top/bottom scroll edge
+      if (Platform.OS === 'web') {
+        const el = getScrollElement();
+        if (el) {
+          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+          if (velocity < 0 && el.scrollTop <= 0) {
+            velocity = 0;
+          } else if (velocity > 0 && maxScroll > 0 && el.scrollTop >= maxScroll) {
+            velocity = 0;
+          }
+        }
+      } else {
+        // Native mobile: stop at true scroll bounds
+        const maxScroll = Math.max(0, scrollContentHeightRef.current - scrollViewLayoutRef.current.height);
+        if (velocity < 0 && currentScrollY.current <= 0) {
+          velocity = 0;
+        } else if (velocity > 0 && maxScroll > 0 && currentScrollY.current >= maxScroll) {
+          velocity = 0;
+        }
       }
 
       if (velocity !== 0) {
@@ -245,9 +350,13 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
             scrollViewRef.current?.scrollTo({ y: currentScrollY.current, animated: false });
           }
         } else {
-          // Native Android & iOS
-          currentScrollY.current = Math.max(0, currentScrollY.current + velocity);
-          scrollViewRef.current?.scrollTo({ y: currentScrollY.current, animated: false });
+          // Native Android & iOS: clamp to maximum valid content scroll bounds
+          const maxScroll = Math.max(0, scrollContentHeightRef.current - scrollViewLayoutRef.current.height);
+          const nextScrollY = maxScroll > 0
+            ? Math.min(maxScroll, Math.max(0, currentScrollY.current + velocity))
+            : Math.max(0, currentScrollY.current + velocity);
+          currentScrollY.current = nextScrollY;
+          scrollViewRef.current?.scrollTo({ y: nextScrollY, animated: false });
         }
 
         // Keep dragged block and target index synced with the continuous scroll
@@ -255,13 +364,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         const totalDy = rawDyRef.current + scrollDelta;
         dragAnimY.setValue(totalDy);
 
-        const fromIndex = draggingIndexRef.current;
-        if (fromIndex !== null) {
-          const newTarget = calculateTargetIndex(fromIndex, totalDy, blockHeightsRef.current, blocks.length);
-          if (newTarget !== dropTargetIndexRef.current) {
-            dropTargetIndexRef.current = newTarget;
-            setDropTargetIndex(newTarget);
-          }
+        const newTarget = calculateTargetIndex(fromIndex, totalDy, currentBlocks, blockHeightsRef.current);
+        if (newTarget !== dropTargetIndexRef.current) {
+          dropTargetIndexRef.current = newTarget;
+          setDropTargetIndex(newTarget);
         }
       }
 
@@ -304,8 +410,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     };
   }, [draggingIndex]);
 
-  const handleReportHeight = (index: number, height: number) => {
-    blockHeightsRef.current[index] = height;
+  const handleReportHeight = (blockId: string, height: number) => {
+    if (blockId && height > 0) {
+      blockHeightsRef.current[blockId] = height;
+    }
   };
 
   const handleStartDrag = (index: number, initialClientY?: number) => {
@@ -346,6 +454,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       currentPointerY.current = clientY;
     }
 
+    const currentBlocks = blocksRef.current;
     const scrollDelta = currentScrollY.current - startScrollY.current;
     const totalDy = dy + scrollDelta;
 
@@ -353,7 +462,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     dragAnimY.setValue(totalDy);
 
     // Calculate if slot changed; ONLY re-render React if newTarget differs!
-    const newTarget = calculateTargetIndex(fromIndex, totalDy, blockHeightsRef.current, blocks.length);
+    const newTarget = calculateTargetIndex(fromIndex, totalDy, currentBlocks, blockHeightsRef.current);
     if (newTarget !== dropTargetIndexRef.current) {
       dropTargetIndexRef.current = newTarget;
       setDropTargetIndex(newTarget);
@@ -366,27 +475,41 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     stopAutoScrollLoop();
     const fromIndex = draggingIndexRef.current;
     const toIndex = dropTargetIndexRef.current;
+
     if (fromIndex !== null && toIndex !== null && fromIndex !== toIndex) {
       handleReorderBlock(fromIndex, toIndex);
     }
+
     draggingIndexRef.current = null;
     dropTargetIndexRef.current = null;
     setDraggingIndex(null);
     setDropTargetIndex(null);
-    dragAnimY.setValue(0);
     rawDyRef.current = 0;
+    dragAnimY.setValue(0);
+
+    // Reset drag animation offset on the next animation frame after React commits the reordered list
+    // This completely eliminates native driver race-conditions and glitch jumps on mobile!
+    requestAnimationFrame(() => {
+      dragAnimY.setValue(0);
+    });
   };
 
   const handleDeselectAll = () => {
     stopAutoScrollLoop();
+    dragAnimY.stopAnimation();
 
     setActiveBlockId(null);
     setActiveChecklistPointId(null);
     setDraggingIndex(null);
     setDropTargetIndex(null);
-    dragAnimY.setValue(0);
     draggingIndexRef.current = null;
     dropTargetIndexRef.current = null;
+    rawDyRef.current = 0;
+    dragAnimY.setValue(0);
+
+    requestAnimationFrame(() => {
+      dragAnimY.setValue(0);
+    });
 
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const activeEl = document.activeElement as HTMLElement | null;
@@ -1148,6 +1271,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           currentScrollY.current = e.nativeEvent.contentOffset.y;
         }}
         scrollEventThrottle={16}
+        onContentSizeChange={(_w, h) => {
+          scrollContentHeightRef.current = h;
+        }}
         onLayout={(e) => {
           scrollViewLayoutRef.current = e.nativeEvent.layout;
         }}
@@ -1201,24 +1327,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         <View className="mb-12">
           {blocks.map((block, idx) => {
             const isDragging = draggingIndex === idx;
-            const showIndicatorBefore = draggingIndex !== null && draggingIndex > idx && dropTargetIndex === idx;
-            const showIndicatorAfter = draggingIndex !== null && draggingIndex < idx && dropTargetIndex === idx;
+            const shiftOffset = calculateBlockShift(idx, draggingIndex, dropTargetIndex, blocks, blockHeightsRef.current);
 
             return (
               <React.Fragment key={block.id}>
-                {showIndicatorBefore && (
-                  <View className="my-2.5 py-1 flex-row items-center justify-center gap-2">
-                    <View className="flex-1 h-[2px] bg-note-cyan shadow-sm shadow-note-cyan" />
-                    <View className="px-3 py-1 rounded-full bg-note-cyan flex-row items-center gap-1.5 shadow-md">
-                      <ArrowDown size={11} color="#000000" strokeWidth={3} />
-                      <Text className="text-[10px] font-black text-black tracking-widest uppercase">
-                        Insert Here
-                      </Text>
-                    </View>
-                    <View className="flex-1 h-[2px] bg-note-cyan shadow-sm shadow-note-cyan" />
-                  </View>
-                )}
-
                 <BlockRenderer
                   block={block}
                   index={idx}
@@ -1229,7 +1341,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                     setActiveChecklistPointId(pointId);
                   }}
                   isDragging={isDragging}
+                  isAnyDragging={draggingIndex !== null}
                   dragAnimY={dragAnimY}
+                  shiftOffset={shiftOffset}
                   inputRef={(el) => {
                     inputRefs.current[block.id] = el;
                   }}
@@ -1246,7 +1360,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                   onStartDrag={(clientY) => handleStartDrag(idx, clientY)}
                   onDragMove={handleDragMove}
                   onEndDrag={handleEndDrag}
-                  onReportHeight={(h) => handleReportHeight(idx, h)}
+                  onReportHeight={(h) => handleReportHeight(block.id, h)}
                   onFocus={() => {
                     setDraggingIndex(null);
                     setDropTargetIndex(null);
@@ -1266,19 +1380,6 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                   onMoveUp={() => handleMoveUp(idx)}
                   onMoveDown={() => handleMoveDown(idx)}
                 />
-
-                {showIndicatorAfter && (
-                  <View className="my-2.5 py-1 flex-row items-center justify-center gap-2">
-                    <View className="flex-1 h-[2px] bg-note-cyan shadow-sm shadow-note-cyan" />
-                    <View className="px-3 py-1 rounded-full bg-note-cyan flex-row items-center gap-1.5 shadow-md">
-                      <ArrowDown size={11} color="#000000" strokeWidth={3} />
-                      <Text className="text-[10px] font-black text-black tracking-widest uppercase">
-                        Insert Here
-                      </Text>
-                    </View>
-                    <View className="flex-1 h-[2px] bg-note-cyan shadow-sm shadow-note-cyan" />
-                  </View>
-                )}
               </React.Fragment>
             );
           })}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { BlockType } from '../../types/note';
+import { useTheme } from '../../theme';
 
 export interface UniversalBlockMeta {
   label: string;
@@ -67,37 +68,43 @@ export const UniversalBlockWrapper: React.FC<UniversalBlockWrapperProps> = ({
   style,
   noPadding = false,
 }) => {
+  const { isDark } = useTheme();
   const meta = UNIVERSAL_BLOCK_REGISTRY[blockType] || {
     label: blockType.charAt(0).toUpperCase() + blockType.slice(1),
   };
 
   const startTouchY = React.useRef<number>(0);
 
+  const containerStyle = React.useMemo(() => {
+    return [
+      {
+        borderColor: isSelected
+          ? (isDark ? 'rgba(6, 182, 212, 0.7)' : 'rgba(6, 182, 212, 0.85)')
+          : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.08)'),
+        backgroundColor: isSelected
+          ? (isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(248, 250, 252, 0.95)')
+          : (isDark ? '#181818' : '#FFFFFF'),
+      },
+      style,
+    ];
+  }, [isSelected, isDark, style]);
+
   return (
     <Pressable
       onPress={onFocus}
-      onPressIn={(e) => {
-        startTouchY.current = e?.nativeEvent?.pageY || 0;
-      }}
-      onLongPress={(e) => {
-        const pageY = e?.nativeEvent?.pageY ?? startTouchY.current;
-        if (onStartDrag) {
-          onStartDrag(pageY);
-        } else if (onLongPress) {
-          onLongPress();
-        }
-      }}
-      delayLongPress={280}
-      style={style}
-      className={`my-2 rounded-2xl cursor-default overflow-hidden ${
-        isSelected
-          ? 'bg-light-appBg/90 dark:bg-white/[0.06] border-2 border-note-cyan/80 dark:border-note-cyan/60'
-          : 'bg-light-surface dark:bg-[#181818] border-2 border-light-border dark:border-white/10 hover:border-black/20 dark:hover:border-white/20'
-      } ${className}`}
+      style={containerStyle}
+      className={`my-2 rounded-2xl cursor-default overflow-hidden border-2 ${className}`}
     >
       {/* Universal Selection Status Header */}
       {isSelected && (
-        <View className="flex-row items-center justify-between px-3.5 py-2 bg-note-cyan/5 border-b border-note-cyan/20 select-none">
+        <View 
+          style={{
+            backgroundColor: isDark ? 'rgba(6, 182, 212, 0.08)' : 'rgba(6, 182, 212, 0.06)',
+            borderBottomColor: isDark ? 'rgba(6, 182, 212, 0.25)' : 'rgba(6, 182, 212, 0.2)',
+            borderBottomWidth: 1,
+          }}
+          className="flex-row items-center justify-between px-3.5 py-2 select-none"
+        >
           <View className="flex-row items-center gap-1.5">
             <View className="w-1.5 h-1.5 rounded-full bg-note-cyan shadow-sm shadow-note-cyan" />
             <Text className="text-[10px] font-black text-note-cyan uppercase tracking-wider">
@@ -105,7 +112,10 @@ export const UniversalBlockWrapper: React.FC<UniversalBlockWrapperProps> = ({
             </Text>
           </View>
           {headerRightContent || (
-            <Text className="text-[10px] text-light-textSecondary/60 dark:text-dark-textSecondary/60 hidden sm:flex">
+            <Text 
+              style={{ color: isDark ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.4)' }}
+              className="text-[10px] hidden sm:flex"
+            >
               Use ▲ ▼ in top toolbar to move
             </Text>
           )}

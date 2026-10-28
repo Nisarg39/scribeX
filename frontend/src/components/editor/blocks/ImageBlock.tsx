@@ -133,19 +133,8 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
       {/* Resizable Image Wrapper */}
       <Pressable 
         onPress={onFocus}
-        onPressIn={(e) => {
-          startTouchY.current = e?.nativeEvent?.pageY || 0;
-        }}
-        onLongPress={(e) => {
-          const pageY = e?.nativeEvent?.pageY ?? startTouchY.current;
-          if (onStartDrag) onStartDrag(pageY);
-          else onLongPress?.();
-        }}
-        delayLongPress={280}
-        style={widthStyle} 
-        className={`relative group rounded-2xl ${
-          isSelected ? 'border-2 border-note-cyan' : 'border-2 border-transparent'
-        }`}
+        style={[widthStyle, { borderColor: isSelected ? '#06B6D4' : 'transparent' }]} 
+        className="relative group rounded-2xl border-2"
       >
         {/* Interactive Width Resize Handle */}
         {isSelected && (

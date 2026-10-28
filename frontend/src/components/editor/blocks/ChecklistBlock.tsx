@@ -250,26 +250,25 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
 
   const completedCount = checklistItems.filter((i) => i.checked).length;
 
+  const containerStyle = React.useMemo(() => {
+    return {
+      borderColor: isSelected
+        ? (isDark ? 'rgba(6, 182, 212, 0.7)' : 'rgba(6, 182, 212, 0.85)')
+        : 'transparent',
+      backgroundColor: isSelected
+        ? (isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(248, 250, 252, 0.95)')
+        : (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.02)'),
+    };
+  }, [isSelected, isDark]);
+
   return (
     <View
-      className={`py-3 my-2 rounded-2xl cursor-default ${
-        isSelected
-          ? 'bg-light-appBg/90 dark:bg-white/[0.06] border-2 border-note-cyan/80 dark:border-note-cyan/60'
-          : 'bg-black/[0.02] dark:bg-white/[0.02] border-2 border-transparent hover:border-black/10 dark:hover:border-white/10'
-      } px-2.5 md:px-3.5`}
+      style={containerStyle}
+      className="py-3 my-2 rounded-2xl cursor-default border-2 px-2.5 md:px-3.5"
     >
       {/* Container Header Badge */}
       <Pressable
         onPress={onFocus}
-        onPressIn={(e) => {
-          startTouchY.current = e?.nativeEvent?.pageY || 0;
-        }}
-        onLongPress={(e) => {
-          const pageY = e?.nativeEvent?.pageY ?? startTouchY.current;
-          if (onStartDrag) onStartDrag(pageY);
-          else onLongPress?.();
-        }}
-        delayLongPress={280}
         className="flex-row items-center justify-between mb-2.5 px-1 cursor-pointer select-none"
         accessibilityRole="button"
         accessibilityLabel="Select checklist group"
