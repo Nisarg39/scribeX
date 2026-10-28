@@ -32,7 +32,10 @@ interface ChecklistBlockProps {
   onUpdateItems?: (items: ChecklistPoint[]) => void;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
+  onDragMove?: (dy: number, pageY?: number) => void;
   onEndDrag?: () => void;
+  isDragging?: boolean;
   onBackspaceAtStart?: () => void;
   onDelete?: () => void;
 }
@@ -50,6 +53,7 @@ const PRIORITY_COLORS: Record<TaskPriority, { color: string; label: string }> = 
 export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   items,
   isSelected = false,
+  isDragging = false,
   activeItemId,
   onFocusItem,
   content,
@@ -62,6 +66,8 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   onToggleCheck,
   onFocus,
   onLongPress,
+  onStartDrag,
+  onDragMove,
   onEndDrag,
   onBackspaceAtStart,
   onDelete,
@@ -69,6 +75,9 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   const { isDark } = useTheme();
   const [newlyAddedId, setNewlyAddedId] = useState<string | null>(null);
   const inputRefs = useRef<{ [id: string]: any }>({});
+  const startTouchY = useRef<number>(0);
+  const isDraggingRef = useRef<boolean>(false);
+  isDraggingRef.current = isDragging;
 
   const adjustWebTextareaHeight = (el: any) => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') return;
@@ -245,13 +254,22 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
     <View
       className={`py-3 my-2 rounded-2xl cursor-default ${
         isSelected
-          ? 'bg-light-appBg/90 dark:bg-white/[0.06] border-2 border-note-cyan/80 dark:border-note-cyan/60 shadow-md ring-2 ring-note-cyan/20'
+          ? 'bg-light-appBg/90 dark:bg-white/[0.06] border-2 border-note-cyan/80 dark:border-note-cyan/60'
           : 'bg-black/[0.02] dark:bg-white/[0.02] border-2 border-transparent hover:border-black/10 dark:hover:border-white/10'
       } px-2.5 md:px-3.5`}
     >
       {/* Container Header Badge */}
       <Pressable
         onPress={onFocus}
+        onPressIn={(e) => {
+          startTouchY.current = e?.nativeEvent?.pageY || 0;
+        }}
+        onLongPress={(e) => {
+          const pageY = e?.nativeEvent?.pageY ?? startTouchY.current;
+          if (onStartDrag) onStartDrag(pageY);
+          else onLongPress?.();
+        }}
+        delayLongPress={280}
         className="flex-row items-center justify-between mb-2.5 px-1 cursor-pointer select-none"
         accessibilityRole="button"
         accessibilityLabel="Select checklist group"

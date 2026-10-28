@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform, Animated, Keyboard } from 'react-native';
 import { NoteItem, ComposableBlock, BlockType, ChecklistPoint, ChecklistPointStyle } from '../../types/note';
 import { useTheme, NoteColors, NoteColorToken } from '../../theme';
 import { BlockRenderer } from './BlockRenderer';
@@ -138,7 +138,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   // Drag-and-Drop Reorder & Autoscroll State
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
-  const [dragOffsetY, setDragOffsetY] = useState(0);
+  const dragAnimY = useRef(new Animated.Value(0)).current;
   const draggingIndexRef = useRef<number | null>(null);
   const dropTargetIndexRef = useRef<number | null>(null);
   const blockHeightsRef = useRef<{ [idx: number]: number }>({});
@@ -253,7 +253,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         // Keep dragged block and target index synced with the continuous scroll
         const scrollDelta = currentScrollY.current - startScrollY.current;
         const totalDy = rawDyRef.current + scrollDelta;
-        setDragOffsetY(totalDy);
+        dragAnimY.setValue(totalDy);
 
         const fromIndex = draggingIndexRef.current;
         if (fromIndex !== null) {
@@ -309,11 +309,14 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   };
 
   const handleStartDrag = (index: number, initialClientY?: number) => {
+    if (Platform.OS !== 'web') {
+      Keyboard.dismiss();
+    }
     draggingIndexRef.current = index;
     dropTargetIndexRef.current = index;
     setDraggingIndex(index);
     setDropTargetIndex(index);
-    setDragOffsetY(0);
+    dragAnimY.setValue(0);
     rawDyRef.current = 0;
 
     if (Platform.OS === 'web') {
@@ -345,11 +348,16 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
     const scrollDelta = currentScrollY.current - startScrollY.current;
     const totalDy = dy + scrollDelta;
-    setDragOffsetY(totalDy);
 
+    // Direct GPU animation update (Zero React re-render!)
+    dragAnimY.setValue(totalDy);
+
+    // Calculate if slot changed; ONLY re-render React if newTarget differs!
     const newTarget = calculateTargetIndex(fromIndex, totalDy, blockHeightsRef.current, blocks.length);
-    dropTargetIndexRef.current = newTarget;
-    setDropTargetIndex(newTarget);
+    if (newTarget !== dropTargetIndexRef.current) {
+      dropTargetIndexRef.current = newTarget;
+      setDropTargetIndex(newTarget);
+    }
 
     startAutoScrollLoop();
   };
@@ -365,16 +373,18 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     dropTargetIndexRef.current = null;
     setDraggingIndex(null);
     setDropTargetIndex(null);
-    setDragOffsetY(0);
+    dragAnimY.setValue(0);
     rawDyRef.current = 0;
   };
 
   const handleDeselectAll = () => {
+    stopAutoScrollLoop();
+
     setActiveBlockId(null);
     setActiveChecklistPointId(null);
     setDraggingIndex(null);
     setDropTargetIndex(null);
-    setDragOffsetY(0);
+    dragAnimY.setValue(0);
     draggingIndexRef.current = null;
     dropTargetIndexRef.current = null;
 
@@ -1132,8 +1142,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         ref={scrollViewRef}
         nativeID="scribex-editor-scrollview"
         id="scribex-editor-scrollview"
-        scrollEnabled={true}
-        keyboardShouldPersistTaps="handled"
+        scrollEnabled={draggingIndex === null}
+        keyboardShouldPersistTaps="always"
         onScroll={(e) => {
           currentScrollY.current = e.nativeEvent.contentOffset.y;
         }}
@@ -1219,7 +1229,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                     setActiveChecklistPointId(pointId);
                   }}
                   isDragging={isDragging}
-                  dragOffsetY={isDragging ? dragOffsetY : 0}
+                  dragAnimY={dragAnimY}
                   inputRef={(el) => {
                     inputRefs.current[block.id] = el;
                   }}

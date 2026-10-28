@@ -10,13 +10,15 @@ Remaining Tasks to fix
 4 - make the note editor appear in different screen rather then home screen
 5 - [x] the changes in notes editor are being saved in mobile platforms but not working in web platform(COMPLETED)
 6 - [x] Unify the sql lite database storage system for mobile and web platforms using SQLite WebAssembly (sql.js / Wasm + IndexedDB) (COMPLETED) 
-4 - Adding an action tracking system and then Add undo and redo functionality to the editor for all the blocks . use 3 level metadata system for tracking actions - Tier 1: Note-Level Metadata (The Container) , 2 - Tier 2: Block-Level Metadata (The Elements), Tier 3: Asset Metadata (The Files) . Tier 1 metadata can be added in later stage after we complete the note editor part
+7 - [x] Element drag and drop on mobile platforms (iOS and Android) using PanResponder & locked ScrollView (COMPLETED)
+
+9 - Adding an action tracking system and then Add undo and redo functionality to the editor for all the blocks . use 3 level metadata system for tracking actions - Tier 1: Note-Level Metadata (The Container) , 2 - Tier 2: Block-Level Metadata (The Elements), Tier 3: Asset Metadata (The Files) . Tier 1 metadata can be added in later stage after we complete the note editor part
 
 
 Long term Ideas
 
 1 - Use firebase for realtime database update and backup / cloud sync for the user data and use nextjs for AI API calls and host it on vercel for maintaining free hosting. use google drive api for storing media files on google drive and the firebase will only store the links of the media files
 
-
+2 - Ai assistant inside the note editor where we can give prompt and it starts editing the existing note
 
 3 - Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes . these multi agents will be also added using the help of the main agent i.e the main AI Assistant that has all the context of the user and the system so they can perform tasks but with limited access to the context either provided by the main agent when creating them or either by the user 

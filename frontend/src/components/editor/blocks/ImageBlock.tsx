@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { View, Text, TextInput, Image, Pressable, Modal, DimensionValue, PanResponder } from 'react-native';
 import { useTheme } from '../../../theme';
 import { 
@@ -33,7 +33,10 @@ interface ImageBlockProps {
   ) => void;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
+  onDragMove?: (dy: number, pageY?: number) => void;
   onEndDrag?: () => void;
+  isDragging?: boolean;
   onDelete?: () => void;
 }
 
@@ -46,13 +49,19 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
   align = 'center',
   aspectRatio = 'natural',
   isSelected = false,
+  isDragging = false,
   onUpdateImage,
   onFocus,
   onLongPress,
+  onStartDrag,
+  onDragMove,
   onEndDrag,
   onDelete,
 }) => {
   const { isDark } = useTheme();
+  const startTouchY = useRef<number>(0);
+  const isDraggingRef = useRef<boolean>(false);
+  isDraggingRef.current = isDragging;
   const [imageUrl, setImageUrl] = useState(url || DEFAULT_IMAGE);
   const [imageCaption, setImageCaption] = useState(caption);
   const [currentWidth, setCurrentWidth] = useState<ImageWidth>(width);
@@ -124,12 +133,18 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
       {/* Resizable Image Wrapper */}
       <Pressable 
         onPress={onFocus}
-        onLongPress={onLongPress}
-        onPressOut={onEndDrag}
+        onPressIn={(e) => {
+          startTouchY.current = e?.nativeEvent?.pageY || 0;
+        }}
+        onLongPress={(e) => {
+          const pageY = e?.nativeEvent?.pageY ?? startTouchY.current;
+          if (onStartDrag) onStartDrag(pageY);
+          else onLongPress?.();
+        }}
         delayLongPress={280}
         style={widthStyle} 
         className={`relative group rounded-2xl ${
-          isSelected ? 'ring-2 ring-note-cyan shadow-md' : ''
+          isSelected ? 'border-2 border-note-cyan' : 'border-2 border-transparent'
         }`}
       >
         {/* Interactive Width Resize Handle */}
