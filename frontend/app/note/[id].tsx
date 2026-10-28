@@ -29,16 +29,28 @@ export default function NoteEditorScreen() {
         return;
       }
 
-      // 1. Handling for a brand new note
+      // 1. Handling for a brand new note (Pristine In-Memory Draft)
       if (id === 'new') {
-        try {
-          const created = await addNote('Untitled Note', '', 'apricot', 'General');
-          if (isMounted && created?.id) {
-            router.replace(`/note/${created.id}`);
-          }
-        } catch (err) {
-          console.warn('Failed to auto-create note for /note/new:', err);
-          if (isMounted) setIsResolving(false);
+        const draftId = `draft-${Date.now()}`;
+        const draftNote: NoteItem = {
+          id: draftId,
+          userId: 'user-default',
+          folderPath: 'General',
+          title: '', // Empty initial title so "Note Title..." placeholder is shown
+          contentMarkdown: '',
+          blocks: [{ id: `b-${Date.now()}`, type: 'paragraph', content: '' }],
+          colorToken: 'apricot',
+          isFavorite: false,
+          isPinned: false,
+          status: 'active',
+          tags: [],
+          createdAt: 'Just now',
+          updatedAt: 'Just now',
+        };
+
+        if (isMounted) {
+          setLocalNote(draftNote);
+          setIsResolving(false);
         }
         return;
       }
@@ -88,6 +100,10 @@ export default function NoteEditorScreen() {
   const handleNoteUpdated = (updated: NoteItem) => {
     setLocalNote(updated);
     updateNote(updated);
+    // When a draft receives its first committed action, replace URL from /note/new to /note/<realId>
+    if (id === 'new' && updated.id && !updated.id.startsWith('draft-')) {
+      router.replace(`/note/${updated.id}`);
+    }
   };
 
   const handleNoteDeleted = (noteId: string) => {

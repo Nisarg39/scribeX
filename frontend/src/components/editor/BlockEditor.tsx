@@ -32,8 +32,11 @@ import {
   ChevronUp,
   ChevronDown,
   X,
-  Type
+  Type,
+  Undo2,
+  Redo2,
 } from 'lucide-react-native';
+import { ActionHistoryManager } from '../../core/actionTracker';
 
 interface BlockEditorProps {
   note: NoteItem;
@@ -179,10 +182,42 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const { isDark } = useTheme();
   const { refreshFromDB } = useNotesStore();
 
-  const [title, setTitle] = useState(note.title);
-  const [colorToken, setColorToken] = useState<NoteColorToken>(note.colorToken);
-  const [isFavorite, setIsFavorite] = useState(note.isFavorite);
-  const [isPinned, setIsPinned] = useState(note.isPinned);
+  const noteIdRef = useRef<string>(note.id);
+  useEffect(() => {
+    noteIdRef.current = note.id;
+  }, [note.id]);
+
+  const [title, setTitle] = useState(note.title || '');
+  const titleRef = useRef(title);
+  titleRef.current = title;
+
+  const [colorToken, setColorToken] = useState<NoteColorToken>(note.colorToken || 'apricot');
+  const colorTokenRef = useRef(colorToken);
+  colorTokenRef.current = colorToken;
+
+  const [isFavorite, setIsFavorite] = useState(note.isFavorite || false);
+  const isFavoriteRef = useRef(isFavorite);
+  isFavoriteRef.current = isFavorite;
+
+  const [isPinned, setIsPinned] = useState(note.isPinned || false);
+  const isPinnedRef = useRef(isPinned);
+  isPinnedRef.current = isPinned;
+
+  // Dual-Stack Action History Manager for Undo / Redo & Activity Tracking
+  const actionHistory = useRef(new ActionHistoryManager()).current;
+  const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
+
+  useEffect(() => {
+    return actionHistory.subscribe(() => {
+      setHistoryState({
+        canUndo: actionHistory.canUndo(),
+        canRedo: actionHistory.canRedo(),
+      });
+    });
+  }, [actionHistory]);
+
+  const handleUndoRef = useRef<() => void>(() => {});
+  const handleRedoRef = useRef<() => void>(() => {});
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [activeChecklistPointId, setActiveChecklistPointId] = useState<string | null>(null);
   const activeBlockIdRef = useRef<string | null>(null);
@@ -600,6 +635,22 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows/Linux)
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        handleUndoRef.current?.();
+        return;
+      }
+      // Redo: Cmd+Shift+Z or Ctrl+Shift+Z or Ctrl+Y
+      if (
+        ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'z') ||
+        ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y')
+      ) {
+        e.preventDefault();
+        handleRedoRef.current?.();
+        return;
+      }
+
       if (e.key === 'Escape' && activeBlockIdRef.current) {
         handleDeselectAll();
         if (document.activeElement instanceof HTMLElement) {
@@ -617,8 +668,132 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     };
   }, []);
 
+  const handleUndo = () => {
+    const action = actionHistory.undo();
+    if (!action) return;
+
+    actionHistory.setIsApplyingHistory(true);
+    try {
+      switch (action.type) {
+        case 'SET_TITLE':
+          setTitle(action.before);
+          persistChanges(action.before, colorTokenRef.current, blocksRef.current, isFavoriteRef.current, isPinnedRef.current);
+          break;
+        case 'SET_COLOR':
+          setColorToken(action.before);
+          persistChanges(titleRef.current, action.before, blocksRef.current, isFavoriteRef.current, isPinnedRef.current);
+          break;
+        case 'TOGGLE_PIN':
+          setIsPinned(action.before);
+          persistChanges(titleRef.current, colorTokenRef.current, blocksRef.current, isFavoriteRef.current, action.before);
+          break;
+        case 'TOGGLE_FAVORITE':
+          setIsFavorite(action.before);
+          persistChanges(titleRef.current, colorTokenRef.current, blocksRef.current, action.before, isPinnedRef.current);
+          break;
+        case 'INSERT_BLOCK':
+        case 'DELETE_BLOCK':
+        case 'REORDER_BLOCKS':
+        case 'CHANGE_BLOCK_TYPE':
+        case 'UPDATE_CHECKLIST_STYLE':
+          if (action.before?.blocks) {
+            setBlocks(action.before.blocks);
+            persistChanges(titleRef.current, colorTokenRef.current, action.before.blocks, isFavoriteRef.current, isPinnedRef.current);
+          }
+          break;
+        case 'UPDATE_BLOCK_CONTENT':
+          setBlocks((prev) => {
+            const next = prev.map((b) =>
+              b.id === action.blockId ? { ...b, content: action.before } : b
+            );
+            persistChanges(titleRef.current, colorTokenRef.current, next, isFavoriteRef.current, isPinnedRef.current);
+            return next;
+          });
+          break;
+        case 'UPDATE_IMAGE_METADATA':
+        case 'UPDATE_AUDIO_METADATA':
+        case 'UPDATE_DRAWING_STROKES':
+        case 'UPDATE_FILE_METADATA':
+          setBlocks((prev) => {
+            const next = prev.map((b) =>
+              b.id === action.blockId ? { ...b, metadata: action.before } : b
+            );
+            persistChanges(titleRef.current, colorTokenRef.current, next, isFavoriteRef.current, isPinnedRef.current);
+            return next;
+          });
+          break;
+      }
+    } finally {
+      actionHistory.setIsApplyingHistory(false);
+    }
+  };
+
+  const handleRedo = () => {
+    const action = actionHistory.redo();
+    if (!action) return;
+
+    actionHistory.setIsApplyingHistory(true);
+    try {
+      switch (action.type) {
+        case 'SET_TITLE':
+          setTitle(action.after);
+          persistChanges(action.after, colorTokenRef.current, blocksRef.current, isFavoriteRef.current, isPinnedRef.current);
+          break;
+        case 'SET_COLOR':
+          setColorToken(action.after);
+          persistChanges(titleRef.current, action.after, blocksRef.current, isFavoriteRef.current, isPinnedRef.current);
+          break;
+        case 'TOGGLE_PIN':
+          setIsPinned(action.after);
+          persistChanges(titleRef.current, colorTokenRef.current, blocksRef.current, isFavoriteRef.current, action.after);
+          break;
+        case 'TOGGLE_FAVORITE':
+          setIsFavorite(action.after);
+          persistChanges(titleRef.current, colorTokenRef.current, blocksRef.current, action.after, isPinnedRef.current);
+          break;
+        case 'INSERT_BLOCK':
+        case 'DELETE_BLOCK':
+        case 'REORDER_BLOCKS':
+        case 'CHANGE_BLOCK_TYPE':
+        case 'UPDATE_CHECKLIST_STYLE':
+          if (action.after?.blocks) {
+            setBlocks(action.after.blocks);
+            persistChanges(titleRef.current, colorTokenRef.current, action.after.blocks, isFavoriteRef.current, isPinnedRef.current);
+          }
+          break;
+        case 'UPDATE_BLOCK_CONTENT':
+          setBlocks((prev) => {
+            const next = prev.map((b) =>
+              b.id === action.blockId ? { ...b, content: action.after } : b
+            );
+            persistChanges(titleRef.current, colorTokenRef.current, next, isFavoriteRef.current, isPinnedRef.current);
+            return next;
+          });
+          break;
+        case 'UPDATE_IMAGE_METADATA':
+        case 'UPDATE_AUDIO_METADATA':
+        case 'UPDATE_DRAWING_STROKES':
+        case 'UPDATE_FILE_METADATA':
+          setBlocks((prev) => {
+            const next = prev.map((b) =>
+              b.id === action.blockId ? { ...b, metadata: action.after } : b
+            );
+            persistChanges(titleRef.current, colorTokenRef.current, next, isFavoriteRef.current, isPinnedRef.current);
+            return next;
+          });
+          break;
+      }
+    } finally {
+      actionHistory.setIsApplyingHistory(false);
+    }
+  };
+
+  handleUndoRef.current = handleUndo;
+  handleRedoRef.current = handleRedo;
+
   const handleReorderBlock = (fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    const currentBlocks = blocksRef.current;
     let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
       nextBlocks = [...prevBlocks];
@@ -626,29 +801,69 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       nextBlocks.splice(toIndex, 0, moved);
       return nextBlocks;
     });
+
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'REORDER_BLOCKS',
+      description: 'Reorder Blocks',
+      before: { blocks: currentBlocks },
+      after: { blocks: nextBlocks },
+    });
+
     if (nextBlocks.length > 0) {
-      persistChanges(title, colorToken, nextBlocks);
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
     }
   };
 
   // Save changes to SQLite / Repository
   const persistChanges = async (
-    newTitle: string = title,
-    newColor: NoteColorToken = colorToken,
-    newBlocks: ComposableBlock[] = blocks,
-    newFav: boolean = isFavorite,
-    newPin: boolean = isPinned
+    newTitle: string = titleRef.current,
+    newColor: NoteColorToken = colorTokenRef.current,
+    newBlocks: ComposableBlock[] = blocksRef.current,
+    newFav: boolean = isFavoriteRef.current,
+    newPin: boolean = isPinnedRef.current
   ) => {
+    // If it's a draft and still completely pristine, do NOT write to DB yet!
+    const isPristine = 
+      !newTitle.trim() && 
+      newBlocks.length === 1 && 
+      newBlocks[0].type === 'paragraph' && 
+      !newBlocks[0].content.trim() &&
+      !actionHistory.hasActions();
+
+    if (noteIdRef.current.startsWith('draft-') && isPristine) {
+      return;
+    }
+
     try {
       const contentMarkdown = serializeBlocksToMarkdown(newBlocks);
-      const updated = await notesRepo.updateNote(note.id, {
-        title: newTitle.trim() || 'Untitled Note',
-        colorToken: newColor,
-        blocks: newBlocks,
-        contentMarkdown,
-        isFavorite: newFav,
-        isPinned: newPin,
-      });
+      const cleanTitle = newTitle.trim() || 'Untitled Note';
+
+      let updated: NoteItem;
+      if (noteIdRef.current.startsWith('draft-')) {
+        // First user action on a draft! Create the real note in SQLite
+        const permanentId = `note-${Date.now()}`;
+        noteIdRef.current = permanentId;
+        updated = await notesRepo.createNote({
+          id: permanentId,
+          title: cleanTitle,
+          colorToken: newColor,
+          blocks: newBlocks,
+          contentMarkdown,
+          folderPath: note.folderPath || 'General',
+        });
+      } else {
+        // Existing note: update note in SQLite
+        updated = await notesRepo.updateNote(noteIdRef.current, {
+          title: cleanTitle,
+          colorToken: newColor,
+          blocks: newBlocks,
+          contentMarkdown,
+          isFavorite: newFav,
+          isPinned: newPin,
+        });
+      }
+
       onNoteUpdated(updated);
 
       // Sync embedded checklists with global tasks table
@@ -679,11 +894,62 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         }
       });
 
-      tasksRepo.syncNoteChecklists(note.id, newTitle, newColor, checklistItems)
+      tasksRepo.syncNoteChecklists(noteIdRef.current, cleanTitle, newColor, checklistItems)
         .catch((err) => console.warn('Failed to sync note checklists to tasksRepo:', err));
     } catch (err) {
       console.warn('Failed to persist note changes in BlockEditor:', err);
     }
+  };
+
+  const handleTitleChange = (newTitle: string) => {
+    actionHistory.recordAction({
+      tier: 1,
+      type: 'SET_TITLE',
+      description: 'Change Title',
+      before: titleRef.current,
+      after: newTitle,
+      coalesceKey: 'note_title',
+    });
+    setTitle(newTitle);
+    persistChanges(newTitle, colorTokenRef.current, blocksRef.current, isFavoriteRef.current, isPinnedRef.current);
+  };
+
+  const handleColorChange = (newColor: NoteColorToken) => {
+    actionHistory.recordAction({
+      tier: 1,
+      type: 'SET_COLOR',
+      description: `Change color to ${newColor}`,
+      before: colorTokenRef.current,
+      after: newColor,
+    });
+    setColorToken(newColor);
+    persistChanges(titleRef.current, newColor, blocksRef.current, isFavoriteRef.current, isPinnedRef.current);
+  };
+
+  const handleTogglePin = () => {
+    const nextPin = !isPinned;
+    actionHistory.recordAction({
+      tier: 1,
+      type: 'TOGGLE_PIN',
+      description: nextPin ? 'Pin Note' : 'Unpin Note',
+      before: isPinnedRef.current,
+      after: nextPin,
+    });
+    setIsPinned(nextPin);
+    persistChanges(titleRef.current, colorTokenRef.current, blocksRef.current, isFavoriteRef.current, nextPin);
+  };
+
+  const handleToggleFavorite = () => {
+    const nextFav = !isFavorite;
+    actionHistory.recordAction({
+      tier: 1,
+      type: 'TOGGLE_FAVORITE',
+      description: nextFav ? 'Favorite Note' : 'Unfavorite Note',
+      before: isFavoriteRef.current,
+      after: nextFav,
+    });
+    setIsFavorite(nextFav);
+    persistChanges(titleRef.current, colorTokenRef.current, blocksRef.current, nextFav, isPinnedRef.current);
   };
 
   // Block Mutation Helpers
@@ -696,22 +962,48 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       return nextBlocks;
     });
     if (nextBlocks.length > 0) {
-      persistChanges(title, colorToken, nextBlocks);
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
     }
   };
 
   const handleUpdateContent = (blockId: string, content: string) => {
+    const prevBlock = blocksRef.current.find((b) => b.id === blockId);
+    const prevContent = prevBlock?.content || '';
+
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'UPDATE_BLOCK_CONTENT',
+      description: 'Edit Text',
+      blockId,
+      before: prevContent,
+      after: content,
+      coalesceKey: `content_${blockId}`,
+    });
+
     let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
       nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, content } : b));
       return nextBlocks;
     });
     if (nextBlocks.length > 0) {
-      persistChanges(title, colorToken, nextBlocks);
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
     }
   };
 
   const handleUpdateMetadata = (blockId: string, metadata: Record<string, any>) => {
+    const prevBlock = blocksRef.current.find((b) => b.id === blockId);
+    const prevMeta = prevBlock?.metadata || {};
+
+    actionHistory.recordAction({
+      tier: 3,
+      type: 'UPDATE_IMAGE_METADATA',
+      description: 'Update Block Metadata',
+      blockId,
+      before: prevMeta,
+      after: metadata,
+      coalesceKey: `meta_${blockId}`,
+    });
+
     let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
       nextBlocks = prevBlocks.map((b) =>
@@ -720,36 +1012,62 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       return nextBlocks;
     });
     if (nextBlocks.length > 0) {
-      persistChanges(title, colorToken, nextBlocks);
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
     }
   };
 
   const handleChangeType = (blockId: string, type: BlockType) => {
+    const currentBlocks = blocksRef.current;
     let nextBlocks: ComposableBlock[] = [];
     setBlocks((prevBlocks) => {
       nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, type } : b));
       return nextBlocks;
     });
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'CHANGE_BLOCK_TYPE',
+      description: `Change Type to ${type}`,
+      blockId,
+      before: { blocks: currentBlocks },
+      after: { blocks: nextBlocks },
+    });
     if (nextBlocks.length > 0) {
-      persistChanges(title, colorToken, nextBlocks);
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
     }
   };
 
   const handleDeleteBlock = (blockId: string) => {
-    if (blocks.length <= 1) {
+    const currentBlocks = blocksRef.current;
+    if (currentBlocks.length <= 1) {
       // Keep at least one empty block
       const emptyBlock: ComposableBlock[] = [{ id: `b-${Date.now()}`, type: 'paragraph', content: '' }];
+      actionHistory.recordAction({
+        tier: 2,
+        type: 'DELETE_BLOCK',
+        description: 'Clear Block',
+        blockId,
+        before: { blocks: currentBlocks },
+        after: { blocks: emptyBlock },
+      });
       setBlocks(emptyBlock);
       setActiveBlockId(emptyBlock[0].id);
-      persistChanges(title, colorToken, emptyBlock);
+      persistChanges(titleRef.current, colorTokenRef.current, emptyBlock);
       return;
     }
-    const nextBlocks = blocks.filter((b) => b.id !== blockId);
+    const nextBlocks = currentBlocks.filter((b) => b.id !== blockId);
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'DELETE_BLOCK',
+      description: 'Delete Block',
+      blockId,
+      before: { blocks: currentBlocks },
+      after: { blocks: nextBlocks },
+    });
     setBlocks(nextBlocks);
     if (activeBlockId === blockId) {
       setActiveBlockId(null);
     }
-    persistChanges(title, colorToken, nextBlocks);
+    persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
   };
 
   // Inserts a new block immediately below the active block (or at the bottom if none)
@@ -773,10 +1091,19 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       nextBlocks = [...blocks, newBlock];
     }
 
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'INSERT_BLOCK',
+      description: `Insert ${type}`,
+      blockId: newBlock.id,
+      before: { blocks: blocksRef.current },
+      after: { blocks: nextBlocks },
+    });
+
     setBlocks(nextBlocks);
     setActiveBlockId(newBlock.id);
     setIsInsertPaletteOpen(false);
-    persistChanges(title, colorToken, nextBlocks);
+    persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
   };
 
   // Convert current active block to new type or apply text style to active checklist point
@@ -789,13 +1116,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       return;
     }
 
-    const currentBlock = blocks.find((b) => b.id === activeBlockId);
+    const currentBlock = blocksRef.current.find((b) => b.id === activeBlockId);
     if (!currentBlock) return;
 
     // Strict Guard: Never transform or replace non-text elements (image, audio, file, bookmark, table, code, equation, drawing, divider, etc.)
     if (!isTextTransformableBlock(currentBlock.type)) {
       return;
     }
+
+    const beforeBlocks = blocksRef.current;
 
     // If currently inside a checklist block, apply the text style (paragraph, h1, h2, quote)
     // to the active checkpoint input rather than removing the checklist element!
@@ -833,7 +1162,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         updatedItems = items;
       }
 
-      const nextBlocks = blocks.map((b) =>
+      const nextBlocks = blocksRef.current.map((b) =>
         b.id === activeBlockId
           ? {
               ...b,
@@ -843,8 +1172,17 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           : b
       );
 
+      actionHistory.recordAction({
+        tier: 2,
+        type: 'UPDATE_CHECKLIST_STYLE',
+        description: `Checklist point style: ${targetStyle}`,
+        blockId: activeBlockId,
+        before: { blocks: beforeBlocks },
+        after: { blocks: nextBlocks },
+      });
+
       setBlocks(nextBlocks);
-      persistChanges(title, colorToken, nextBlocks);
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
       return;
     }
 
@@ -852,25 +1190,36 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       ? { items: [{ id: `task-${Date.now()}-1`, text: '', checked: false, priority: 'none', dueDate: 'Today', style: 'paragraph' }], ...metadata }
       : metadata;
 
-    const nextBlocks = blocks.map((b) =>
+    const nextBlocks = blocksRef.current.map((b) =>
       b.id === activeBlockId
         ? { ...b, type, metadata: { ...b.metadata, ...defaultMeta } }
         : b
     );
+
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'CHANGE_BLOCK_TYPE',
+      description: `Change Type to ${type}`,
+      blockId: activeBlockId,
+      before: { blocks: beforeBlocks },
+      after: { blocks: nextBlocks },
+    });
+
     setBlocks(nextBlocks);
-    persistChanges(title, colorToken, nextBlocks);
+    persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
   };
 
   // Focus Handoff: Enter splits the block at cursor position into a new block below
   const handleSplitBlock = (index: number, splitPosition: number = 0) => {
-    const currentBlock = blocks[index];
+    const currentBlocks = blocksRef.current;
+    const currentBlock = currentBlocks[index];
     if (!currentBlock) return;
 
     const fullContent = currentBlock.content || '';
     const beforeText = fullContent.slice(0, splitPosition);
     const afterText = fullContent.slice(splitPosition);
 
-    const newBlockId = `b-${Date.now()}-${blocks.length + 1}`;
+    const newBlockId = `b-${Date.now()}-${currentBlocks.length + 1}`;
     const newBlock: ComposableBlock = {
       id: newBlockId,
       type: 'paragraph',
@@ -878,15 +1227,24 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     };
 
     const nextBlocks = [
-      ...blocks.slice(0, index),
+      ...currentBlocks.slice(0, index),
       { ...currentBlock, content: beforeText },
       newBlock,
-      ...blocks.slice(index + 1),
+      ...currentBlocks.slice(index + 1),
     ];
+
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'INSERT_BLOCK',
+      description: 'Split Block',
+      blockId: newBlockId,
+      before: { blocks: currentBlocks },
+      after: { blocks: nextBlocks },
+    });
 
     setBlocks(nextBlocks);
     setActiveBlockId(newBlockId);
-    persistChanges(title, colorToken, nextBlocks);
+    persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
 
     // Hand off focus to newly created block at cursor 0
     setFocusTarget({
@@ -902,14 +1260,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       // If at start of the very first block, hand off focus to Note Title
       setFocusTarget({
         blockId: 'note-title',
-        cursorPosition: title.length,
+        cursorPosition: titleRef.current.length,
         timestamp: Date.now(),
       });
       return;
     }
 
-    const currentBlock = blocks[index];
-    const prevBlock = blocks[index - 1];
+    const currentBlocks = blocksRef.current;
+    const currentBlock = currentBlocks[index];
+    const prevBlock = currentBlocks[index - 1];
     if (!currentBlock || !prevBlock) return;
 
     const isTextCompatible = (type: BlockType) =>
@@ -924,14 +1283,23 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
       const updatedPrevBlock = { ...prevBlock, content: mergedContent };
       const nextBlocks = [
-        ...blocks.slice(0, index - 1),
+        ...currentBlocks.slice(0, index - 1),
         updatedPrevBlock,
-        ...blocks.slice(index + 1),
+        ...currentBlocks.slice(index + 1),
       ];
+
+      actionHistory.recordAction({
+        tier: 2,
+        type: 'DELETE_BLOCK',
+        description: 'Merge Block with Previous',
+        blockId: currentBlock.id,
+        before: { blocks: currentBlocks },
+        after: { blocks: nextBlocks },
+      });
 
       setBlocks(nextBlocks);
       setActiveBlockId(prevBlock.id);
-      persistChanges(title, colorToken, nextBlocks);
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
 
       // Hand off focus to the junction point in previous block
       setFocusTarget({
@@ -944,10 +1312,20 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
     // 2. Empty block: Delete it and return focus to previous block
     if (!currentBlock.content || currentBlock.content.trim() === '') {
-      const nextBlocks = blocks.filter((_, i) => i !== index);
+      const nextBlocks = currentBlocks.filter((_, i) => i !== index);
+
+      actionHistory.recordAction({
+        tier: 2,
+        type: 'DELETE_BLOCK',
+        description: 'Delete Empty Block',
+        blockId: currentBlock.id,
+        before: { blocks: currentBlocks },
+        after: { blocks: nextBlocks },
+      });
+
       setBlocks(nextBlocks);
       setActiveBlockId(prevBlock.id);
-      persistChanges(title, colorToken, nextBlocks);
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
 
       const targetPos = prevBlock.content ? prevBlock.content.length : 0;
       setFocusTarget({
@@ -969,44 +1347,23 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
   const handleMoveUp = (index: number) => {
     if (index === 0) return;
-    const nextBlocks = [...blocks];
-    const temp = nextBlocks[index - 1];
-    nextBlocks[index - 1] = nextBlocks[index];
-    nextBlocks[index] = temp;
-    setBlocks(nextBlocks);
-    persistChanges(title, colorToken, nextBlocks);
+    handleReorderBlock(index, index - 1);
   };
 
   const handleMoveDown = (index: number) => {
-    if (index === blocks.length - 1) return;
-    const nextBlocks = [...blocks];
-    const temp = nextBlocks[index + 1];
-    nextBlocks[index + 1] = nextBlocks[index];
-    nextBlocks[index] = temp;
-    setBlocks(nextBlocks);
-    persistChanges(title, colorToken, nextBlocks);
-  };
-
-  const handleToggleFavorite = () => {
-    const next = !isFavorite;
-    setIsFavorite(next);
-    persistChanges(title, colorToken, blocks, next, isPinned);
-  };
-
-  const handleTogglePin = () => {
-    const next = !isPinned;
-    setIsPinned(next);
-    persistChanges(title, colorToken, blocks, isFavorite, next);
-  };
-
-  const handleColorChange = (color: NoteColorToken) => {
-    setColorToken(color);
-    persistChanges(title, color, blocks, isFavorite, isPinned);
+    if (index === blocksRef.current.length - 1) return;
+    handleReorderBlock(index, index + 1);
   };
 
   const handleDeleteNote = async () => {
-    await notesRepo.softDeleteNote(note.id);
-    onNoteDeleted(note.id);
+    if (!noteIdRef.current.startsWith('draft-')) {
+      await notesRepo.softDeleteNote(noteIdRef.current);
+    }
+    onNoteDeleted(noteIdRef.current);
+  };
+
+  const handleEditorClose = () => {
+    onClose();
   };
 
   const currentActiveBlock = blocks.find((b) => b.id === activeBlockId);
@@ -1043,7 +1400,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       >
         {/* Back Button */}
         <Pressable
-          onPress={onClose}
+          onPress={handleEditorClose}
           accessibilityLabel="Back to notes"
           className="w-10 h-10 rounded-full bg-light-appBg dark:bg-dark-raised items-center justify-center shadow-sm"
           style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
@@ -1112,7 +1469,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           </Pressable>
 
           <Pressable
-            onPress={onClose}
+            onPress={handleEditorClose}
             accessibilityLabel="Done"
             className="px-4 py-1.5 rounded-full bg-light-iconBg dark:bg-white items-center justify-center ml-1 shadow-sm"
             style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
@@ -1131,17 +1488,41 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         {...({ 'data-scribex-toolbar': 'true' } as any)}
         className="flex-row items-center justify-between px-6 py-2.5 border-b border-light-border/70 dark:border-white/10 bg-light-appBg/95 dark:bg-[#18181A]/95 backdrop-blur-md z-20"
       >
-        {/* Left: Primary Insert Element */}
-        <Pressable
-          onPress={() => setIsInsertPaletteOpen(!isInsertPaletteOpen)}
-          className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-iconBg dark:bg-white shadow-sm"
-          style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
-        >
-          <Plus size={13} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
-          <Text className="text-xs font-bold text-white dark:text-[#111111]">
-            Insert
-          </Text>
-        </Pressable>
+        {/* Left: Primary Insert Element & Undo / Redo Controls */}
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            onPress={() => setIsInsertPaletteOpen(!isInsertPaletteOpen)}
+            className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-iconBg dark:bg-white shadow-sm"
+            style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+          >
+            <Plus size={13} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
+            <Text className="text-xs font-bold text-white dark:text-[#111111]">
+              Insert
+            </Text>
+          </Pressable>
+
+          <View className="flex-row items-center bg-light-surface dark:bg-dark-raised rounded-full border border-light-border/70 dark:border-white/5 px-1 py-0.5">
+            <Pressable
+              disabled={!historyState.canUndo}
+              onPress={handleUndo}
+              className={`p-1.5 rounded-full ${historyState.canUndo ? 'hover:bg-black/5 dark:hover:bg-white/10' : 'opacity-30'}`}
+              accessibilityLabel="Undo (Ctrl+Z / Cmd+Z)"
+              style={({ pressed }) => (pressed && historyState.canUndo ? { transform: [{ scale: 0.9 }] } : undefined)}
+            >
+              <Undo2 size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+            </Pressable>
+            <View className="w-[1px] h-3 bg-black/10 dark:bg-white/15 mx-0.5" />
+            <Pressable
+              disabled={!historyState.canRedo}
+              onPress={handleRedo}
+              className={`p-1.5 rounded-full ${historyState.canRedo ? 'hover:bg-black/5 dark:hover:bg-white/10' : 'opacity-30'}`}
+              accessibilityLabel="Redo (Ctrl+Y / Cmd+Shift+Z)"
+              style={({ pressed }) => (pressed && historyState.canRedo ? { transform: [{ scale: 0.9 }] } : undefined)}
+            >
+              <Redo2 size={13} color={isDark ? '#F7F7F7' : '#171717'} />
+            </Pressable>
+          </View>
+        </View>
 
         {/* Center: Style Switchers */}
         <View className={`flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border/70 dark:border-white/5 ${
@@ -1341,10 +1722,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
             setActiveBlockId(null);
             setActiveChecklistPointId(null);
           }}
-          onChangeText={(newTitle) => {
-            setTitle(newTitle);
-            persistChanges(newTitle, colorToken, blocks);
-          }}
+          onChangeText={handleTitleChange}
           onSubmitEditing={() => {
             if (blocks.length > 0) {
               setFocusTarget({

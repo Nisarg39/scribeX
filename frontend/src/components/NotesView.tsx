@@ -36,11 +36,8 @@ export const NotesView: React.FC = () => {
     }
   };
 
-  const handleCreateNewBlankNote = async () => {
-    const created = await addNote('Untitled Note', '', 'apricot', 'General');
-    if (created?.id) {
-      router.push(`/note/${created.id}`);
-    }
+  const handleCreateNewBlankNote = () => {
+    router.push('/note/new');
   };
 
   // Filter notes based on active filter
