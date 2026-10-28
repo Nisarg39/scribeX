@@ -2,13 +2,17 @@ This file contains future ideas and features for ScribeX.
 
 Remaining Tasks to fix
 
-1 - autoscroll the notes when the user is dragging an element and goes out of visible screen bounds or reaches near the boundry
+0 - Update to expo sdk 57
+0.1 - remove the problems that are showing in the dev console they are related to the files of older version of code which we completely removed before this new idea implementation 
+1 - [x] autoscroll the notes when the user is dragging an element and goes out of visible screen bounds or reaches near the boundry (COMPLETED)
 2 - clear the element selection when the user clicks anywhere else in the screen 
+3 - Adding an action tracking system and then Add undo and redo functionality to the editor for all the blocks . use 3 level metadata system for tracking actions - Tier 1: Note-Level Metadata (The Container) , 2 - Tier 2: Block-Level Metadata (The Elements), Tier 3: Asset Metadata (The Files) . Tier 1 metadata can be added in later stage after we complete the note editor part
 
 
+Long term Ideas
 
 1 - Use firebase for realtime database update and backup / cloud sync for the user data and use nextjs for AI API calls and host it on vercel for maintaining free hosting. use google drive api for storing media files on google drive and the firebase will only store the links of the media files
 
-2 - Add undo and redo functionality to the editor for all the blocks including the AI generated content
+
 
 3 - Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes . these multi agents will be also added using the help of the main agent i.e the main AI Assistant that has all the context of the user and the system so they can perform tasks but with limited access to the context either provided by the main agent when creating them or either by the user 

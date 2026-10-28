@@ -30,8 +30,8 @@ interface BlockRendererProps {
   onSplitBlock?: (splitPosition: number) => void;
   onBackspaceAtStart?: () => void;
   onFocus?: () => void;
-  onStartDrag?: () => void;
-  onDragMove?: (dy: number) => void;
+  onStartDrag?: (initialClientY?: number) => void;
+  onDragMove?: (dy: number, clientY?: number) => void;
   onEndDrag?: () => void;
   onReportHeight?: (height: number) => void;
   onUpdateBlock?: (updates: Partial<ComposableBlock>) => void;
@@ -170,7 +170,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
     // Start 240ms timer for long press
     longPressTimer = setTimeout(() => {
       isDragActive = true;
-      onStartDragRef.current?.();
+      onStartDragRef.current?.(startY);
     }, 240);
 
     const onPointerMove = (moveEvt: MouseEvent | PointerEvent) => {
@@ -185,7 +185,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         }
       } else {
         moveEvt.preventDefault();
-        onDragMoveRef.current?.(dy);
+        onDragMoveRef.current?.(dy, currentY);
       }
     };
 
@@ -215,6 +215,66 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
     window.addEventListener('mousemove', onPointerMove, { passive: false });
     window.addEventListener('mouseup', onPointerUp, { passive: false });
   };
+
+  // Cross-platform touch drag handler for Android & iOS
+  const panResponder = useMemo(() => {
+    if (Platform.OS === 'web') return null;
+
+    let isDragActive = false;
+    let longPressTimer: any = null;
+    let startPageY = 0;
+
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: () => isDragActive,
+      onStartShouldSetPanResponderCapture: (evt, gestureState) => {
+        const target = evt.target as any;
+        if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') {
+          return false;
+        }
+        startPageY = evt.nativeEvent.pageY || gestureState.y0 || 0;
+        clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+          isDragActive = true;
+          onStartDragRef.current?.(startPageY);
+        }, 260);
+        return false;
+      },
+      onMoveShouldSetPanResponderCapture: (evt, gestureState) => {
+        if (!isDragActive) {
+          if (Math.hypot(gestureState.dx, gestureState.dy) > 10) {
+            clearTimeout(longPressTimer);
+          }
+          return false;
+        }
+        return true;
+      },
+      onPanResponderGrant: () => {},
+      onPanResponderMove: (evt, gestureState) => {
+        if (isDragActive) {
+          const currentY = evt.nativeEvent.pageY || gestureState.moveY;
+          onDragMoveRef.current?.(gestureState.dy, currentY);
+        }
+      },
+      onPanResponderRelease: () => {
+        clearTimeout(longPressTimer);
+        if (isDragActive) {
+          isDragActive = false;
+          onEndDragRef.current?.();
+        } else {
+          onFocus?.();
+        }
+      },
+      onPanResponderTerminate: () => {
+        clearTimeout(longPressTimer);
+        if (isDragActive) {
+          isDragActive = false;
+          onEndDragRef.current?.();
+        }
+      },
+      onPanResponderTerminationRequest: () => !isDragActive,
+    });
+  }, []);
 
   // 1. Divider Block (Continuous line, no enclosing card)
   if (block.type === 'divider') {
@@ -246,7 +306,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
             onPointerDown: handleBlockPointerDown,
             onMouseDown: handleBlockPointerDown,
           } as any)
-        : {})}
+        : (panResponder ? panResponder.panHandlers : {}))}
     >
       {/* Floating Dragging Badge */}
       {isDragging && (

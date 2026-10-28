@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Modal } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform } from 'react-native';
 import { NoteItem, ComposableBlock, BlockType } from '../../types/note';
 import { useTheme, NoteColors, NoteColorToken } from '../../theme';
 import { BlockRenderer } from './BlockRenderer';
@@ -130,7 +130,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     }
   }, [focusTarget]);
 
-  // Drag-and-Drop Reorder State
+  // Drag-and-Drop Reorder & Autoscroll State
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
   const [dragOffsetY, setDragOffsetY] = useState(0);
@@ -139,6 +139,14 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const blockHeightsRef = useRef<{ [idx: number]: number }>({});
   const scrollViewRef = useRef<ScrollView>(null);
 
+  const currentScrollY = useRef(0);
+  const startScrollY = useRef(0);
+  const currentPointerY = useRef(0);
+  const rawDyRef = useRef(0);
+  const scrollViewLayoutRef = useRef<{ y: number; height: number }>({ y: 0, height: 600 });
+  const scrollAnimationRef = useRef<number | null>(null);
+  const autoScrollActiveRef = useRef(false);
+
   const [blocks, setBlocks] = useState<ComposableBlock[]>(() => {
     const rawBlocks: ComposableBlock[] = note.blocks && note.blocks.length > 0
       ? note.blocks
@@ -146,31 +154,203 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     return coalesceChecklistBlocks(rawBlocks);
   });
 
+  const getScrollElement = (): HTMLElement | null => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
+      return null;
+    }
+    const byId = document.getElementById('scribex-editor-scrollview');
+    if (byId instanceof HTMLElement) return byId;
+
+    const ref = scrollViewRef.current as any;
+    if (ref?.getScrollableNode) {
+      const el = ref.getScrollableNode();
+      if (el instanceof HTMLElement) return el;
+    }
+    if (ref instanceof HTMLElement) return ref;
+    return null;
+  };
+
+  const getViewportBounds = () => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const el = getScrollElement();
+      if (el && typeof el.getBoundingClientRect === 'function') {
+        const rect = el.getBoundingClientRect();
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          height: rect.height,
+        };
+      }
+      return {
+        top: 100,
+        bottom: window.innerHeight - 50,
+        height: window.innerHeight - 150,
+      };
+    }
+    return {
+      top: scrollViewLayoutRef.current.y || 80,
+      bottom: (scrollViewLayoutRef.current.y || 80) + (scrollViewLayoutRef.current.height || 600),
+      height: scrollViewLayoutRef.current.height || 600,
+    };
+  };
+
+  const stopAutoScrollLoop = () => {
+    autoScrollActiveRef.current = false;
+    if (scrollAnimationRef.current) {
+      cancelAnimationFrame(scrollAnimationRef.current);
+      scrollAnimationRef.current = null;
+    }
+  };
+
+  const startAutoScrollLoop = () => {
+    if (autoScrollActiveRef.current) return;
+    autoScrollActiveRef.current = true;
+
+    const step = () => {
+      if (draggingIndexRef.current === null) {
+        stopAutoScrollLoop();
+        return;
+      }
+
+      const bounds = getViewportBounds();
+      const clientY = currentPointerY.current;
+      const BOUNDS_THRESHOLD = 110;
+
+      let velocity = 0;
+      if (clientY < bounds.top + BOUNDS_THRESHOLD) {
+        // Upper edge or out of bounds above viewport
+        const dist = (bounds.top + BOUNDS_THRESHOLD) - clientY;
+        const intensity = Math.min(Math.max(dist / BOUNDS_THRESHOLD, 0.25), 3.0);
+        velocity = -Math.round(intensity * 18);
+      } else if (clientY > bounds.bottom - BOUNDS_THRESHOLD) {
+        // Lower edge or out of bounds below viewport
+        const dist = clientY - (bounds.bottom - BOUNDS_THRESHOLD);
+        const intensity = Math.min(Math.max(dist / BOUNDS_THRESHOLD, 0.25), 3.0);
+        velocity = Math.round(intensity * 18);
+      }
+
+      if (velocity !== 0) {
+        if (Platform.OS === 'web') {
+          const el = getScrollElement();
+          if (el) {
+            el.scrollTop += velocity;
+            currentScrollY.current = el.scrollTop;
+          } else {
+            currentScrollY.current = Math.max(0, currentScrollY.current + velocity);
+            scrollViewRef.current?.scrollTo({ y: currentScrollY.current, animated: false });
+          }
+        } else {
+          // Native Android & iOS
+          currentScrollY.current = Math.max(0, currentScrollY.current + velocity);
+          scrollViewRef.current?.scrollTo({ y: currentScrollY.current, animated: false });
+        }
+
+        // Keep dragged block and target index synced with the continuous scroll
+        const scrollDelta = currentScrollY.current - startScrollY.current;
+        const totalDy = rawDyRef.current + scrollDelta;
+        setDragOffsetY(totalDy);
+
+        const fromIndex = draggingIndexRef.current;
+        if (fromIndex !== null) {
+          const newTarget = calculateTargetIndex(fromIndex, totalDy, blockHeightsRef.current, blocks.length);
+          if (newTarget !== dropTargetIndexRef.current) {
+            dropTargetIndexRef.current = newTarget;
+            setDropTargetIndex(newTarget);
+          }
+        }
+      }
+
+      scrollAnimationRef.current = requestAnimationFrame(step);
+    };
+
+    scrollAnimationRef.current = requestAnimationFrame(step);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopAutoScrollLoop();
+    };
+  }, []);
+
+  // Global window pointer tracking on Web while dragging to prevent boundary dead-zones
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || draggingIndex === null) return;
+
+    const handleGlobalPointerMove = (e: MouseEvent | PointerEvent) => {
+      currentPointerY.current = e.clientY;
+    };
+
+    const handleGlobalPointerUp = () => {
+      handleEndDrag();
+    };
+
+    window.addEventListener('pointermove', handleGlobalPointerMove, { passive: true });
+    window.addEventListener('mousemove', handleGlobalPointerMove, { passive: true });
+    window.addEventListener('pointerup', handleGlobalPointerUp);
+    window.addEventListener('mouseup', handleGlobalPointerUp);
+    window.addEventListener('pointercancel', handleGlobalPointerUp);
+
+    return () => {
+      window.removeEventListener('pointermove', handleGlobalPointerMove);
+      window.removeEventListener('mousemove', handleGlobalPointerMove);
+      window.removeEventListener('pointerup', handleGlobalPointerUp);
+      window.removeEventListener('mouseup', handleGlobalPointerUp);
+      window.removeEventListener('pointercancel', handleGlobalPointerUp);
+    };
+  }, [draggingIndex]);
+
   const handleReportHeight = (index: number, height: number) => {
     blockHeightsRef.current[index] = height;
   };
 
-  const handleStartDrag = (index: number) => {
+  const handleStartDrag = (index: number, initialClientY?: number) => {
     draggingIndexRef.current = index;
     dropTargetIndexRef.current = index;
     setDraggingIndex(index);
     setDropTargetIndex(index);
     setDragOffsetY(0);
+    rawDyRef.current = 0;
+
+    if (Platform.OS === 'web') {
+      const el = getScrollElement();
+      if (el) {
+        currentScrollY.current = el.scrollTop;
+      }
+    }
+    startScrollY.current = currentScrollY.current;
+
+    const startY = initialClientY ?? (typeof window !== 'undefined' ? (window as any).lastPointerY ?? (window.innerHeight / 2) : 250);
+    currentPointerY.current = startY;
+
     if (blocks[index]) {
       setActiveBlockId(blocks[index].id);
     }
+
+    startAutoScrollLoop();
   };
 
-  const handleDragMove = (dy: number) => {
+  const handleDragMove = (dy: number, clientY?: number) => {
     const fromIndex = draggingIndexRef.current;
     if (fromIndex === null) return;
-    setDragOffsetY(dy);
-    const newTarget = calculateTargetIndex(fromIndex, dy, blockHeightsRef.current, blocks.length);
+
+    rawDyRef.current = dy;
+    if (clientY !== undefined) {
+      currentPointerY.current = clientY;
+    }
+
+    const scrollDelta = currentScrollY.current - startScrollY.current;
+    const totalDy = dy + scrollDelta;
+    setDragOffsetY(totalDy);
+
+    const newTarget = calculateTargetIndex(fromIndex, totalDy, blockHeightsRef.current, blocks.length);
     dropTargetIndexRef.current = newTarget;
     setDropTargetIndex(newTarget);
+
+    startAutoScrollLoop();
   };
 
   const handleEndDrag = () => {
+    stopAutoScrollLoop();
     const fromIndex = draggingIndexRef.current;
     const toIndex = dropTargetIndexRef.current;
     if (fromIndex !== null && toIndex !== null && fromIndex !== toIndex) {
@@ -181,6 +361,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     setDraggingIndex(null);
     setDropTargetIndex(null);
     setDragOffsetY(0);
+    rawDyRef.current = 0;
   };
 
   const handleDeselectAll = () => {
@@ -704,9 +885,18 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       {/* Editor Main Continuous Canvas */}
       <ScrollView 
         ref={scrollViewRef}
-        scrollEnabled={draggingIndex === null}
+        nativeID="scribex-editor-scrollview"
+        id="scribex-editor-scrollview"
+        scrollEnabled={true}
+        onScroll={(e) => {
+          currentScrollY.current = e.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
+        onLayout={(e) => {
+          scrollViewLayoutRef.current = e.nativeEvent.layout;
+        }}
         className="flex-1 px-6 md:px-16 lg:px-24 pt-6"
-        contentContainerStyle={{ paddingBottom: 100, flexGrow: 1 }}
+        contentContainerStyle={{ paddingBottom: 140, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Folder Badge & Metadata */}
@@ -789,7 +979,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                   }}
                   onSplitBlock={(pos) => handleSplitBlock(idx, pos)}
                   onBackspaceAtStart={() => handleMergeWithPrevious(idx)}
-                  onStartDrag={() => handleStartDrag(idx)}
+                  onStartDrag={(clientY) => handleStartDrag(idx, clientY)}
                   onDragMove={handleDragMove}
                   onEndDrag={handleEndDrag}
                   onReportHeight={(h) => handleReportHeight(idx, h)}

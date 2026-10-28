@@ -73,7 +73,6 @@ export const UniversalBlockWrapper: React.FC<UniversalBlockWrapperProps> = ({
     <Pressable
       onPress={onFocus}
       onLongPress={onLongPress}
-      onPressOut={onEndDrag}
       delayLongPress={280}
       style={style}
       className={`my-2 rounded-2xl transition-all cursor-default overflow-hidden ${
