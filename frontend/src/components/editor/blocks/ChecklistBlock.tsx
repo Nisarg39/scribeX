@@ -28,6 +28,9 @@ interface ChecklistBlockProps {
 
   onUpdateItems?: (items: ChecklistPoint[]) => void;
   onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onBackspaceAtStart?: () => void;
   onDelete?: () => void;
 }
 
@@ -53,6 +56,9 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   onUpdateContent,
   onToggleCheck,
   onFocus,
+  onLongPress,
+  onEndDrag,
+  onBackspaceAtStart,
   onDelete,
 }) => {
   const { isDark } = useTheme();
@@ -179,6 +185,9 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
   return (
     <Pressable
       onPress={onFocus}
+      onLongPress={onLongPress}
+      onPressOut={onEndDrag}
+      delayLongPress={280}
       className={`py-3 my-2 rounded-2xl transition-all cursor-default ${
         isSelected
           ? 'bg-light-appBg/90 dark:bg-white/[0.06] border-2 border-note-cyan/80 dark:border-note-cyan/60 shadow-md ring-2 ring-note-cyan/20'
@@ -188,6 +197,9 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
       {/* Container Header Badge */}
       <Pressable
         onPress={onFocus}
+        onLongPress={onLongPress}
+        onPressOut={onEndDrag}
+        delayLongPress={280}
         className="flex-row items-center justify-between mb-2.5 px-1 cursor-pointer select-none"
         accessibilityRole="button"
         accessibilityLabel="Select checklist group"
@@ -262,9 +274,14 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                     if (e.nativeEvent.key === 'Enter') {
                       e.preventDefault?.();
                       handleAddItem(idx);
-                    } else if (e.nativeEvent.key === 'Backspace' && item.text === '' && checklistItems.length > 1) {
-                      e.preventDefault?.();
-                      handleDeleteItem(idx);
+                    } else if (e.nativeEvent.key === 'Backspace' && item.text === '') {
+                      if (checklistItems.length > 1) {
+                        e.preventDefault?.();
+                        handleDeleteItem(idx);
+                      } else if (checklistItems.length === 1) {
+                        e.preventDefault?.();
+                        onBackspaceAtStart?.();
+                      }
                     }
                   }}
                   onSubmitEditing={() => handleAddItem(idx)}

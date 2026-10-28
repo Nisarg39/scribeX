@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Modal } from 'react-native';
 import { NoteItem, ComposableBlock, BlockType } from '../../types/note';
 import { useTheme, NoteColors, NoteColorToken } from '../../theme';
@@ -9,6 +9,7 @@ import { useNotesStore } from '../../state/useNotesStore';
 import { serializeBlocksToMarkdown, coalesceChecklistBlocks } from '../../core/astSerializer';
 import { 
   ArrowLeft, 
+  ArrowDown,
   Star, 
   Trash2, 
   Plus, 
@@ -51,6 +52,43 @@ const PASTEL_PALETTE: NoteColorToken[] = [
   'sky',
 ];
 
+const calculateTargetIndex = (
+  fromIndex: number,
+  dy: number,
+  heights: { [idx: number]: number },
+  totalBlocks: number
+): number => {
+  if (dy === 0) return fromIndex;
+
+  if (dy < 0) {
+    let currentY = dy;
+    let target = fromIndex;
+    for (let i = fromIndex - 1; i >= 0; i--) {
+      const prevHeight = heights[i] || 60;
+      if (currentY < -prevHeight / 2) {
+        target = i;
+        currentY += prevHeight;
+      } else {
+        break;
+      }
+    }
+    return Math.max(0, target);
+  } else {
+    let currentY = dy;
+    let target = fromIndex;
+    for (let i = fromIndex + 1; i < totalBlocks; i++) {
+      const nextHeight = heights[i] || 60;
+      if (currentY > nextHeight / 2) {
+        target = i;
+        currentY -= nextHeight;
+      } else {
+        break;
+      }
+    }
+    return Math.min(totalBlocks - 1, target);
+  }
+};
+
 export const BlockEditor: React.FC<BlockEditorProps> = ({
   note,
   onClose,
@@ -66,12 +104,104 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const [isPinned, setIsPinned] = useState(note.isPinned);
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);
   const [isInsertPaletteOpen, setIsInsertPaletteOpen] = useState(false);
+
+  // Focus Handoff State & Input Refs
+  const [focusTarget, setFocusTarget] = useState<{
+    blockId: string;
+    cursorPosition?: number;
+    timestamp: number;
+  } | null>(null);
+  const inputRefs = useRef<{ [blockId: string]: any }>({});
+  const titleInputRef = useRef<TextInput>(null);
+
+  useEffect(() => {
+    if (focusTarget) {
+      if (focusTarget.blockId === 'note-title') {
+        titleInputRef.current?.focus();
+      } else {
+        const input = inputRefs.current[focusTarget.blockId];
+        if (input) {
+          input.focus();
+          if (focusTarget.cursorPosition !== undefined && typeof (input as any)?.setSelectionRange === 'function') {
+            (input as any).setSelectionRange(focusTarget.cursorPosition, focusTarget.cursorPosition);
+          }
+        }
+      }
+    }
+  }, [focusTarget]);
+
+  // Drag-and-Drop Reorder State
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dropTargetIndex, setDropTargetIndex] = useState<number | null>(null);
+  const [dragOffsetY, setDragOffsetY] = useState(0);
+  const draggingIndexRef = useRef<number | null>(null);
+  const dropTargetIndexRef = useRef<number | null>(null);
+  const blockHeightsRef = useRef<{ [idx: number]: number }>({});
+  const scrollViewRef = useRef<ScrollView>(null);
+
   const [blocks, setBlocks] = useState<ComposableBlock[]>(() => {
     const rawBlocks: ComposableBlock[] = note.blocks && note.blocks.length > 0
       ? note.blocks
       : [{ id: `b-${Date.now()}-1`, type: 'paragraph', content: note.contentMarkdown || '' }];
     return coalesceChecklistBlocks(rawBlocks);
   });
+
+  const handleReportHeight = (index: number, height: number) => {
+    blockHeightsRef.current[index] = height;
+  };
+
+  const handleStartDrag = (index: number) => {
+    draggingIndexRef.current = index;
+    dropTargetIndexRef.current = index;
+    setDraggingIndex(index);
+    setDropTargetIndex(index);
+    setDragOffsetY(0);
+    if (blocks[index]) {
+      setActiveBlockId(blocks[index].id);
+    }
+  };
+
+  const handleDragMove = (dy: number) => {
+    const fromIndex = draggingIndexRef.current;
+    if (fromIndex === null) return;
+    setDragOffsetY(dy);
+    const newTarget = calculateTargetIndex(fromIndex, dy, blockHeightsRef.current, blocks.length);
+    dropTargetIndexRef.current = newTarget;
+    setDropTargetIndex(newTarget);
+  };
+
+  const handleEndDrag = () => {
+    const fromIndex = draggingIndexRef.current;
+    const toIndex = dropTargetIndexRef.current;
+    if (fromIndex !== null && toIndex !== null && fromIndex !== toIndex) {
+      handleReorderBlock(fromIndex, toIndex);
+    }
+    draggingIndexRef.current = null;
+    dropTargetIndexRef.current = null;
+    setDraggingIndex(null);
+    setDropTargetIndex(null);
+    setDragOffsetY(0);
+  };
+
+  const handleDeselectAll = () => {
+    setActiveBlockId(null);
+    setDraggingIndex(null);
+    setDropTargetIndex(null);
+    setDragOffsetY(0);
+    draggingIndexRef.current = null;
+    dropTargetIndexRef.current = null;
+  };
+
+  const handleReorderBlock = (fromIndex: number, toIndex: number) => {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
+    setBlocks((prevBlocks) => {
+      const nextBlocks = [...prevBlocks];
+      const [moved] = nextBlocks.splice(fromIndex, 1);
+      nextBlocks.splice(toIndex, 0, moved);
+      persistChanges(title, colorToken, nextBlocks);
+      return nextBlocks;
+    });
+  };
 
   // Save changes to SQLite / Repository
   const persistChanges = async (
@@ -228,21 +358,110 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     persistChanges(title, colorToken, nextBlocks);
   };
 
-  // Enter press: insert a new paragraph immediately below
-  const handleEnterPress = (index: number) => {
+  // Focus Handoff: Enter splits the block at cursor position into a new block below
+  const handleSplitBlock = (index: number, splitPosition: number = 0) => {
+    const currentBlock = blocks[index];
+    if (!currentBlock) return;
+
+    const fullContent = currentBlock.content || '';
+    const beforeText = fullContent.slice(0, splitPosition);
+    const afterText = fullContent.slice(splitPosition);
+
+    const newBlockId = `b-${Date.now()}-${blocks.length + 1}`;
     const newBlock: ComposableBlock = {
-      id: `b-${Date.now()}-${blocks.length + 1}`,
+      id: newBlockId,
       type: 'paragraph',
-      content: '',
+      content: afterText,
     };
+
     const nextBlocks = [
-      ...blocks.slice(0, index + 1),
+      ...blocks.slice(0, index),
+      { ...currentBlock, content: beforeText },
       newBlock,
       ...blocks.slice(index + 1),
     ];
+
     setBlocks(nextBlocks);
-    setActiveBlockId(newBlock.id);
+    setActiveBlockId(newBlockId);
     persistChanges(title, colorToken, nextBlocks);
+
+    // Hand off focus to newly created block at cursor 0
+    setFocusTarget({
+      blockId: newBlockId,
+      cursorPosition: 0,
+      timestamp: Date.now(),
+    });
+  };
+
+  // Focus Handoff: Backspace at start merges current block into previous block
+  const handleMergeWithPrevious = (index: number) => {
+    if (index === 0) {
+      // If at start of the very first block, hand off focus to Note Title
+      setFocusTarget({
+        blockId: 'note-title',
+        cursorPosition: title.length,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    const currentBlock = blocks[index];
+    const prevBlock = blocks[index - 1];
+    if (!currentBlock || !prevBlock) return;
+
+    const isTextCompatible = (type: BlockType) =>
+      type === 'paragraph' || type === 'heading' || type === 'quote';
+
+    // 1. Text into Text: Merge contents seamlessly
+    if (isTextCompatible(currentBlock.type) && isTextCompatible(prevBlock.type)) {
+      const prevContent = prevBlock.content || '';
+      const currentContent = currentBlock.content || '';
+      const junctionPosition = prevContent.length;
+      const mergedContent = prevContent + currentContent;
+
+      const updatedPrevBlock = { ...prevBlock, content: mergedContent };
+      const nextBlocks = [
+        ...blocks.slice(0, index - 1),
+        updatedPrevBlock,
+        ...blocks.slice(index + 1),
+      ];
+
+      setBlocks(nextBlocks);
+      setActiveBlockId(prevBlock.id);
+      persistChanges(title, colorToken, nextBlocks);
+
+      // Hand off focus to the junction point in previous block
+      setFocusTarget({
+        blockId: prevBlock.id,
+        cursorPosition: junctionPosition,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // 2. Empty block: Delete it and return focus to previous block
+    if (!currentBlock.content || currentBlock.content.trim() === '') {
+      const nextBlocks = blocks.filter((_, i) => i !== index);
+      setBlocks(nextBlocks);
+      setActiveBlockId(prevBlock.id);
+      persistChanges(title, colorToken, nextBlocks);
+
+      const targetPos = prevBlock.content ? prevBlock.content.length : 0;
+      setFocusTarget({
+        blockId: prevBlock.id,
+        cursorPosition: targetPos,
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
+    // 3. Fallback: Simply hand off focus to previous block
+    setActiveBlockId(prevBlock.id);
+    setFocusTarget({
+      blockId: prevBlock.id,
+      cursorPosition: prevBlock.content ? prevBlock.content.length : 0,
+      timestamp: Date.now(),
+    });
   };
 
   const handleMoveUp = (index: number) => {
@@ -484,8 +703,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
       {/* Editor Main Continuous Canvas */}
       <ScrollView 
+        ref={scrollViewRef}
+        scrollEnabled={draggingIndex === null}
         className="flex-1 px-6 md:px-16 lg:px-24 pt-6"
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingBottom: 100, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Folder Badge & Metadata */}
@@ -506,6 +727,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
         {/* Large Bold Editorial Title */}
         <TextInput
+          ref={titleInputRef}
           placeholder="Note Title..."
           placeholderTextColor={isDark ? '#626262' : '#929292'}
           value={title}
@@ -513,30 +735,104 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
             setTitle(newTitle);
             persistChanges(newTitle, colorToken, blocks);
           }}
+          onSubmitEditing={() => {
+            if (blocks.length > 0) {
+              setFocusTarget({
+                blockId: blocks[0].id,
+                cursorPosition: 0,
+                timestamp: Date.now(),
+              });
+            }
+          }}
           className="text-3xl md:text-5xl font-black text-light-textPrimary dark:text-dark-textPrimary tracking-tight mb-4 py-2 outline-none"
         />
 
         {/* Continuous Stream of Editorial Blocks (No Outer Card Wrappers) */}
         <View className="mb-12">
-          {blocks.map((block, idx) => (
-            <BlockRenderer
-              key={block.id}
-              block={block}
-              index={idx}
-              totalBlocks={blocks.length}
-              isActive={block.id === activeBlockId}
-              onFocus={() => setActiveBlockId(block.id)}
-              onEnterPress={() => handleEnterPress(idx)}
-              onUpdateBlock={(updates) => handleUpdateBlock(block.id, updates)}
-              onUpdateContent={(content) => handleUpdateContent(block.id, content)}
-              onUpdateMetadata={(metadata) => handleUpdateMetadata(block.id, metadata)}
-              onChangeType={(type) => handleChangeType(block.id, type)}
-              onDelete={() => handleDeleteBlock(block.id)}
-              onMoveUp={() => handleMoveUp(idx)}
-              onMoveDown={() => handleMoveDown(idx)}
-            />
-          ))}
+          {blocks.map((block, idx) => {
+            const isDragging = draggingIndex === idx;
+            const showIndicatorBefore = draggingIndex !== null && draggingIndex > idx && dropTargetIndex === idx;
+            const showIndicatorAfter = draggingIndex !== null && draggingIndex < idx && dropTargetIndex === idx;
+
+            return (
+              <React.Fragment key={block.id}>
+                {showIndicatorBefore && (
+                  <View className="my-2.5 py-1 flex-row items-center justify-center gap-2">
+                    <View className="flex-1 h-[2px] bg-note-cyan shadow-sm shadow-note-cyan" />
+                    <View className="px-3 py-1 rounded-full bg-note-cyan flex-row items-center gap-1.5 shadow-md">
+                      <ArrowDown size={11} color="#000000" strokeWidth={3} />
+                      <Text className="text-[10px] font-black text-black tracking-widest uppercase">
+                        Insert Here
+                      </Text>
+                    </View>
+                    <View className="flex-1 h-[2px] bg-note-cyan shadow-sm shadow-note-cyan" />
+                  </View>
+                )}
+
+                <BlockRenderer
+                  block={block}
+                  index={idx}
+                  totalBlocks={blocks.length}
+                  isActive={block.id === activeBlockId}
+                  isDragging={isDragging}
+                  dragOffsetY={isDragging ? dragOffsetY : 0}
+                  inputRef={(el) => {
+                    inputRefs.current[block.id] = el;
+                  }}
+                  focusSelection={
+                    focusTarget?.blockId === block.id && focusTarget.cursorPosition !== undefined
+                      ? { start: focusTarget.cursorPosition, end: focusTarget.cursorPosition }
+                      : undefined
+                  }
+                  onClearFocusTarget={() => {
+                    if (focusTarget?.blockId === block.id) setFocusTarget(null);
+                  }}
+                  onSplitBlock={(pos) => handleSplitBlock(idx, pos)}
+                  onBackspaceAtStart={() => handleMergeWithPrevious(idx)}
+                  onStartDrag={() => handleStartDrag(idx)}
+                  onDragMove={handleDragMove}
+                  onEndDrag={handleEndDrag}
+                  onReportHeight={(h) => handleReportHeight(idx, h)}
+                  onFocus={() => {
+                    setDraggingIndex(null);
+                    setDropTargetIndex(null);
+                    draggingIndexRef.current = null;
+                    dropTargetIndexRef.current = null;
+                    setActiveBlockId(block.id);
+                  }}
+                  onEnterPress={() => handleSplitBlock(idx, 0)}
+                  onUpdateBlock={(updates) => handleUpdateBlock(block.id, updates)}
+                  onUpdateContent={(content) => handleUpdateContent(block.id, content)}
+                  onUpdateMetadata={(metadata) => handleUpdateMetadata(block.id, metadata)}
+                  onChangeType={(type) => handleChangeType(block.id, type)}
+                  onDelete={() => handleDeleteBlock(block.id)}
+                  onMoveUp={() => handleMoveUp(idx)}
+                  onMoveDown={() => handleMoveDown(idx)}
+                />
+
+                {showIndicatorAfter && (
+                  <View className="my-2.5 py-1 flex-row items-center justify-center gap-2">
+                    <View className="flex-1 h-[2px] bg-note-cyan shadow-sm shadow-note-cyan" />
+                    <View className="px-3 py-1 rounded-full bg-note-cyan flex-row items-center gap-1.5 shadow-md">
+                      <ArrowDown size={11} color="#000000" strokeWidth={3} />
+                      <Text className="text-[10px] font-black text-black tracking-widest uppercase">
+                        Insert Here
+                      </Text>
+                    </View>
+                    <View className="flex-1 h-[2px] bg-note-cyan shadow-sm shadow-note-cyan" />
+                  </View>
+                )}
+              </React.Fragment>
+            );
+          })}
         </View>
+
+        {/* Empty canvas click area below blocks to deselect */}
+        <Pressable
+          onPress={handleDeselectAll}
+          className="flex-1 min-h-[350px]"
+          accessibilityLabel="Click canvas to deselect"
+        />
       </ScrollView>
 
       {/* Modern Insert Palette Modal (Distraction-Free) */}

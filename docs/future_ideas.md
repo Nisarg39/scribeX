@@ -1,5 +1,12 @@
 This file contains future ideas and features for ScribeX.
 
+Remaining Tasks to fix
+
+1 - autoscroll the notes when the user is dragging an element and goes out of visible screen bounds or reaches near the boundry
+2 - clear the element selection when the user clicks anywhere else in the screen 
+
+
+
 1 - Use firebase for realtime database update and backup / cloud sync for the user data and use nextjs for AI API calls and host it on vercel for maintaining free hosting. use google drive api for storing media files on google drive and the firebase will only store the links of the media files
 
 2 - Add undo and redo functionality to the editor for all the blocks including the AI generated content

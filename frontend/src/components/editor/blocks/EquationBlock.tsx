@@ -6,6 +6,11 @@ import { Eye, Edit3, Sigma, Sparkles } from 'lucide-react-native';
 interface EquationBlockProps {
   latex: string;
   displayMode?: boolean;
+  isSelected?: boolean;
+  onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onDelete?: () => void;
   onUpdateLatex: (latex: string) => void;
   onUpdateDisplayMode?: (displayMode: boolean) => void;
 }
@@ -62,6 +67,11 @@ function renderReadableMath(latex: string): string {
 export const EquationBlock: React.FC<EquationBlockProps> = ({
   latex,
   displayMode = true,
+  isSelected = false,
+  onFocus,
+  onLongPress,
+  onEndDrag,
+  onDelete,
   onUpdateLatex,
   onUpdateDisplayMode,
 }) => {
@@ -76,10 +86,9 @@ export const EquationBlock: React.FC<EquationBlockProps> = ({
   const previewText = renderReadableMath(latex);
 
   return (
-    <View className="my-2 rounded-2xl border border-light-border dark:border-white/10 bg-black/[0.02] dark:bg-[#1C1C1C] overflow-hidden">
+    <View className="w-full">
       {/* Top Header Controls */}
       <View className="flex-row items-center justify-between px-3 py-2 bg-light-appBg dark:bg-dark-raised border-b border-light-border/60 dark:border-white/5">
-        
         {/* Title */}
         <View className="flex-row items-center gap-1.5">
           <Sigma size={13} color={isDark ? '#B18AF3' : '#8B5CF6'} />
@@ -158,7 +167,7 @@ export const EquationBlock: React.FC<EquationBlockProps> = ({
       {/* Body: Preview or Edit */}
       {activeTab === 'preview' ? (
         <Pressable
-          onPress={() => setActiveTab('edit')}
+          onPress={() => { onFocus?.(); setActiveTab('edit'); }}
           className="p-5 items-center justify-center min-h-[70px]"
         >
           {latex ? (
@@ -176,6 +185,7 @@ export const EquationBlock: React.FC<EquationBlockProps> = ({
           <TextInput
             multiline
             value={latex}
+            onFocus={onFocus}
             onChangeText={onUpdateLatex}
             placeholder="e.g. \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
             placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, Image, Pressable, Modal, DimensionValue } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, TextInput, Image, Pressable, Modal, DimensionValue, PanResponder } from 'react-native';
 import { useTheme } from '../../../theme';
 import { 
   Maximize2, 
@@ -9,6 +9,7 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  MoveHorizontal,
   Trash2
 } from 'lucide-react-native';
 
@@ -31,6 +32,8 @@ interface ImageBlockProps {
     aspectRatio: ImageRatio
   ) => void;
   onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
   onDelete?: () => void;
 }
 
@@ -45,6 +48,8 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
   isSelected = false,
   onUpdateImage,
   onFocus,
+  onLongPress,
+  onEndDrag,
   onDelete,
 }) => {
   const { isDark } = useTheme();
@@ -84,6 +89,26 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
     onUpdateImage(imageUrl, imageCaption, currentWidth, currentAlign, r);
   };
 
+  const resizePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderMove: (_evt, gestureState) => {
+          if (gestureState.dx > 35) {
+            if (currentWidth === '33%') handleWidthChange('50%');
+            else if (currentWidth === '50%') handleWidthChange('75%');
+            else if (currentWidth === '75%') handleWidthChange('100%');
+          } else if (gestureState.dx < -35) {
+            if (currentWidth === '100%') handleWidthChange('75%');
+            else if (currentWidth === '75%') handleWidthChange('50%');
+            else if (currentWidth === '50%') handleWidthChange('33%');
+          }
+        },
+      }),
+    [currentWidth, handleWidthChange]
+  );
+
   const containerHeight =
     currentRatio === 'compact' ? 'h-48' : currentRatio === 'wide' ? 'h-80' : 'h-64';
 
@@ -99,11 +124,25 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
       {/* Resizable Image Wrapper */}
       <Pressable 
         onPress={onFocus}
+        onLongPress={onLongPress}
+        onPressOut={onEndDrag}
+        delayLongPress={280}
         style={widthStyle} 
         className={`relative group rounded-2xl transition-all ${
           isSelected ? 'ring-2 ring-note-cyan shadow-md' : ''
         }`}
       >
+        {/* Interactive Width Resize Handle */}
+        {isSelected && (
+          <View
+            {...resizePanResponder.panHandlers}
+            className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-12 rounded-full bg-note-cyan shadow-lg shadow-note-cyan/30 items-center justify-center cursor-ew-resize active:scale-110 z-30"
+            accessibilityLabel="Drag horizontally to resize image width"
+          >
+            <MoveHorizontal size={13} color="#000000" strokeWidth={2.6} />
+          </View>
+        )}
+
         <View className={`w-full ${containerHeight} rounded-2xl overflow-hidden border border-light-border dark:border-white/10 bg-black/5 dark:bg-black/30 relative shadow-sm`}>
           <Image
             source={{ uri: imageUrl }}

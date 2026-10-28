@@ -15,6 +15,11 @@ interface BookmarkBlockProps {
   title?: string;
   description?: string;
   previewUrl?: string;
+  isSelected?: boolean;
+  onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onDelete?: () => void;
   onUpdateBookmark: (url: string, title?: string, description?: string, previewUrl?: string) => void;
 }
 
@@ -23,6 +28,11 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
   title = 'React Native · Learn once, write anywhere',
   description = 'A framework for building native applications using React.',
   previewUrl = 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80',
+  isSelected = false,
+  onFocus,
+  onLongPress,
+  onEndDrag,
+  onDelete,
   onUpdateBookmark,
 }) => {
   const { isDark } = useTheme();
@@ -72,7 +82,7 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
   };
 
   return (
-    <View className="my-2 rounded-2xl border border-light-border dark:border-white/10 bg-light-surface dark:bg-[#181818] overflow-hidden">
+    <View className="w-full">
       {/* Edit Mode URL Bar */}
       {isEditing ? (
         <View className="p-3">
@@ -85,6 +95,7 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
 
           <TextInput
             value={currentUrl}
+            onFocus={onFocus}
             onChangeText={setCurrentUrl}
             placeholder="Paste web URL (https://...)"
             placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
@@ -117,7 +128,10 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
       ) : (
         /* Rendered Rich Bookmark Card */
         <Pressable
-          onPress={handleOpenLink}
+          onPress={() => {
+            onFocus?.();
+            handleOpenLink();
+          }}
           className="flex-row items-center p-3.5 group active:opacity-90"
         >
           {/* Left Text Column */}

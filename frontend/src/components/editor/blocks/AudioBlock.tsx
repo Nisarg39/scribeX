@@ -14,6 +14,11 @@ interface AudioBlockProps {
   assetId?: string;
   durationSec?: number;
   transcription?: string;
+  isSelected?: boolean;
+  onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onDelete?: () => void;
   onUpdateMetadata: (meta: { assetId?: string; durationSec: number; transcription?: string }) => void;
 }
 
@@ -25,6 +30,11 @@ const SAMPLE_WAVEFORM = [
 export const AudioBlock: React.FC<AudioBlockProps> = ({
   durationSec = 94,
   transcription = '',
+  isSelected = false,
+  onFocus,
+  onLongPress,
+  onEndDrag,
+  onDelete,
   onUpdateMetadata,
 }) => {
   const { isDark } = useTheme();
@@ -87,7 +97,7 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   const progressPct = durationSec > 0 ? (playbackPos / durationSec) * 100 : 0;
 
   return (
-    <View className="my-2 p-4 rounded-3xl border border-light-border dark:border-white/10 bg-light-surface dark:bg-[#181818]">
+    <View>
       {/* Top Header: Recording Status or Audio Title */}
       <View className="flex-row items-center justify-between mb-3">
         <View className="flex-row items-center gap-2">
@@ -185,6 +195,7 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
           </View>
           <TextInput
             value={textTranscript}
+            onFocus={onFocus}
             onChangeText={(text) => {
               setTextTranscript(text);
               onUpdateMetadata({ durationSec, transcription: text });

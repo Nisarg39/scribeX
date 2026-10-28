@@ -14,6 +14,11 @@ interface FileBlockProps {
   fileName?: string;
   sizeBytes?: number;
   url?: string;
+  isSelected?: boolean;
+  onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onDelete?: () => void;
   onUpdateFile: (fileName: string, sizeBytes: number, url?: string) => void;
 }
 
@@ -29,6 +34,11 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   fileName = 'Document_Attachment.pdf',
   sizeBytes = 1845600,
   url = '#',
+  isSelected = false,
+  onFocus,
+  onLongPress,
+  onEndDrag,
+  onDelete,
   onUpdateFile,
 }) => {
   const { isDark } = useTheme();
@@ -59,7 +69,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   };
 
   return (
-    <View className="my-2 p-3.5 rounded-2xl border border-light-border dark:border-white/10 bg-light-surface dark:bg-[#181818] flex-row items-center justify-between">
+    <View className="flex-row items-center justify-between">
       {/* Left: Icon & File Info */}
       <View className="flex-row items-center gap-3 flex-1 mr-3">
         {/* Color-coded Icon Container */}
@@ -77,11 +87,12 @@ export const FileBlock: React.FC<FileBlockProps> = ({
               value={name}
               onChangeText={setName}
               onBlur={handleNameBlur}
+              onFocus={onFocus}
               autoFocus
               className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary py-0 border-b border-note-cyan"
             />
           ) : (
-            <Pressable onPress={() => setIsEditing(true)}>
+            <Pressable onPress={() => { onFocus?.(); setIsEditing(true); }}>
               <Text 
                 numberOfLines={1} 
                 className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary tracking-tight hover:underline"
@@ -104,7 +115,9 @@ export const FileBlock: React.FC<FileBlockProps> = ({
 
       {/* Right Action: Download / Open */}
       <Pressable
-        onPress={() => {
+        onPress={(e) => {
+          e?.stopPropagation?.();
+          onFocus?.();
           if (Platform.OS === 'web' && url && url !== '#') {
             window.open(url, '_blank');
           }

@@ -21,6 +21,11 @@ interface CodeBlockProps {
   code: string;
   language?: string;
   fileName?: string;
+  isSelected?: boolean;
+  onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onDelete?: () => void;
   onUpdateCode: (code: string) => void;
   onUpdateLanguage: (language: string) => void;
   onUpdateFileName?: (fileName: string) => void;
@@ -30,6 +35,11 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
   code,
   language = 'typescript',
   fileName = '',
+  isSelected = false,
+  onFocus,
+  onLongPress,
+  onEndDrag,
+  onDelete,
   onUpdateCode,
   onUpdateLanguage,
   onUpdateFileName,
@@ -50,10 +60,9 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   return (
-    <View className="my-2 rounded-2xl overflow-hidden border border-light-border dark:border-white/10 bg-black/[0.03] dark:bg-[#181818]">
+    <View className="w-full">
       {/* Code Header Bar */}
       <View className="flex-row items-center justify-between px-3.5 py-2 bg-black/[0.04] dark:bg-[#1E1E1E] border-b border-light-border/60 dark:border-white/5">
-        
         {/* Left: Language Picker & File Name */}
         <View className="flex-row items-center gap-2">
           {/* Language Selector Dropdown Trigger */}
@@ -150,6 +159,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
         <TextInput
           multiline
           value={code}
+          onFocus={onFocus}
           onChangeText={onUpdateCode}
           placeholder="// Paste or write code snippet..."
           placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}

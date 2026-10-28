@@ -21,6 +21,11 @@ interface StrokePath {
 
 interface DrawingBlockProps {
   initialPaths?: StrokePath[];
+  isSelected?: boolean;
+  onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onDelete?: () => void;
   onUpdateDrawing: (paths: StrokePath[]) => void;
 }
 
@@ -36,6 +41,11 @@ const PALETTE = [
 
 export const DrawingBlock: React.FC<DrawingBlockProps> = ({
   initialPaths = [],
+  isSelected = false,
+  onFocus,
+  onLongPress,
+  onEndDrag,
+  onDelete,
   onUpdateDrawing,
 }) => {
   const { isDark } = useTheme();
@@ -62,6 +72,7 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
         onPanResponderGrant: (evt: GestureResponderEvent) => {
+          onFocus?.();
           const { locationX, locationY } = evt.nativeEvent;
           currentPathRef.current = {
             points: [{ x: locationX, y: locationY }],
@@ -151,94 +162,94 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
   };
 
   return (
-    <View className="my-2 rounded-2xl border border-light-border dark:border-white/10 bg-light-surface dark:bg-[#181818] overflow-hidden">
+    <View className="w-full">
       {/* Top Toolbar */}
-      <View className="flex-row items-center justify-between p-2.5 bg-light-appBg dark:bg-dark-raised border-b border-light-border/60 dark:border-white/5">
-        
-        {/* Tool Selectors */}
-        <View className="flex-row items-center gap-1">
-          <Pressable
-            onPress={() => setTool('pen')}
-            className={`p-1.5 rounded-lg ${
-              tool === 'pen' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
-            } active:scale-90`}
-            accessibilityLabel="Pen Tool"
-          >
-            <PenTool 
-              size={13} 
-              color={tool === 'pen' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} 
-            />
-          </Pressable>
-
-          <Pressable
-            onPress={() => setTool('highlighter')}
-            className={`p-1.5 rounded-lg ${
-              tool === 'highlighter' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
-            } active:scale-90`}
-            accessibilityLabel="Highlighter Tool"
-          >
-            <Highlighter 
-              size={13} 
-              color={tool === 'highlighter' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} 
-            />
-          </Pressable>
-
-          <Pressable
-            onPress={() => setTool('eraser')}
-            className={`p-1.5 rounded-lg ${
-              tool === 'eraser' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
-            } active:scale-90`}
-            accessibilityLabel="Eraser Tool"
-          >
-            <Eraser 
-              size={13} 
-              color={tool === 'eraser' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} 
-            />
-          </Pressable>
-
-          {/* Stroke Width Selector */}
-          <View className="flex-row items-center ml-2 gap-1 border-l border-light-border/60 dark:border-white/10 pl-2">
-            {[2, 4, 8].map((w) => (
-              <Pressable
-                key={w}
-                onPress={() => setStrokeWidth(w)}
-                className={`w-5 h-5 rounded-md items-center justify-center ${
-                  strokeWidth === w ? 'bg-black/10 dark:bg-white/20' : ''
-                }`}
-              >
-                <View
-                  style={{
-                    width: w * 1.5,
-                    height: w * 1.5,
-                    borderRadius: (w * 1.5) / 2,
-                    backgroundColor: isDark ? '#FFFFFF' : '#191919',
-                  }}
-                />
-              </Pressable>
-            ))}
-          </View>
-        </View>
-
-        {/* Color Palette Swatches */}
-        <View className="flex-row items-center gap-1.5">
-          {PALETTE.map((item, idx) => {
-            const color = isDark ? item.darkColor : item.lightColor;
-            const isSelected = selectedColorIdx === idx;
-            return (
-              <Pressable
-                key={item.name}
-                onPress={() => setSelectedColorIdx(idx)}
-                style={{ backgroundColor: color }}
-                className={`w-4 h-4 rounded-full ${
-                  isSelected ? 'border-2 border-black dark:border-white scale-125' : 'border border-black/20'
-                }`}
+      <View className="p-2.5 bg-light-appBg dark:bg-dark-raised border-b border-light-border/60 dark:border-white/5">
+        <View className="flex-row items-center justify-between">
+          {/* Tool Selectors */}
+          <View className="flex-row items-center gap-1">
+            <Pressable
+              onPress={() => { onFocus?.(); setTool('pen'); }}
+              className={`p-1.5 rounded-lg ${
+                tool === 'pen' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
+              } active:scale-90`}
+              accessibilityLabel="Pen Tool"
+            >
+              <PenTool 
+                size={13} 
+                color={tool === 'pen' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} 
               />
-            );
-          })}
-        </View>
+            </Pressable>
 
-        {/* Right Actions: Undo, Redo, Clear */}
-        <View className="flex-row items-center gap-1">
+            <Pressable
+              onPress={() => { onFocus?.(); setTool('highlighter'); }}
+              className={`p-1.5 rounded-lg ${
+                tool === 'highlighter' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
+              } active:scale-90`}
+              accessibilityLabel="Highlighter Tool"
+            >
+              <Highlighter 
+                size={13} 
+                color={tool === 'highlighter' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} 
+              />
+            </Pressable>
+
+            <Pressable
+              onPress={() => { onFocus?.(); setTool('eraser'); }}
+              className={`p-1.5 rounded-lg ${
+                tool === 'eraser' ? 'bg-light-iconBg dark:bg-white' : 'bg-black/5 dark:bg-white/5'
+              } active:scale-90`}
+              accessibilityLabel="Eraser Tool"
+            >
+              <Eraser 
+                size={13} 
+                color={tool === 'eraser' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} 
+              />
+            </Pressable>
+
+            {/* Stroke Width Selector */}
+            <View className="flex-row items-center ml-2 gap-1 border-l border-light-border/60 dark:border-white/10 pl-2">
+              {[2, 4, 8].map((w) => (
+                <Pressable
+                  key={w}
+                  onPress={() => { onFocus?.(); setStrokeWidth(w); }}
+                  className={`w-5 h-5 rounded-md items-center justify-center ${
+                    strokeWidth === w ? 'bg-black/10 dark:bg-white/20' : ''
+                  }`}
+                >
+                  <View
+                    style={{
+                      width: w * 1.5,
+                      height: w * 1.5,
+                      borderRadius: (w * 1.5) / 2,
+                      backgroundColor: isDark ? '#FFFFFF' : '#191919',
+                    }}
+                  />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* Color Palette Swatches */}
+          <View className="flex-row items-center gap-1.5">
+            {PALETTE.map((item, idx) => {
+              const color = isDark ? item.darkColor : item.lightColor;
+              const isColorSelected = selectedColorIdx === idx;
+              return (
+                <Pressable
+                  key={item.name}
+                  onPress={() => { onFocus?.(); setSelectedColorIdx(idx); }}
+                  style={{ backgroundColor: color }}
+                  className={`w-4 h-4 rounded-full ${
+                    isColorSelected ? 'border-2 border-black dark:border-white scale-125' : 'border border-black/20'
+                  }`}
+                />
+              );
+            })}
+          </View>
+
+          {/* Right Actions: Undo, Redo, Clear */}
+          <View className="flex-row items-center gap-1">
           <Pressable
             onPress={handleUndo}
             disabled={paths.length === 0}
@@ -267,6 +278,7 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
           </Pressable>
         </View>
       </View>
+    </View>
 
       {/* Drawing Canvas Area */}
       <View

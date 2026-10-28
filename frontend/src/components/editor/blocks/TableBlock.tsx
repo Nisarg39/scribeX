@@ -6,12 +6,22 @@ import { Plus, Minus, FileSpreadsheet, Trash2, X, Check } from 'lucide-react-nat
 interface TableBlockProps {
   columns: string[];
   rows: string[][];
+  isSelected?: boolean;
+  onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onDelete?: () => void;
   onUpdateTable: (columns: string[], rows: string[][]) => void;
 }
 
 export const TableBlock: React.FC<TableBlockProps> = ({
   columns: initialColumns = ['Header 1', 'Header 2'],
   rows: initialRows = [['Cell 1', 'Cell 2']],
+  isSelected = false,
+  onFocus,
+  onLongPress,
+  onEndDrag,
+  onDelete,
   onUpdateTable,
 }) => {
   const { isDark } = useTheme();
@@ -98,12 +108,13 @@ export const TableBlock: React.FC<TableBlockProps> = ({
   };
 
   return (
-    <View className="my-2">
+    <View className="w-full">
       {/* Table Sub-Toolbar */}
       <View className="flex-row items-center justify-between mb-2">
         <View className="flex-row items-center gap-1.5">
+
           <Pressable
-            onPress={handleAddRow}
+            onPress={() => { onFocus?.(); handleAddRow(); }}
             className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border active:scale-95"
           >
             <Plus size={12} color={isDark ? '#F7F7F7' : '#171717'} />
@@ -113,7 +124,7 @@ export const TableBlock: React.FC<TableBlockProps> = ({
           </Pressable>
 
           <Pressable
-            onPress={handleAddColumn}
+            onPress={() => { onFocus?.(); handleAddColumn(); }}
             className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border active:scale-95"
           >
             <Plus size={12} color={isDark ? '#F7F7F7' : '#171717'} />
@@ -123,7 +134,7 @@ export const TableBlock: React.FC<TableBlockProps> = ({
           </Pressable>
 
           <Pressable
-            onPress={() => setCsvModalVisible(true)}
+            onPress={() => { onFocus?.(); setCsvModalVisible(true); }}
             className="flex-row items-center gap-1 px-2.5 py-1 rounded-lg bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-dark-border active:scale-95"
           >
             <FileSpreadsheet size={12} color={isDark ? '#8EDCEB' : '#08C4E5'} />
@@ -147,6 +158,7 @@ export const TableBlock: React.FC<TableBlockProps> = ({
               <View key={`header-${colIdx}`} className="min-w-[120px] max-w-[200px] flex-1 p-2 border-r border-light-border/60 dark:border-dark-border/60 flex-row items-center justify-between">
                 <TextInput
                   value={col}
+                  onFocus={onFocus}
                   onChangeText={(text) => handleHeaderChange(text, colIdx)}
                   placeholder={`Header ${colIdx + 1}`}
                   placeholderTextColor={isDark ? '#858585' : '#929292'}
@@ -178,6 +190,7 @@ export const TableBlock: React.FC<TableBlockProps> = ({
                 <View key={`cell-${rowIdx}-${colIdx}`} className="min-w-[120px] max-w-[200px] flex-1 p-2 border-r border-light-border/40 dark:border-dark-border/40">
                   <TextInput
                     value={cell}
+                    onFocus={onFocus}
                     onChangeText={(text) => handleCellChange(text, rowIdx, colIdx)}
                     placeholder="Empty"
                     placeholderTextColor={isDark ? '#626262' : '#B5B5B5'}

@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TextInput, Pressable } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, TextInput, Pressable, Platform } from 'react-native';
 import { useTheme, NoteColors } from '../../../theme';
 import { Info, AlertTriangle, CheckCircle2, Quote } from 'lucide-react-native';
 
@@ -8,6 +8,11 @@ export type CalloutVariant = 'info' | 'warning' | 'success' | 'quote';
 interface CalloutBlockProps {
   content: string;
   variant?: CalloutVariant;
+  isSelected?: boolean;
+  onFocus?: () => void;
+  onLongPress?: () => void;
+  onEndDrag?: () => void;
+  onDelete?: () => void;
   onUpdateContent: (content: string) => void;
   onUpdateVariant: (variant: CalloutVariant) => void;
 }
@@ -41,21 +46,60 @@ const VARIANT_CONFIG: Record<
 export const CalloutBlock: React.FC<CalloutBlockProps> = ({
   content,
   variant = 'info',
+  isSelected = false,
+  onFocus,
+  onLongPress,
+  onEndDrag,
+  onDelete,
   onUpdateContent,
   onUpdateVariant,
 }) => {
   const { isDark } = useTheme();
   const config = VARIANT_CONFIG[variant] || VARIANT_CONFIG.info;
   const IconComponent = config.icon;
+  const inputRef = useRef<any>(null);
+
+  const adjustWebTextareaHeight = (el: any) => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const domEl = (el && el.tagName === 'TEXTAREA') ? el : el?.querySelector?.('textarea') || el;
+    if (!domEl || !domEl.style) return;
+
+    const apply = () => {
+      try {
+        (domEl.style as any).fieldSizing = 'content';
+        domEl.style.overflow = 'hidden';
+        domEl.style.resize = 'none';
+        if ('rows' in domEl) {
+          domEl.rows = 1;
+        }
+
+        domEl.style.height = 'auto';
+        const scrollH = domEl.scrollHeight;
+        if (scrollH > 0) {
+          domEl.style.height = `${scrollH}px`;
+        }
+      } catch (err) {
+        // ignore
+      }
+    };
+
+    apply();
+    if (typeof requestAnimationFrame !== 'undefined') {
+      requestAnimationFrame(apply);
+    }
+  };
+
+  useEffect(() => {
+    adjustWebTextareaHeight(inputRef.current);
+  }, [content]);
 
   return (
-    <View
+    <View 
       style={{
         borderLeftColor: config.color,
         borderLeftWidth: 4,
-        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.02)',
       }}
-      className="my-2 p-3.5 rounded-r-2xl border-t border-r border-b border-light-border/40 dark:border-white/5"
+      className="pl-3 py-1 w-full"
     >
       {/* Top Variant Pill Selector */}
       <View className="flex-row items-center justify-between mb-2">
@@ -74,25 +118,25 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
         {/* Variant Switcher Pills */}
         <View className="flex-row items-center gap-1">
           {(['info', 'warning', 'success', 'quote'] as CalloutVariant[]).map((v) => {
-            const isSelected = variant === v;
+            const isVariantActive = variant === v;
             const vConf = VARIANT_CONFIG[v];
             return (
               <Pressable
                 key={v}
-                onPress={() => onUpdateVariant(v)}
+                onPress={() => { onFocus?.(); onUpdateVariant(v); }}
                 style={{
-                  backgroundColor: isSelected ? vConf.color : 'transparent',
+                  backgroundColor: isVariantActive ? vConf.color : 'transparent',
                 }}
                 className={`px-2 py-0.5 rounded-full border ${
-                  isSelected 
+                  isVariantActive 
                     ? 'border-transparent' 
                     : 'border-light-border dark:border-white/10'
                 } active:scale-90`}
               >
                 <Text
                   style={{
-                    color: isSelected ? '#191919' : (isDark ? '#B5B5B5' : '#626262'),
-                    fontWeight: isSelected ? '700' : '500',
+                    color: isVariantActive ? '#191919' : (isDark ? '#B5B5B5' : '#626262'),
+                    fontWeight: isVariantActive ? '700' : '500',
                   }}
                   className="text-[10px] capitalize"
                 >
@@ -106,12 +150,21 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
 
       {/* Editable Callout Body */}
       <TextInput
+        ref={(el) => {
+          inputRef.current = el;
+          if (el) adjustWebTextareaHeight(el);
+        }}
         multiline
+        scrollEnabled={false}
         value={content}
-        onChangeText={onUpdateContent}
+        onFocus={onFocus}
+        onChangeText={(text) => {
+          onUpdateContent(text);
+          adjustWebTextareaHeight(inputRef.current);
+        }}
         placeholder={`Write ${config.label.toLowerCase()} text or highlight...`}
         placeholderTextColor={isDark ? '#858585' : '#929292'}
-        className="text-sm leading-relaxed text-light-textPrimary dark:text-dark-textPrimary py-0"
+        className="text-sm leading-relaxed text-light-textPrimary dark:text-dark-textPrimary py-0 outline-none"
         textAlignVertical="top"
       />
     </View>
