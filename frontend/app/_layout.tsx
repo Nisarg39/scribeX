@@ -8,6 +8,17 @@ import { AuthProvider } from '../src/context';
 import { View } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 
+// Silence React Native Web "Running application 'main'..." banner
+if (typeof console !== 'undefined' && console.log) {
+  const originalLog = console.log;
+  console.log = (...args: any[]) => {
+    if (typeof args[0] === 'string' && args[0].startsWith('Running application "')) {
+      return;
+    }
+    originalLog.apply(console, args);
+  };
+}
+
 // Disable Reanimated strict logger warning flood in DEV to protect JS bridge responsiveness
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,

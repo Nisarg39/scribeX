@@ -6,8 +6,10 @@ Remaining Tasks to fix
 1 - [x] autoscroll the notes when the user is dragging an element and goes out of visible screen bounds or reaches near the boundry (COMPLETED)
 2 - [x] clear the element selection when the user clicks anywhere else in the screen (COMPLETED)
 3 - [x] make the paragraph element the checkpoint inside the checklist group with H1, H2, Quote, and Text options (COMPLETED)
+3.1 - the colors are not visible in the color picker
 4 - make the note editor appear in different screen rather then home screen
-5 - the changes in notes editor are being saved in mobile platforms but not working in web platform
+5 - [x] the changes in notes editor are being saved in mobile platforms but not working in web platform(COMPLETED)
+6 - [x] Unify the sql lite database storage system for mobile and web platforms using SQLite WebAssembly (sql.js / Wasm + IndexedDB) (COMPLETED) 
 4 - Adding an action tracking system and then Add undo and redo functionality to the editor for all the blocks . use 3 level metadata system for tracking actions - Tier 1: Note-Level Metadata (The Container) , 2 - Tier 2: Block-Level Metadata (The Elements), Tier 3: Asset Metadata (The Files) . Tier 1 metadata can be added in later stage after we complete the note editor part
 
 

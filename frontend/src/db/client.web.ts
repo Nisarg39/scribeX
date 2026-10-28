@@ -1,285 +1,353 @@
 /**
  * ScribeX Web Database Client (Browser / PWA)
- * Backed by persistent AsyncStorage with zero native module dependencies.
- * Provides identical query API to native SQLite client.
+ * Backed by genuine SQLite compiled to WebAssembly (sql.js / Wasm).
+ * Persists SQLite binary directly to browser IndexedDB (with LocalStorage fallback).
+ * 100% unified SQL behavior with native mobile expo-sqlite.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { DBNote, DBTask, DBFolder, DBSyncChangelog } from './types';
+// @ts-ignore
+import initSqlJs from 'sql.js/dist/sql-wasm-inline.js';
+import type { Database, SqlJsStatic } from 'sql.js';
+import { SCHEMA_SQL } from './schema';
 
-const STORAGE_PREFIX = '@scribex_web_db_';
+const IDB_NAME = 'scribex_web_vault';
+const IDB_VERSION = 1;
+const IDB_STORE = 'sqlite_databases';
+const DB_KEY = 'scribex_vault.db';
+const ASYNC_STORAGE_KEY = '@scribex_vault_sqlite_binary';
+const LEGACY_STORAGE_PREFIX = '@scribex_web_db_';
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  if (typeof btoa !== 'undefined') {
+    return btoa(binary);
+  }
+  const buf = (globalThis as any).Buffer;
+  return buf ? buf.from(bytes).toString('base64') : '';
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  let binaryString = '';
+  if (typeof atob !== 'undefined') {
+    binaryString = atob(base64);
+  } else {
+    const buf = (globalThis as any).Buffer;
+    binaryString = buf ? buf.from(base64, 'base64').toString('binary') : '';
+  }
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function openIndexedDB(): Promise<IDBDatabase | null> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      return resolve(null);
+    }
+    const req = window.indexedDB.open(IDB_NAME, IDB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        db.createObjectStore(IDB_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => resolve(null);
+  });
+}
+
+async function loadFromStorage(): Promise<Uint8Array | null> {
+  try {
+    const db = await openIndexedDB();
+    if (db) {
+      const fromIdb = await new Promise<Uint8Array | null>((resolve) => {
+        const tx = db.transaction(IDB_STORE, 'readonly');
+        const store = tx.objectStore(IDB_STORE);
+        const req = store.get(DB_KEY);
+        req.onsuccess = () => {
+          if (req.result instanceof Uint8Array) {
+            resolve(req.result);
+          } else if (req.result instanceof ArrayBuffer) {
+            resolve(new Uint8Array(req.result));
+          } else {
+            resolve(null);
+          }
+        };
+        req.onerror = () => resolve(null);
+      });
+      if (fromIdb && fromIdb.length > 0) return fromIdb;
+    }
+
+    // Secondary fallback: AsyncStorage
+    const base64 = await AsyncStorage.getItem(ASYNC_STORAGE_KEY);
+    if (base64) {
+      return base64ToUint8Array(base64);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveToStorage(binary: Uint8Array): Promise<void> {
+  try {
+    const db = await openIndexedDB();
+    if (db) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(IDB_STORE, 'readwrite');
+        const store = tx.objectStore(IDB_STORE);
+        const req = store.put(binary, DB_KEY);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    // Dual-write to AsyncStorage fallback
+    const base64 = uint8ArrayToBase64(binary);
+    await AsyncStorage.setItem(ASYNC_STORAGE_KEY, base64);
+  } catch (err) {
+    // Non-fatal fallback
+    try {
+      const base64 = uint8ArrayToBase64(binary);
+      await AsyncStorage.setItem(ASYNC_STORAGE_KEY, base64);
+    } catch {
+      // Storage quota or headless environment
+    }
+  }
+}
 
 export class WebDatabaseClient {
-  private isLoaded = false;
-  private loadPromise: Promise<void> | null = null;
+  private dbInstance: Database | null = null;
+  private initPromise: Promise<Database> | null = null;
+  private persistTimeout: any = null;
 
-  private tables = {
-    folders: [] as DBFolder[],
-    notes: [] as DBNote[],
-    tasks: [] as DBTask[],
-    sync_changelog: [] as DBSyncChangelog[],
-  };
-
-  private async ensureLoaded(): Promise<void> {
-    if (this.isLoaded) return;
-    if (!this.loadPromise) {
-      this.loadPromise = this.initTables();
+  public async getDatabase(): Promise<Database> {
+    if (this.dbInstance) return this.dbInstance;
+    if (!this.initPromise) {
+      this.initPromise = this.initDatabase();
     }
-    return this.loadPromise;
+    return this.initPromise;
   }
 
-  private async initTables(): Promise<void> {
+  private async initDatabase(): Promise<Database> {
     try {
-      const [foldersRaw, notesRaw, tasksRaw, changelogRaw] = await Promise.all([
-        AsyncStorage.getItem(`${STORAGE_PREFIX}folders`),
-        AsyncStorage.getItem(`${STORAGE_PREFIX}notes`),
-        AsyncStorage.getItem(`${STORAGE_PREFIX}tasks`),
-        AsyncStorage.getItem(`${STORAGE_PREFIX}changelog`),
-      ]);
+      const SQL: SqlJsStatic = await initSqlJs();
+      const existingBinary = await loadFromStorage();
 
-      if (foldersRaw) this.tables.folders = JSON.parse(foldersRaw);
-      if (notesRaw) this.tables.notes = JSON.parse(notesRaw);
-      if (tasksRaw) this.tables.tasks = JSON.parse(tasksRaw);
-      if (changelogRaw) this.tables.sync_changelog = JSON.parse(changelogRaw);
-
-      // Seed if empty
-      if (this.tables.notes.length === 0) {
-        this.seedInitialData();
-        await this.persistAll();
+      let db: Database;
+      if (existingBinary && existingBinary.length > 0) {
+        db = new SQL.Database(existingBinary);
+      } else {
+        db = new SQL.Database();
+        // Initialize standard schema
+        db.exec(SCHEMA_SQL);
+        // Check for legacy localStorage data to migrate
+        await this.migrateLegacyDataOrSeed(db);
+        const initialBinary = db.export();
+        await saveToStorage(initialBinary);
       }
+
+      this.dbInstance = db;
+      return db;
     } catch (err) {
-      console.warn('Failed to load web database storage, using in-memory state:', err);
-      if (this.tables.notes.length === 0) {
-        this.seedInitialData();
-      }
-    } finally {
-      this.isLoaded = true;
+      console.error('Failed to initialize Web SQLite Wasm database:', err);
+      // Fallback in-memory instance
+      const SQL: SqlJsStatic = await initSqlJs();
+      const db = new SQL.Database();
+      db.exec(SCHEMA_SQL);
+      this.seedInitialDefaults(db);
+      this.dbInstance = db;
+      return db;
     }
   }
 
-  private seedInitialData() {
-    this.tables.folders = [
-      {
-        id: 'folder-work',
-        user_id: 'user-default',
-        name: 'ScribeX',
-        parent_id: null,
-        path: 'Work/Projects/ScribeX',
-        color_token: 'lime',
-        icon: null,
-        sync_rev: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'folder-general',
-        user_id: 'user-default',
-        name: 'General',
-        parent_id: null,
-        path: 'General',
-        color_token: 'cyan',
-        icon: null,
-        sync_rev: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-      {
-        id: 'folder-research',
-        user_id: 'user-default',
-        name: 'Research',
-        parent_id: null,
-        path: 'Research',
-        color_token: 'lavender',
-        icon: null,
-        sync_rev: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ];
+  private async migrateLegacyDataOrSeed(db: Database): Promise<void> {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const rawNotes = window.localStorage.getItem(`${LEGACY_STORAGE_PREFIX}notes`);
+        const rawTasks = window.localStorage.getItem(`${LEGACY_STORAGE_PREFIX}tasks`);
+        const rawFolders = window.localStorage.getItem(`${LEGACY_STORAGE_PREFIX}folders`);
 
-    this.tables.notes = [
-      {
-        id: 'note-1',
-        user_id: 'user-default',
-        folder_id: 'folder-work',
-        folder_path: 'Work/Projects/ScribeX',
-        group_name: null,
-        title: 'Sprint Checklist & Action Items',
-        content_markdown: 'Task engine single source of truth: checklist blocks inside notes reflect instantly on the global task board without data duplication.',
-        blocks_json: '[{"id":"b1-1","type":"paragraph","content":"Single source of truth between note checklists and tasks ledger."},{"id":"b1-2","type":"checklist","content":"Configure SQLite WAL mode for sub-5ms latency"},{"id":"b1-3","type":"checklist","content":"Implement two-part Notes & Tasks floating dock"}]',
-        color_token: 'lime',
-        is_favorite: 1,
-        is_pinned: 1,
-        status: 'active',
-        priority_score: 1.0,
-        sync_rev: 0,
-        created_at: 'Today',
-        updated_at: 'Just now',
-        trashed_at: null,
-      },
-      {
-        id: 'note-2',
-        user_id: 'user-default',
-        folder_id: 'folder-work',
-        folder_path: 'Work/Projects/ScribeX',
-        group_name: null,
-        title: 'Universal Engine Architecture',
-        content_markdown: 'Unifying 42 input methods into composable content blocks. Local-first SQLite WAL ensures sub-5ms latency across all platforms.',
-        blocks_json: '[{"id":"b2-1","type":"paragraph","content":"Unifying 42 input methods into composable content blocks."}]',
-        color_token: 'apricot',
-        is_favorite: 0,
-        is_pinned: 0,
-        status: 'active',
-        priority_score: 0.8,
-        sync_rev: 0,
-        created_at: 'Today',
-        updated_at: '1h ago',
-        trashed_at: null,
-      },
-      {
-        id: 'note-3',
-        user_id: 'user-default',
-        folder_id: 'folder-general',
-        folder_path: 'General',
-        group_name: null,
-        title: 'Offline Delta Sync & Git Vault',
-        content_markdown: 'Bidirectional sync: local SQLite commits append to sync_changelog. Server pushes Git commits to markdown vault.',
-        blocks_json: '[{"id":"b3-1","type":"paragraph","content":"Bidirectional sync engine."}]',
-        color_token: 'cyan',
-        is_favorite: 1,
-        is_pinned: 0,
-        status: 'active',
-        priority_score: 0.7,
-        sync_rev: 0,
-        created_at: 'Yesterday',
-        updated_at: 'Yesterday',
-        trashed_at: null,
-      },
-      {
-        id: 'note-4',
-        user_id: 'user-default',
-        folder_id: 'folder-research',
-        folder_path: 'Research',
-        group_name: null,
-        title: 'Bidirectional Relations & Backlinks',
-        content_markdown: 'Knowledge graph links (relates_to, supersedes, derived_from) allow traversal across folder boundaries freely.',
-        blocks_json: '[{"id":"b4-1","type":"paragraph","content":"Knowledge graph lateral connections."}]',
-        color_token: 'lavender',
-        is_favorite: 0,
-        is_pinned: 0,
-        status: 'active',
-        priority_score: 0.6,
-        sync_rev: 0,
-        created_at: 'Oct 25',
-        updated_at: 'Oct 25',
-        trashed_at: null,
-      },
-    ];
+        if (rawNotes) {
+          const notes = JSON.parse(rawNotes);
+          if (Array.isArray(notes) && notes.length > 0) {
+            // Migrate folders
+            if (rawFolders) {
+              const folders = JSON.parse(rawFolders);
+              for (const f of folders) {
+                db.run(
+                  `INSERT OR IGNORE INTO folders (id, user_id, name, path, color_token, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?);`,
+                  [f.id, f.user_id || 'user-default', f.name, f.path, f.color_token || 'cyan', f.created_at || 'Just now', f.updated_at || 'Just now']
+                );
+              }
+            }
 
-    this.tables.tasks = [
-      {
-        id: 'task-1',
-        user_id: 'user-default',
-        note_id: 'note-1',
-        note_title: 'Sprint Checklist',
-        note_color_token: 'lime',
-        block_id: 'b1-2',
-        title: 'Configure SQLite WAL mode for sub-5ms latency',
-        is_completed: 1,
-        priority: 'high',
-        due_date: 'Today',
-        sync_rev: 0,
-        created_at: 'Today',
-        updated_at: 'Just now',
-      },
-      {
-        id: 'task-2',
-        user_id: 'user-default',
-        note_id: 'note-1',
-        note_title: 'Sprint Checklist',
-        note_color_token: 'lime',
-        block_id: 'b1-3',
-        title: 'Implement two-part Notes & Tasks floating dock',
-        is_completed: 0,
-        priority: 'urgent',
-        due_date: 'Today',
-        sync_rev: 0,
-        created_at: 'Today',
-        updated_at: 'Just now',
-      },
-      {
-        id: 'task-3',
-        user_id: 'user-default',
-        note_id: 'note-2',
-        note_title: 'Universal Engine',
-        note_color_token: 'apricot',
-        block_id: null,
-        title: 'Review 42 composable input block AST definitions',
-        is_completed: 0,
-        priority: 'medium',
-        due_date: 'Tomorrow',
-        sync_rev: 0,
-        created_at: 'Today',
-        updated_at: 'Today',
-      },
-      {
-        id: 'task-4',
-        user_id: 'user-default',
-        note_id: null,
-        note_title: null,
-        note_color_token: null,
-        block_id: null,
-        title: 'Test local offline storage across desktop and mobile browsers',
-        is_completed: 0,
-        priority: 'low',
-        due_date: 'Oct 30',
-        sync_rev: 0,
-        created_at: 'Yesterday',
-        updated_at: 'Yesterday',
-      },
-    ];
+            // Migrate notes
+            for (const n of notes) {
+              db.run(
+                `INSERT OR REPLACE INTO notes (
+                  id, user_id, folder_id, folder_path, group_name, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, status, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                [
+                  n.id,
+                  n.user_id || 'user-default',
+                  n.folder_id || null,
+                  n.folder_path || 'General',
+                  n.group_name || null,
+                  n.title || 'Untitled Note',
+                  n.content_markdown || '',
+                  typeof n.blocks_json === 'string' ? n.blocks_json : JSON.stringify(n.blocks_json || []),
+                  n.color_token || 'apricot',
+                  n.is_favorite ? 1 : 0,
+                  n.is_pinned ? 1 : 0,
+                  n.status || 'active',
+                  n.created_at || 'Just now',
+                  n.updated_at || 'Just now',
+                ]
+              );
+            }
+
+            // Migrate tasks
+            if (rawTasks) {
+              const tasks = JSON.parse(rawTasks);
+              for (const t of tasks) {
+                db.run(
+                  `INSERT OR REPLACE INTO tasks (
+                    id, user_id, note_id, note_title, note_color_token, block_id, title, is_completed, priority, due_date, created_at, updated_at
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+                  [
+                    t.id,
+                    t.user_id || 'user-default',
+                    t.note_id || null,
+                    t.note_title || null,
+                    t.note_color_token || null,
+                    t.block_id || null,
+                    t.title || '',
+                    t.is_completed ? 1 : 0,
+                    t.priority || 'none',
+                    t.due_date || 'Today',
+                    t.created_at || 'Just now',
+                    t.updated_at || 'Just now',
+                  ]
+                );
+              }
+            }
+
+            return;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not migrate legacy storage data:', e);
+    }
+
+    // Default seeds if no legacy data exists
+    this.seedInitialDefaults(db);
   }
 
-  private async persistAll(): Promise<void> {
+  private seedInitialDefaults(db: Database): void {
+    db.run(`
+      INSERT OR IGNORE INTO folders (id, user_id, name, path, color_token) 
+      VALUES 
+        ('folder-work', 'user-default', 'ScribeX', 'Work/Projects/ScribeX', 'lime'),
+        ('folder-general', 'user-default', 'General', 'General', 'cyan'),
+        ('folder-research', 'user-default', 'Research', 'Research', 'lavender');
+    `);
+
+    db.run(`
+      INSERT INTO notes (
+        id, user_id, folder_path, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, created_at, updated_at
+      ) VALUES 
+      (
+        'note-1', 'user-default', 'Work/Projects/ScribeX', 
+        'Sprint Checklist & Action Items', 
+        'Task engine single source of truth: checklist blocks inside notes reflect instantly on the global task board without data duplication.',
+        '[{"id":"b1-1","type":"paragraph","content":"Single source of truth between note checklists and tasks ledger."},{"id":"b1-2","type":"checklist","content":"Configure SQLite WAL mode for sub-5ms latency"},{"id":"b1-3","type":"checklist","content":"Implement two-part Notes & Tasks floating dock"}]',
+        'lime', 1, 1, 'Today', 'Just now'
+      ),
+      (
+        'note-2', 'user-default', 'Work/Projects/ScribeX', 
+        'Universal Engine Architecture', 
+        'Unifying 42 input methods into composable content blocks. Local-first SQLite WAL ensures sub-5ms latency across all platforms.',
+        '[{"id":"b2-1","type":"paragraph","content":"Unifying 42 input methods into composable content blocks."}]',
+        'apricot', 0, 0, 'Today', '1h ago'
+      ),
+      (
+        'note-3', 'user-default', 'General', 
+        'Offline Delta Sync & Git Vault', 
+        'Bidirectional sync: local SQLite commits append to sync_changelog. Server pushes Git commits to markdown vault.',
+        '[{"id":"b3-1","type":"paragraph","content":"Bidirectional sync engine."}]',
+        'cyan', 1, 0, 'Yesterday', 'Yesterday'
+      ),
+      (
+        'note-4', 'user-default', 'Research', 
+        'Bidirectional Relations & Backlinks', 
+        'Knowledge graph links (relates_to, supersedes, derived_from) allow traversal across folder boundaries freely.',
+        '[{"id":"b4-1","type":"paragraph","content":"Knowledge graph lateral connections."}]',
+        'lavender', 0, 0, 'Oct 25', 'Oct 25'
+      );
+    `);
+
+    db.run(`
+      INSERT INTO tasks (
+        id, user_id, note_id, note_title, note_color_token, title, is_completed, priority, due_date
+      ) VALUES 
+      (
+        'task-1', 'user-default', 'note-1', 'Sprint Checklist', 'lime', 
+        'Configure SQLite WAL mode for sub-5ms latency', 1, 'high', 'Today'
+      ),
+      (
+        'task-2', 'user-default', 'note-1', 'Sprint Checklist', 'lime', 
+        'Implement two-part Notes & Tasks floating dock', 0, 'urgent', 'Today'
+      ),
+      (
+        'task-3', 'user-default', 'note-2', 'Universal Engine', 'apricot', 
+        'Review 42 composable input block AST definitions', 0, 'medium', 'Tomorrow'
+      ),
+      (
+        'task-4', 'user-default', NULL, NULL, NULL, 
+        'Test local offline storage across desktop and mobile browsers', 0, 'low', 'Oct 30'
+      );
+    `);
+  }
+
+  private async persist(): Promise<void> {
+    if (!this.dbInstance) return;
     try {
-      await Promise.all([
-        AsyncStorage.setItem(`${STORAGE_PREFIX}folders`, JSON.stringify(this.tables.folders)),
-        AsyncStorage.setItem(`${STORAGE_PREFIX}notes`, JSON.stringify(this.tables.notes)),
-        AsyncStorage.setItem(`${STORAGE_PREFIX}tasks`, JSON.stringify(this.tables.tasks)),
-        AsyncStorage.setItem(`${STORAGE_PREFIX}changelog`, JSON.stringify(this.tables.sync_changelog)),
-      ]);
+      const binary = this.dbInstance.export();
+      await saveToStorage(binary);
     } catch (err) {
-      console.warn('Failed to persist web database:', err);
+      console.warn('Failed to persist Web SQLite Wasm database:', err);
     }
   }
 
   public async query<T>(sql: string, params: any[] = []): Promise<T[]> {
-    await this.ensureLoaded();
+    const db = await this.getDatabase();
     const cleanSql = sql.trim();
+    const stmt = db.prepare(cleanSql);
 
-    // 1. SELECT * FROM notes
-    if (cleanSql.includes('FROM notes')) {
-      let result = [...this.tables.notes].filter((n) => n.status !== 'trashed');
-      return result as unknown as T[];
+    if (params && params.length > 0) {
+      const normalized = params.map((p) =>
+        typeof p === 'boolean' ? (p ? 1 : 0) : p === undefined ? null : p
+      );
+      stmt.bind(normalized);
     }
 
-    // 2. SELECT * FROM tasks
-    if (cleanSql.includes('FROM tasks')) {
-      let result = [...this.tables.tasks];
-      return result as unknown as T[];
+    const rows: T[] = [];
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject() as T);
     }
-
-    // 3. SELECT * FROM folders
-    if (cleanSql.includes('FROM folders')) {
-      return [...this.tables.folders] as unknown as T[];
-    }
-
-    // 4. SELECT * FROM sync_changelog
-    if (cleanSql.includes('FROM sync_changelog')) {
-      return [...this.tables.sync_changelog] as unknown as T[];
-    }
-
-    return [] as T[];
+    stmt.free();
+    return rows;
   }
 
   public async queryFirst<T>(sql: string, params: any[] = []): Promise<T | null> {
@@ -287,135 +355,50 @@ export class WebDatabaseClient {
     return list.length > 0 ? list[0] : null;
   }
 
-  public async run(sql: string, params: any[] = []): Promise<{ lastInsertRowId: number; changes: number }> {
-    await this.ensureLoaded();
-    const cleanSql = sql.trim();
+  public async run(
+    sql: string,
+    params: any[] = []
+  ): Promise<{ lastInsertRowId: number; changes: number }> {
+    const db = await this.getDatabase();
+    const normalized = params.map((p) =>
+      typeof p === 'boolean' ? (p ? 1 : 0) : p === undefined ? null : p
+    );
 
-    // 1. INSERT INTO notes
-    if (cleanSql.startsWith('INSERT INTO notes')) {
-      const [id, user_id, folder_path, title, content_markdown, blocks_json, color_token] = params;
-      const newNote: DBNote = {
-        id,
-        user_id,
-        folder_id: null,
-        folder_path: folder_path || 'General',
-        group_name: null,
-        title,
-        content_markdown: content_markdown || '',
-        blocks_json: blocks_json || '[]',
-        color_token: color_token || 'apricot',
-        is_favorite: 0,
-        is_pinned: 0,
-        status: 'active',
-        priority_score: 0.5,
-        sync_rev: 0,
-        created_at: 'Just now',
-        updated_at: 'Just now',
-        trashed_at: null,
-      };
+    db.run(sql, normalized);
 
-      this.tables.notes.unshift(newNote);
-      await this.persistAll();
-      return { lastInsertRowId: 1, changes: 1 };
+    const meta = db.exec('SELECT last_insert_rowid() AS lastInsertRowId, changes() AS changes;');
+    let lastInsertRowId = 0;
+    let changes = 0;
+
+    if (meta.length > 0 && meta[0].values.length > 0) {
+      lastInsertRowId = Number(meta[0].values[0][0]) || 0;
+      changes = Number(meta[0].values[0][1]) || 0;
     }
 
-    // 2. UPDATE notes (toggle favorite or content)
-    if (cleanSql.startsWith('UPDATE notes')) {
-      const id = params[params.length - 1];
-      const note = this.tables.notes.find((n) => n.id === id);
-      if (note) {
-        if (cleanSql.includes('is_favorite')) {
-          note.is_favorite = note.is_favorite === 1 ? 0 : 1;
-        }
-        note.updated_at = 'Just now';
-        await this.persistAll();
-        return { lastInsertRowId: 1, changes: 1 };
-      }
-    }
-
-    // 3. DELETE FROM notes
-    if (cleanSql.startsWith('DELETE FROM notes')) {
-      const id = params[0];
-      const initial = this.tables.notes.length;
-      this.tables.notes = this.tables.notes.filter((n) => n.id !== id);
-      await this.persistAll();
-      return { lastInsertRowId: 0, changes: initial - this.tables.notes.length };
-    }
-
-    // 4. INSERT INTO tasks
-    if (cleanSql.startsWith('INSERT INTO tasks')) {
-      const [id, user_id, note_id, note_title, note_color_token, title] = params;
-      const newTask: DBTask = {
-        id,
-        user_id,
-        note_id: note_id || null,
-        note_title: note_title || null,
-        note_color_token: note_color_token || null,
-        block_id: null,
-        title,
-        is_completed: 0,
-        priority: 'none',
-        due_date: 'Today',
-        sync_rev: 0,
-        created_at: 'Just now',
-        updated_at: 'Just now',
-      };
-
-      this.tables.tasks.unshift(newTask);
-      await this.persistAll();
-      return { lastInsertRowId: 1, changes: 1 };
-    }
-
-    // 5. UPDATE tasks (toggle completion)
-    if (cleanSql.startsWith('UPDATE tasks')) {
-      const id = params[0];
-      const task = this.tables.tasks.find((t) => t.id === id);
-      if (task) {
-        task.is_completed = task.is_completed === 1 ? 0 : 1;
-        task.updated_at = 'Just now';
-        await this.persistAll();
-        return { lastInsertRowId: 1, changes: 1 };
-      }
-    }
-
-    // 6. DELETE FROM tasks
-    if (cleanSql.startsWith('DELETE FROM tasks')) {
-      const id = params[0];
-      const initial = this.tables.tasks.length;
-      this.tables.tasks = this.tables.tasks.filter((t) => t.id !== id);
-      await this.persistAll();
-      return { lastInsertRowId: 0, changes: initial - this.tables.tasks.length };
-    }
-
-    // 7. INSERT INTO sync_changelog
-    if (cleanSql.startsWith('INSERT INTO sync_changelog')) {
-      const [id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload] = params;
-      this.tables.sync_changelog.push({
-        id,
-        user_id,
-        sync_rev,
-        entity_type,
-        entity_id,
-        change_type,
-        delta_payload,
-        created_at: new Date().toISOString(),
-      });
-      await this.persistAll();
-      return { lastInsertRowId: 1, changes: 1 };
-    }
-
-    return { lastInsertRowId: 0, changes: 0 };
+    await this.persist();
+    return { lastInsertRowId, changes };
   }
 
   public async exec(sql: string): Promise<void> {
-    await this.ensureLoaded();
+    const db = await this.getDatabase();
+    db.exec(sql);
+    await this.persist();
   }
 
-  public async withTransaction<T>(callback: () => Promise<T>): Promise<T> {
-    await this.ensureLoaded();
-    const result = await callback();
-    await this.persistAll();
-    return result;
+  public async withTransaction<T>(
+    callback: (db: Database) => Promise<T>
+  ): Promise<T> {
+    const db = await this.getDatabase();
+    db.exec('BEGIN TRANSACTION;');
+    try {
+      const result = await callback(db);
+      db.exec('COMMIT;');
+      await this.persist();
+      return result;
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
   }
 }
 
