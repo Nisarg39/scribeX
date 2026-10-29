@@ -13,6 +13,12 @@ import {
   FileBlock,
   BookmarkBlock,
   ChecklistBlock,
+  BulletedListBlock,
+  NumberedListBlock,
+  ToggleBlock,
+  VideoBlock,
+  NoteLinkBlock,
+  LocationBlock,
 } from './blocks';
 import {
   DividerBlock,
@@ -48,6 +54,9 @@ export interface BlockRendererProps {
   onUpdateContent: (content: string) => void;
   onUpdateMetadata: (metadata: Record<string, any>) => void;
   onChangeType: (type: BlockType) => void;
+  onConvertBlock?: (type: BlockType, content: string, metadata?: Record<string, any>) => void;
+  onInsertAfter?: (type: BlockType, content: string, metadata?: Record<string, any>) => void;
+  onReplaceBlockWithBlocks?: (blocks: { type: BlockType; content: string; metadata?: Record<string, any> }[]) => void;
   onDelete: () => void;
   onEnterPress?: () => void;
   onMoveUp?: () => void;
@@ -77,6 +86,10 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
   onUpdateBlock,
   onUpdateContent,
   onUpdateMetadata,
+  onChangeType,
+  onConvertBlock,
+  onInsertAfter,
+  onReplaceBlockWithBlocks,
   onDelete,
 }) => {
   // 1. Divider Block (Continuous line, no enclosing card or drag container)
@@ -150,6 +163,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           onBackspaceAtStart={onBackspaceAtStart}
           onFocus={onFocus}
           onUpdateContent={onUpdateContent}
+          onConvertBlock={onConvertBlock}
         />
       )}
 
@@ -203,6 +217,73 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
+      {/* Bulleted List Block */}
+      {block.type === 'bulleted_list' && (
+        <BulletedListBlock
+          items={block.metadata?.items}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateItems={(items) => {
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: { ...block.metadata, items },
+                content: items.map((i) => i.text).join('\n'),
+              });
+            } else {
+              onUpdateMetadata({ ...block.metadata, items });
+              onUpdateContent(items.map((i) => i.text).join('\n'));
+            }
+          }}
+          onUpdateContent={onUpdateContent}
+        />
+      )}
+
+      {/* Numbered List Block */}
+      {block.type === 'numbered_list' && (
+        <NumberedListBlock
+          items={block.metadata?.items}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateItems={(items) => {
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: { ...block.metadata, items },
+                content: items.map((i, idx) => `${idx + 1}. ${i.text}`).join('\n'),
+              });
+            } else {
+              onUpdateMetadata({ ...block.metadata, items });
+              onUpdateContent(items.map((i, idx) => `${idx + 1}. ${i.text}`).join('\n'));
+            }
+          }}
+          onUpdateContent={onUpdateContent}
+        />
+      )}
+
+      {/* Toggle Block */}
+      {block.type === 'toggle' && (
+        <ToggleBlock
+          title={block.metadata?.title || 'Toggle Section'}
+          content={block.content}
+          isOpen={block.metadata?.isOpen ?? false}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateTitle={(title) => onUpdateMetadata({ ...block.metadata, title })}
+          onUpdateContent={onUpdateContent}
+          onUpdateIsOpen={(isOpen) => onUpdateMetadata({ ...block.metadata, isOpen })}
+        />
+      )}
+
       {/* Code Block */}
       {block.type === 'code' && (
         <CodeBlock
@@ -233,6 +314,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           onBackspaceAtStart={onBackspaceAtStart}
           onFocus={onFocus}
           onUpdateContent={onUpdateContent}
+          onConvertBlock={onConvertBlock}
         />
       )}
 
@@ -247,11 +329,19 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
           onUpdateTable={(columns, rows) => {
-            onUpdateMetadata({ ...block.metadata, columns, rows });
             const header = `| ${columns.join(' | ')} |`;
             const sep = `| ${columns.map(() => '---').join(' | ')} |`;
             const rowLines = rows.map((r) => `| ${r.join(' | ')} |`);
-            onUpdateContent([header, sep, ...rowLines].join('\n'));
+            const content = [header, sep, ...rowLines].join('\n');
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: { ...block.metadata, columns, rows },
+                content,
+              });
+            } else {
+              onUpdateMetadata({ ...block.metadata, columns, rows });
+              onUpdateContent(content);
+            }
           }}
         />
       )}
@@ -357,6 +447,75 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         />
       )}
 
+      {/* Video Embed Block */}
+      {block.type === 'video' && (
+        <VideoBlock
+          url={block.content || block.metadata?.url}
+          caption={block.metadata?.caption || ''}
+          width={block.metadata?.width || '100%'}
+          align={block.metadata?.align || 'center'}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateVideo={(url, caption, width, align) => {
+            onUpdateContent(url);
+            onUpdateMetadata({ ...block.metadata, url, caption, width, align });
+          }}
+        />
+      )}
+
+      {/* Note Link Block */}
+      {block.type === 'note_link' && (
+        <NoteLinkBlock
+          targetNoteId={block.metadata?.targetNoteId || block.content}
+          targetNoteTitle={block.metadata?.targetNoteTitle}
+          targetColorToken={block.metadata?.targetColorToken}
+          targetFolder={block.metadata?.targetFolder}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateLink={(targetNoteId, targetNoteTitle, targetColorToken, targetFolder) => {
+            onUpdateContent(targetNoteId);
+            onUpdateMetadata({
+              ...block.metadata,
+              targetNoteId,
+              targetNoteTitle,
+              targetColorToken,
+              targetFolder,
+            });
+          }}
+        />
+      )}
+
+      {/* Location Block */}
+      {block.type === 'location' && (
+        <LocationBlock
+          placeName={block.metadata?.placeName || block.content}
+          address={block.metadata?.address}
+          lat={block.metadata?.lat}
+          lng={block.metadata?.lng}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateLocation={(placeName, address, lat, lng) => {
+            onUpdateContent(placeName);
+            onUpdateMetadata({
+              ...block.metadata,
+              placeName,
+              address,
+              lat,
+              lng,
+            });
+          }}
+        />
+      )}
+
       {/* Bookmark Block */}
       {block.type === 'bookmark' && (
         <BookmarkBlock
@@ -389,6 +548,9 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           onBackspaceAtStart={onBackspaceAtStart}
           onFocus={onFocus}
           onUpdateContent={onUpdateContent}
+          onConvertBlock={onConvertBlock}
+          onInsertAfter={onInsertAfter}
+          onReplaceBlockWithBlocks={onReplaceBlockWithBlocks}
         />
       )}
     </Animated.View>

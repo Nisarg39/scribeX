@@ -29,6 +29,18 @@ export default function NoteEditorScreen() {
         return;
       }
 
+      // If we already have this note loaded into local state, skip redundant resolution
+      if (localNote) {
+        if (localNote.id === id) {
+          setIsResolving(false);
+          return;
+        }
+        if (id === 'new' && localNote.id.startsWith('draft-')) {
+          setIsResolving(false);
+          return;
+        }
+      }
+
       // 1. Handling for a brand new note (Pristine In-Memory Draft)
       if (id === 'new') {
         const draftId = `draft-${Date.now()}`;
@@ -86,7 +98,7 @@ export default function NoteEditorScreen() {
     return () => {
       isMounted = false;
     };
-  }, [id, notes]);
+  }, [id]);
 
   const handleClose = () => {
     refreshFromDB();
@@ -171,6 +183,7 @@ export default function NoteEditorScreen() {
       <View className="flex-1 px-0 sm:px-6 md:px-12">
         <View className="flex-1 sm:rounded-3xl bg-light-surface dark:bg-dark-surface sm:border border-light-border dark:border-dark-border relative overflow-hidden shadow-sm">
           <BlockEditor
+            key={localNote.id}
             note={localNote}
             onClose={handleClose}
             onNoteUpdated={handleNoteUpdated}

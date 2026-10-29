@@ -8,6 +8,8 @@ import {
   EditorHeader,
   EditorCommandBar,
   InsertPaletteModal,
+  TemplatePicker,
+  BacklinksStrip,
 } from './components';
 import {
   useEditorState,
@@ -62,6 +64,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     handleUpdateContent,
     handleUpdateMetadata,
     handleChangeType,
+    handleConvertBlock,
+    handleInsertAfterBlock,
+    handleReplaceBlockWithBlocks,
+    handleApplyTemplate,
     handleDeleteBlock,
     handleInsertBlock,
     handleSwitchActiveType,
@@ -117,6 +123,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   const activeIndex = activeBlockId ? blocks.findIndex((b) => b.id === activeBlockId) : -1;
   const canMoveUp = activeIndex > 0;
   const canMoveDown = activeIndex !== -1 && activeIndex < blocks.length - 1;
+
+  const isNoteEmpty =
+    blocks.length === 0 ||
+    (blocks.length === 1 &&
+      blocks[0].type === 'paragraph' &&
+      !blocks[0].content?.trim());
 
   return (
     <View className="flex-1 w-full bg-light-surface dark:bg-dark-surface relative">
@@ -238,6 +250,11 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           className="text-3xl md:text-5xl font-black text-light-textPrimary dark:text-dark-textPrimary tracking-tight mb-4 py-2 outline-none"
         />
 
+        {/* Quick Template Scaffolding for Empty Notes */}
+        {isNoteEmpty ? (
+          <TemplatePicker onSelectTemplate={handleApplyTemplate} />
+        ) : null}
+
         {/* Continuous Stream of Editorial Blocks */}
         <View className="mb-4">
           {blocks.map((block, idx) => {
@@ -288,6 +305,15 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                 onUpdateContent={(content) => handleUpdateContent(block.id, content)}
                 onUpdateMetadata={(metadata) => handleUpdateMetadata(block.id, metadata)}
                 onChangeType={(type) => handleChangeType(block.id, type)}
+                onConvertBlock={(type, content, metadata) =>
+                  handleConvertBlock(block.id, type, content, metadata)
+                }
+                onInsertAfter={(type, content, metadata) =>
+                  handleInsertAfterBlock(block.id, type, content, metadata)
+                }
+                onReplaceBlockWithBlocks={(blocks) =>
+                  handleReplaceBlockWithBlocks(block.id, blocks)
+                }
                 onDelete={() => handleDeleteBlock(block.id)}
                 onMoveUp={() => handleMoveUp(idx)}
                 onMoveDown={() => handleMoveDown(idx)}
@@ -295,6 +321,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
             );
           })}
         </View>
+
+        {/* Backlinks & Lateral Knowledge Graph References */}
+        <BacklinksStrip currentNoteId={note.id} />
 
         {/* Canvas tap area below blocks to deselect */}
         <Pressable
@@ -311,6 +340,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         activeBlockId={activeBlockId}
         onInsertBlock={(type, metadata) => {
           handleInsertBlock(type, metadata);
+          setIsInsertPaletteOpen(false);
+        }}
+        onSelectTemplate={(tpl) => {
+          handleApplyTemplate(tpl);
           setIsInsertPaletteOpen(false);
         }}
       />

@@ -16,15 +16,24 @@ import {
   AlertCircle,
   Sigma,
   PenTool,
+  List,
+  ListOrdered,
+  ListCollapse,
+  Video,
+  Link2,
+  MapPin,
 } from 'lucide-react-native';
 import { BlockType } from '../../../types/note';
 import { useTheme } from '../../../theme';
+import { NoteTemplate } from '../../../core/templates/noteTemplates';
+import { TemplatePicker } from './TemplatePicker';
 
 interface InsertPaletteModalProps {
   isOpen: boolean;
   onClose: () => void;
   activeBlockId: string | null;
   onInsertBlock: (type: BlockType, metadata?: Record<string, any>) => void;
+  onSelectTemplate?: (template: NoteTemplate) => void;
 }
 
 export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
@@ -32,6 +41,7 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
   onClose,
   activeBlockId,
   onInsertBlock,
+  onSelectTemplate,
 }) => {
   const { isDark } = useTheme();
 
@@ -149,6 +159,29 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
                   Rich bookmark card
                 </Text>
               </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('video', {
+                    url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                    caption: '',
+                    width: '100%',
+                    align: 'center',
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-red-500/15 items-center justify-center mb-2">
+                  <Video size={16} color="#EF4444" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Video Embed
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  YouTube, Vimeo, Loom, MP4
+                </Text>
+              </Pressable>
             </View>
 
             {/* Category: Writing & Structure */}
@@ -197,6 +230,39 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
                 <QuoteIcon size={16} color="#A78BFA" className="mb-2" />
                 <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
                   Quote
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => onInsertBlock('bulleted_list', { items: [''] })}
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <List size={16} color={isDark ? '#E5E5E5' : '#171717'} className="mb-2" />
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Bullet List
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => onInsertBlock('numbered_list', { items: [''] })}
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <ListOrdered size={16} color={isDark ? '#E5E5E5' : '#171717'} className="mb-2" />
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Numbered List
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => onInsertBlock('toggle', { title: 'Toggle Section', isOpen: true })}
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[110px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <ListCollapse size={16} color={isDark ? '#8EDCEB' : '#08C4E5'} className="mb-2" />
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Toggle
                 </Text>
               </Pressable>
 
@@ -329,7 +395,58 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
                   Hand-drawn sketch
                 </Text>
               </Pressable>
+
+              <Pressable
+                onPress={() => onInsertBlock('note_link', { targetNoteTitle: 'Link to note' })}
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center mb-2">
+                  <Link2 size={16} color="#06B6D4" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Linked Note
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Bidirectional reference
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('location', {
+                    placeName: 'Location Checkpoint',
+                    address: 'San Francisco, CA',
+                    lat: 37.7785,
+                    lng: -122.3998,
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mb-2">
+                  <MapPin size={16} color="#F43F5E" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Location Pin
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Place & coordinates
+                </Text>
+              </Pressable>
             </View>
+
+            {/* Quick Template Scaffolding Section */}
+            {Boolean(onSelectTemplate) ? (
+              <View className="pt-2 border-t border-light-border dark:border-white/5">
+                <TemplatePicker
+                  onSelectTemplate={(tpl) => {
+                    onSelectTemplate?.(tpl);
+                    onClose();
+                  }}
+                />
+              </View>
+            ) : null}
           </ScrollView>
         </Pressable>
       </Pressable>

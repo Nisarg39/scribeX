@@ -15,6 +15,7 @@ export type ActionType =
   | 'SET_FOLDER'
   | 'TOGGLE_PIN'
   | 'TOGGLE_FAVORITE'
+  | 'APPLY_TEMPLATE'
   
   // Tier 2: Block Structural Mutations
   | 'INSERT_BLOCK'

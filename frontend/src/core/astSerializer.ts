@@ -220,6 +220,72 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
+    // Note Link: [[Title|targetId]] <!-- scribex:block type=note_link folder="General" color="cyan" -->
+    const noteLinkMatch = line.trim().match(/^\[\[(.*?)(?:\|(.*?))?\]\]\s*<!--\s*scribex:block\s+type=note_link\s*([^>]*)-->/);
+    if (noteLinkMatch) {
+      flushParagraph();
+      const title = noteLinkMatch[1];
+      const targetId = noteLinkMatch[2] || '';
+      const metaStr = noteLinkMatch[3];
+      const folderMatch = metaStr.match(/folder="([^"]*)"/);
+      const colorMatch = metaStr.match(/color="([^"]*)"/);
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'note_link',
+        content: targetId,
+        metadata: {
+          targetNoteId: targetId,
+          targetNoteTitle: title,
+          targetFolder: folderMatch ? folderMatch[1] : 'General',
+          targetColorToken: colorMatch ? colorMatch[1] : 'cyan',
+        },
+      });
+      continue;
+    }
+
+    // Location: 📍 [Place](url) <!-- scribex:block type=location address="..." lat=... lng=... -->
+    const locMatch = line.trim().match(/^📍\s*\[(.*?)\]\((.*?)\)\s*<!--\s*scribex:block\s+type=location\s*([^>]*)-->/);
+    if (locMatch) {
+      flushParagraph();
+      const placeName = locMatch[1];
+      const metaStr = locMatch[3];
+      const addrMatch = metaStr.match(/address="([^"]*)"/);
+      const latMatch = metaStr.match(/lat=([^\s]+)/);
+      const lngMatch = metaStr.match(/lng=([^\s]+)/);
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'location',
+        content: placeName,
+        metadata: {
+          placeName,
+          address: addrMatch ? addrMatch[1] : '',
+          lat: latMatch ? parseFloat(latMatch[1]) : undefined,
+          lng: lngMatch ? parseFloat(lngMatch[1]) : undefined,
+        },
+      });
+      continue;
+    }
+
+    // Annotated Video: ![Caption](url) <!-- scribex:media type=video width=100% align=center -->
+    const videoMatch = line.trim().match(/^!\[(.*?)\]\((.*?)\)\s*<!--\s*scribex:media\s+type=video\s*([^>]*)-->/);
+    if (videoMatch) {
+      flushParagraph();
+      const metaStr = videoMatch[3];
+      const widthMatch = metaStr.match(/width=([^\s]+)/);
+      const alignMatch = metaStr.match(/align=([^\s]+)/);
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'video',
+        content: videoMatch[2],
+        metadata: {
+          caption: videoMatch[1],
+          width: widthMatch ? widthMatch[1] : '100%',
+          align: alignMatch ? alignMatch[1] : 'center',
+        },
+      });
+      continue;
+    }
+
     // Annotated Image: ![Caption](url) <!-- scribex:media width=50% align=center ratio=natural -->
     const imageAnnotatedMatch = line.trim().match(/^!\[(.*?)\]\((.*?)\)\s*<!--\s*scribex:media\s+([^>]+)-->/);
     if (imageAnnotatedMatch) {
@@ -420,7 +486,79 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
-    // 9. Standard Blockquote (> Text)
+    // 9. Collapsible Toggle (<details><summary>Title</summary>Content</details>)
+    if (line.trim().startsWith('<details>')) {
+      flushParagraph();
+      let summaryTitle = 'Toggle';
+      const contentLines: string[] = [];
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim().includes('</details>')) {
+        const cur = lines[j];
+        const summaryMatch = cur.match(/<summary>(.*?)<\/summary>/i);
+        if (summaryMatch) {
+          summaryTitle = summaryMatch[1].trim();
+        } else {
+          contentLines.push(cur);
+        }
+        j++;
+      }
+      i = j;
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'toggle',
+        content: contentLines.join('\n').trim(),
+        metadata: { title: summaryTitle, isOpen: false },
+      });
+      continue;
+    }
+
+    // 10. Bulleted List (- item or * item)
+    const bulletMatch = line.match(/^[-*•]\s+(.+)$/);
+    if (bulletMatch && !line.match(/^(\*{3,}|-{3,})$/)) {
+      flushParagraph();
+      const itemText = bulletMatch[1].trim();
+      const lastBlock = blocks[blocks.length - 1];
+      if (lastBlock && lastBlock.type === 'bulleted_list') {
+        const existingItems = Array.isArray(lastBlock.metadata?.items) ? lastBlock.metadata.items : [];
+        lastBlock.metadata = { ...lastBlock.metadata, items: [...existingItems, itemText] };
+        lastBlock.content = lastBlock.metadata.items.join('\n');
+      } else {
+        blocks.push({
+          id: `b-${Date.now()}-${blocks.length + 1}`,
+          type: 'bulleted_list',
+          content: itemText,
+          metadata: {
+            items: [itemText],
+          },
+        });
+      }
+      continue;
+    }
+
+    // 11. Numbered List (1. item or 1) item)
+    const numberedMatch = line.match(/^(\d+)[\.\)]\s+(.+)$/);
+    if (numberedMatch) {
+      flushParagraph();
+      const itemText = numberedMatch[2].trim();
+      const lastBlock = blocks[blocks.length - 1];
+      if (lastBlock && lastBlock.type === 'numbered_list') {
+        const existingItems = Array.isArray(lastBlock.metadata?.items) ? lastBlock.metadata.items : [];
+        lastBlock.metadata = { ...lastBlock.metadata, items: [...existingItems, itemText] };
+        lastBlock.content = lastBlock.metadata.items.map((it: string, idx: number) => `${idx + 1}. ${it}`).join('\n');
+      } else {
+        blocks.push({
+          id: `b-${Date.now()}-${blocks.length + 1}`,
+          type: 'numbered_list',
+          content: `1. ${itemText}`,
+          metadata: {
+            items: [itemText],
+          },
+        });
+      }
+      continue;
+    }
+
+    // 12. Standard Blockquote (> Text)
     if (line.startsWith('>')) {
       flushParagraph();
       blocks.push({
@@ -563,6 +701,57 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
         const desc = (block.metadata?.description || '').replace(/"/g, "'");
         const thumb = block.metadata?.previewUrl || '';
         chunks.push(`[${title}](${url}) <!-- scribex:block type=bookmark description="${desc}" previewUrl="${thumb}" -->`);
+        break;
+      }
+
+      case 'bulleted_list': {
+        const rawItems: any[] = Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
+          ? block.metadata.items
+          : (block.content ? block.content.split('\n') : []);
+        const items = rawItems.map(it => typeof it === 'string' ? it.replace(/^[-*•]\s*/, '') : it.text || '');
+        chunks.push(items.filter(Boolean).map(it => `- ${it.trim()}`).join('\n'));
+        break;
+      }
+
+      case 'numbered_list': {
+        const rawItems: any[] = Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
+          ? block.metadata.items
+          : (block.content ? block.content.split('\n') : []);
+        const items = rawItems.map(it => typeof it === 'string' ? it.replace(/^\d+[\.\)]\s*/, '') : it.text || '');
+        chunks.push(items.filter(Boolean).map((it, idx) => `${idx + 1}. ${it.trim()}`).join('\n'));
+        break;
+      }
+
+      case 'toggle': {
+        const toggleTitle = block.metadata?.title || 'Details';
+        chunks.push(`<details>\n<summary>${toggleTitle}</summary>\n${block.content || ''}\n</details>`);
+        break;
+      }
+
+      case 'video': {
+        const url = block.content || block.metadata?.url || '';
+        const caption = block.metadata?.caption || '';
+        const width = block.metadata?.width || '100%';
+        const align = block.metadata?.align || 'center';
+        chunks.push(`![${caption}](${url}) <!-- scribex:media type=video width=${width} align=${align} -->`);
+        break;
+      }
+
+      case 'note_link': {
+        const targetId = block.metadata?.targetNoteId || block.content || '';
+        const title = block.metadata?.targetNoteTitle || 'Untitled Note';
+        const folder = block.metadata?.targetFolder || 'General';
+        const color = block.metadata?.targetColorToken || 'cyan';
+        chunks.push(`[[${title}|${targetId}]] <!-- scribex:block type=note_link folder="${folder}" color="${color}" -->`);
+        break;
+      }
+
+      case 'location': {
+        const place = block.metadata?.placeName || block.content || 'Location Checkpoint';
+        const address = (block.metadata?.address || '').replace(/"/g, "'");
+        const lat = block.metadata?.lat ?? 37.7785;
+        const lng = block.metadata?.lng ?? -122.3998;
+        chunks.push(`📍 [${place}](geo:${lat},${lng}) <!-- scribex:block type=location address="${address}" lat=${lat} lng=${lng} -->`);
         break;
       }
 

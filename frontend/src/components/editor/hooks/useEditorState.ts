@@ -6,6 +6,7 @@ import { notesRepo } from '../../../db/notesRepo';
 import { tasksRepo } from '../../../db/tasksRepo';
 import { serializeBlocksToMarkdown, coalesceChecklistBlocks } from '../../../core/astSerializer';
 import { ActionHistoryManager } from '../../../core/actionTracker';
+import { NoteTemplate, instantiateTemplateBlocks } from '../../../core/templates/noteTemplates';
 
 export const isTextTransformableBlock = (type?: BlockType): boolean => {
   return type === 'paragraph' || type === 'heading' || type === 'quote' || type === 'checklist';
@@ -217,6 +218,16 @@ export const useEditorState = ({
           setIsFavorite(action.before);
           persistChanges(titleRef.current, colorTokenRef.current, blocksRef.current, action.before, isPinnedRef.current);
           break;
+        case 'APPLY_TEMPLATE':
+          if (action.before) {
+            setTitle(action.before.title || '');
+            titleRef.current = action.before.title || '';
+            setColorToken(action.before.colorToken);
+            colorTokenRef.current = action.before.colorToken;
+            setBlocks(action.before.blocks);
+            persistChanges(action.before.title || '', action.before.colorToken, action.before.blocks, isFavoriteRef.current, isPinnedRef.current);
+          }
+          break;
         case 'INSERT_BLOCK':
         case 'DELETE_BLOCK':
         case 'REORDER_BLOCKS':
@@ -276,6 +287,16 @@ export const useEditorState = ({
         case 'TOGGLE_FAVORITE':
           setIsFavorite(action.after);
           persistChanges(titleRef.current, colorTokenRef.current, blocksRef.current, action.after, isPinnedRef.current);
+          break;
+        case 'APPLY_TEMPLATE':
+          if (action.after) {
+            setTitle(action.after.title || '');
+            titleRef.current = action.after.title || '';
+            setColorToken(action.after.colorToken);
+            colorTokenRef.current = action.after.colorToken;
+            setBlocks(action.after.blocks);
+            persistChanges(action.after.title || '', action.after.colorToken, action.after.blocks, isFavoriteRef.current, isPinnedRef.current);
+          }
           break;
         case 'INSERT_BLOCK':
         case 'DELETE_BLOCK':
@@ -545,6 +566,182 @@ export const useEditorState = ({
     setBlocks(nextBlocks);
     setActiveBlockId(newBlock.id);
     persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
+  };
+
+  const handleConvertBlock = (
+    blockId: string,
+    type: BlockType,
+    content: string = '',
+    metadata?: Record<string, any>
+  ) => {
+    const currentBlocks = blocksRef.current;
+    let nextBlocks: ComposableBlock[] = [];
+    setBlocks((prevBlocks) => {
+      nextBlocks = prevBlocks.map((b) =>
+        b.id === blockId
+          ? {
+              ...b,
+              type,
+              content,
+              metadata: metadata !== undefined ? metadata : b.metadata,
+            }
+          : b
+      );
+      return nextBlocks;
+    });
+
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'CHANGE_BLOCK_TYPE',
+      description: `Convert to ${type}`,
+      blockId,
+      before: { blocks: currentBlocks },
+      after: { blocks: nextBlocks },
+    });
+
+    setActiveBlockId(blockId);
+    setFocusTarget({
+      blockId,
+      cursorPosition: content.length,
+      timestamp: Date.now(),
+    });
+
+    if (nextBlocks.length > 0) {
+      persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
+    }
+  };
+
+  const handleInsertAfterBlock = (
+    currentBlockId: string,
+    type: BlockType,
+    content: string = '',
+    metadata?: Record<string, any>
+  ) => {
+    const currentBlocks = blocksRef.current;
+    const activeIndex = currentBlocks.findIndex((b) => b.id === currentBlockId);
+    const newBlock: ComposableBlock = {
+      id: `b-${Date.now()}-${currentBlocks.length + 1}`,
+      type,
+      content,
+      metadata,
+    };
+
+    let nextBlocks: ComposableBlock[];
+    if (activeIndex !== -1) {
+      nextBlocks = [
+        ...currentBlocks.slice(0, activeIndex + 1),
+        newBlock,
+        ...currentBlocks.slice(activeIndex + 1),
+      ];
+    } else {
+      nextBlocks = [...currentBlocks, newBlock];
+    }
+
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'INSERT_BLOCK',
+      description: `Insert ${type}`,
+      blockId: newBlock.id,
+      before: { blocks: currentBlocks },
+      after: { blocks: nextBlocks },
+    });
+
+    setBlocks(nextBlocks);
+    setActiveBlockId(newBlock.id);
+    setFocusTarget({
+      blockId: newBlock.id,
+      cursorPosition: content.length,
+      timestamp: Date.now(),
+    });
+    persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
+  };
+
+  const handleReplaceBlockWithBlocks = (
+    blockId: string,
+    rawBlocks: { type: BlockType; content: string; metadata?: Record<string, any> }[]
+  ) => {
+    const currentBlocks = blocksRef.current;
+    const activeIndex = currentBlocks.findIndex((b) => b.id === blockId);
+    if (activeIndex === -1 || rawBlocks.length === 0) return;
+
+    const instantiatedBlocks: ComposableBlock[] = rawBlocks.map((b, idx) => ({
+      id: idx === 0 ? blockId : `b-${Date.now()}-${idx}`,
+      type: b.type,
+      content: b.content,
+      metadata: b.metadata,
+    }));
+
+    const nextBlocks = [
+      ...currentBlocks.slice(0, activeIndex),
+      ...instantiatedBlocks,
+      ...currentBlocks.slice(activeIndex + 1),
+    ];
+
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'CHANGE_BLOCK_TYPE',
+      description: 'Markdown Conversion',
+      blockId,
+      before: { blocks: currentBlocks },
+      after: { blocks: nextBlocks },
+    });
+
+    setBlocks(nextBlocks);
+    const lastBlock = instantiatedBlocks[instantiatedBlocks.length - 1];
+    setActiveBlockId(lastBlock.id);
+    setFocusTarget({
+      blockId: lastBlock.id,
+      cursorPosition: lastBlock.content.length,
+      timestamp: Date.now(),
+    });
+    persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
+  };
+
+  const handleApplyTemplate = (template: NoteTemplate) => {
+    const currentBlocks = blocksRef.current;
+    const newBlocks = instantiateTemplateBlocks(template);
+
+    actionHistory.recordAction({
+      tier: 1,
+      type: 'APPLY_TEMPLATE',
+      description: `Apply ${template.name}`,
+      before: {
+        title: titleRef.current,
+        colorToken: colorTokenRef.current,
+        blocks: currentBlocks,
+      },
+      after: {
+        title: titleRef.current || template.name,
+        colorToken: template.colorToken,
+        blocks: newBlocks,
+      },
+    });
+
+    if (!titleRef.current || titleRef.current === 'Untitled Note') {
+      setTitle(template.name);
+      titleRef.current = template.name;
+    }
+    setColorToken(template.colorToken);
+    colorTokenRef.current = template.colorToken;
+    setBlocks(newBlocks);
+    if (newBlocks.length > 0) {
+      const focusableBlock =
+        newBlocks.find(
+          (b) => b.type === 'heading' || b.type === 'paragraph' || b.type === 'quote'
+        ) || newBlocks[0];
+
+      setActiveBlockId(focusableBlock.id);
+      setFocusTarget({
+        blockId: focusableBlock.id,
+        cursorPosition: 0,
+        timestamp: Date.now(),
+      });
+    }
+    persistChanges(
+      titleRef.current || template.name,
+      template.colorToken,
+      newBlocks
+    );
   };
 
   const handleSwitchActiveType = (type: BlockType, metadata?: Record<string, any>) => {
@@ -867,6 +1064,10 @@ export const useEditorState = ({
     handleUpdateContent,
     handleUpdateMetadata,
     handleChangeType,
+    handleConvertBlock,
+    handleInsertAfterBlock,
+    handleReplaceBlockWithBlocks,
+    handleApplyTemplate,
     handleDeleteBlock,
     handleInsertBlock,
     handleSwitchActiveType,

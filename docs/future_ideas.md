@@ -16,6 +16,12 @@ Remaining Tasks to fix
 8.2 - [x] header input is not able to edit on web platform only and is working perfectly on mobile platforms (COMPLETED) 
 8.3 - [x]the toolbar's badges Text, H1, H2, Quote i.e the badges related to text are messing up with other non related elements example when i select some element like audio or image , etc and then i click on these badges are replacing the selected element which shouldnt he happening only the related text elements elements like checklist has text elements should be affected (COMPLETED)
 9 - [x] Adding an action tracking system and then Add undo and redo functionality to the editor for all the blocks . use 3 level metadata system for tracking actions - Tier 1: Note-Level Metadata (The Container) , 2 - Tier 2: Block-Level Metadata (The Elements), Tier 3: Asset Metadata (The Files) (COMPLETED)
+10 - [x] Implement manual editor input blocks: Bulleted List, Numbered List, and Collapsible Toggle sections with bidirectional Markdown AST serialization and canvas-native styling (COMPLETED)
+11 - [x] Implement manual editor input blocks: Video Embed, Bidirectional Note Link, and Location Checkpoint blocks with AST serialization and canvas-native styling (COMPLETED)
+12 - [x] Inline Slash Command (/) Menu & Fast Markdown Typing Shortcuts (#, ##, ###, >, -, 1., [], ---, ```, $$, >>) with keyboard navigation and non-generic canvas dock (COMPLETED)
+13 - [x] Note Templates & Scaffolding: Meeting Notes, Daily Standup, Project Spec, Weekly Review, Research Note with 1-tap empty note starter pills and full Tier-1 Undo/Redo tracking (COMPLETED)
+14 - [x] Backlinks & Lateral Knowledge Graph Relations: Automatic bottom-of-note linked references strip tracking bidirectional note_links with one-tap deep navigation (COMPLETED)
+
 
 
 Long term Ideas

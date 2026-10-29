@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { View, TextInput } from 'react-native';
-import { ComposableBlock } from '../../../../types/note';
+import { ComposableBlock, BlockType } from '../../../../types/note';
 import { useTheme } from '../../../../theme';
 import { useWebTextareaAutoHeight } from '../../hooks/useWebTextareaAutoHeight';
 
@@ -15,6 +15,7 @@ interface QuoteBlockProps {
   onBackspaceAtStart?: () => void;
   onFocus?: () => void;
   onUpdateContent: (content: string) => void;
+  onConvertBlock?: (type: BlockType, content: string, metadata?: Record<string, any>) => void;
 }
 
 export const QuoteBlock: React.FC<QuoteBlockProps> = ({
@@ -28,6 +29,7 @@ export const QuoteBlock: React.FC<QuoteBlockProps> = ({
   onBackspaceAtStart,
   onFocus,
   onUpdateContent,
+  onConvertBlock,
 }) => {
   const { isDark } = useTheme();
   const selectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
@@ -36,6 +38,25 @@ export const QuoteBlock: React.FC<QuoteBlockProps> = ({
     content: block.content,
     externalInputRef: inputRef,
   });
+
+  const checkMarkdownShortcuts = (text: string): boolean => {
+    if (!onConvertBlock) return false;
+    if (text.startsWith('# ')) {
+      onConvertBlock('heading', text.slice(2), { level: 1 });
+      return true;
+    }
+    if (text.startsWith('## ')) {
+      onConvertBlock('heading', text.slice(3), { level: 2 });
+      return true;
+    }
+    if (text.startsWith('- ') || text.startsWith('* ')) {
+      onConvertBlock('bulleted_list', text.slice(2), {
+        items: [{ id: `bullet-${Date.now()}-1`, text: text.slice(2) }],
+      });
+      return true;
+    }
+    return false;
+  };
 
   return (
     <View
@@ -57,6 +78,9 @@ export const QuoteBlock: React.FC<QuoteBlockProps> = ({
         placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
         value={block.content}
         onChangeText={(text) => {
+          if (checkMarkdownShortcuts(text)) {
+            return;
+          }
           onUpdateContent(text);
           adjustWebTextareaHeight(localInputRef.current);
         }}

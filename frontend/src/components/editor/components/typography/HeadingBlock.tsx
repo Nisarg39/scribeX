@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { View, TextInput } from 'react-native';
-import { ComposableBlock } from '../../../../types/note';
+import { ComposableBlock, BlockType } from '../../../../types/note';
 import { useTheme } from '../../../../theme';
 import { useWebTextareaAutoHeight } from '../../hooks/useWebTextareaAutoHeight';
 
@@ -15,6 +15,7 @@ interface HeadingBlockProps {
   onBackspaceAtStart?: () => void;
   onFocus?: () => void;
   onUpdateContent: (content: string) => void;
+  onConvertBlock?: (type: BlockType, content: string, metadata?: Record<string, any>) => void;
 }
 
 export const HeadingBlock: React.FC<HeadingBlockProps> = ({
@@ -28,6 +29,7 @@ export const HeadingBlock: React.FC<HeadingBlockProps> = ({
   onBackspaceAtStart,
   onFocus,
   onUpdateContent,
+  onConvertBlock,
 }) => {
   const { isDark } = useTheme();
   const selectionRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
@@ -36,6 +38,33 @@ export const HeadingBlock: React.FC<HeadingBlockProps> = ({
     content: block.content,
     externalInputRef: inputRef,
   });
+
+  const checkMarkdownShortcuts = (text: string): boolean => {
+    if (!onConvertBlock) return false;
+    if (text.startsWith('# ') && block.metadata?.level !== 1) {
+      onConvertBlock('heading', text.slice(2), { level: 1 });
+      return true;
+    }
+    if (text.startsWith('## ') && block.metadata?.level !== 2) {
+      onConvertBlock('heading', text.slice(3), { level: 2 });
+      return true;
+    }
+    if (text.startsWith('### ') && block.metadata?.level !== 3) {
+      onConvertBlock('heading', text.slice(4), { level: 3 });
+      return true;
+    }
+    if (text.startsWith('> ')) {
+      onConvertBlock('quote', text.slice(2));
+      return true;
+    }
+    if (text.startsWith('- ') || text.startsWith('* ')) {
+      onConvertBlock('bulleted_list', text.slice(2), {
+        items: [{ id: `bullet-${Date.now()}-1`, text: text.slice(2) }],
+      });
+      return true;
+    }
+    return false;
+  };
 
   return (
     <View
@@ -50,6 +79,9 @@ export const HeadingBlock: React.FC<HeadingBlockProps> = ({
         placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
         value={block.content}
         onChangeText={(text) => {
+          if (checkMarkdownShortcuts(text)) {
+            return;
+          }
           onUpdateContent(text);
           adjustWebTextareaHeight(localInputRef.current);
         }}

@@ -4,6 +4,7 @@
  */
 
 import { NoteColorToken } from '../theme/tokens';
+export type { NoteColorToken };
 
 export type RelationType = 
   | 'relates_to'
@@ -45,6 +46,7 @@ export type BlockType =
   | 'checklist'
   | 'bulleted_list'
   | 'numbered_list'
+  | 'toggle'
   | 'code'
   | 'quote'
   | 'divider'
@@ -55,7 +57,10 @@ export type BlockType =
   | 'bookmark'
   | 'audio'
   | 'image'
+  | 'video'
   | 'file'
+  | 'note_link'
+  | 'location'
   | 'relation';
 
 export interface ComposableBlock {

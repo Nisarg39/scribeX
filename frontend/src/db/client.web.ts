@@ -19,12 +19,15 @@ const ASYNC_STORAGE_KEY = '@scribex_vault_sqlite_binary';
 const LEGACY_STORAGE_PREFIX = '@scribex_web_db_';
 
 function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
   if (typeof btoa !== 'undefined') {
+    const CHUNK_SIZE = 0x8000; // 32KB chunks
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+      binary += String.fromCharCode.apply(
+        null,
+        bytes.subarray(i, i + CHUNK_SIZE) as unknown as number[]
+      );
+    }
     return btoa(binary);
   }
   const buf = (globalThis as any).Buffer;
@@ -47,7 +50,10 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+let cachedIdb: IDBDatabase | null = null;
+
 function openIndexedDB(): Promise<IDBDatabase | null> {
+  if (cachedIdb) return Promise.resolve(cachedIdb);
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
       return resolve(null);
@@ -59,7 +65,11 @@ function openIndexedDB(): Promise<IDBDatabase | null> {
         db.createObjectStore(IDB_STORE);
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      cachedIdb = req.result;
+      cachedIdb.onclose = () => { cachedIdb = null; };
+      resolve(cachedIdb);
+    };
     req.onerror = () => resolve(null);
   });
 }
@@ -330,6 +340,22 @@ export class WebDatabaseClient {
     }
   }
 
+  public schedulePersist(): void {
+    if (this.persistTimeout) return;
+    this.persistTimeout = setTimeout(async () => {
+      this.persistTimeout = null;
+      await this.persist();
+    }, 120);
+  }
+
+  public async flushPersist(): Promise<void> {
+    if (this.persistTimeout) {
+      clearTimeout(this.persistTimeout);
+      this.persistTimeout = null;
+    }
+    await this.persist();
+  }
+
   public async query<T>(sql: string, params: any[] = []): Promise<T[]> {
     const db = await this.getDatabase();
     const cleanSql = sql.trim();
@@ -375,14 +401,14 @@ export class WebDatabaseClient {
       changes = Number(meta[0].values[0][1]) || 0;
     }
 
-    await this.persist();
+    this.schedulePersist();
     return { lastInsertRowId, changes };
   }
 
   public async exec(sql: string): Promise<void> {
     const db = await this.getDatabase();
     db.exec(sql);
-    await this.persist();
+    this.schedulePersist();
   }
 
   public async withTransaction<T>(
@@ -393,7 +419,7 @@ export class WebDatabaseClient {
     try {
       const result = await callback(db);
       db.exec('COMMIT;');
-      await this.persist();
+      this.schedulePersist();
       return result;
     } catch (err) {
       db.exec('ROLLBACK;');
