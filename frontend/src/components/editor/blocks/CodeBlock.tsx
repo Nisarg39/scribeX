@@ -22,8 +22,10 @@ interface CodeBlockProps {
   language?: string;
   fileName?: string;
   isSelected?: boolean;
+  isDragging?: boolean;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
   onEndDrag?: () => void;
   onDelete?: () => void;
   onUpdateCode: (code: string) => void;
@@ -36,8 +38,10 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
   language = 'typescript',
   fileName = '',
   isSelected = false,
+  isDragging = false,
   onFocus,
   onLongPress,
+  onStartDrag,
   onEndDrag,
   onDelete,
   onUpdateCode,
@@ -60,7 +64,17 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
   const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   return (
-    <View className="w-full">
+    <Pressable
+      onPress={onFocus}
+      style={[
+        {
+          borderColor: isSelected
+            ? '#06B6D4'
+            : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.07)'),
+        },
+      ]}
+      className="my-1.5 w-full rounded-2xl border overflow-hidden transition-all group"
+    >
       {/* Code Header Bar */}
       <View className="flex-row items-center justify-between px-3.5 py-2 bg-black/[0.04] dark:bg-[#1E1E1E] border-b border-light-border/60 dark:border-white/5">
         {/* Left: Language Picker & File Name */}
@@ -98,14 +112,14 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
           {copied ? (
             <>
               <Check size={12} color="#10B981" strokeWidth={2.5} />
-              <Text className="text-[11px] font-bold text-[#10B981]">
-                Copied!
+              <Text className="text-[11px] font-mono font-semibold text-emerald-500">
+                Copied
               </Text>
             </>
           ) : (
             <>
               <Copy size={12} color={isDark ? '#B5B5B5' : '#626262'} />
-              <Text className="text-[11px] font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+              <Text className="text-[11px] font-mono text-light-textSecondary dark:text-dark-textSecondary">
                 Copy
               </Text>
             </>
@@ -113,9 +127,9 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
         </Pressable>
       </View>
 
-      {/* Language Selector Menu Bar */}
+      {/* Language Dropdown Menu (Inline) */}
       {showLangMenu && (
-        <View className="p-2 bg-light-surface dark:bg-[#202020] border-b border-light-border dark:border-white/10 flex-row flex-wrap gap-1.5">
+        <View className="flex-row flex-wrap gap-1 p-2 bg-light-appBg dark:bg-[#1E1E1E] border-b border-light-border/60 dark:border-white/5">
           {POPULAR_LANGUAGES.map((lang) => (
             <Pressable
               key={lang}
@@ -123,16 +137,16 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
                 onUpdateLanguage(lang);
                 setShowLangMenu(false);
               }}
-              className={`px-2 py-1 rounded-md ${
-                language === lang 
-                  ? 'bg-light-iconBg dark:bg-white' 
-                  : 'bg-black/5 dark:bg-white/5'
+              className={`px-2 py-0.5 rounded text-[11px] font-mono ${
+                language === lang
+                  ? 'bg-note-cyan/20 border border-note-cyan text-note-cyan'
+                  : 'bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 text-light-textSecondary dark:text-dark-textSecondary'
               }`}
             >
               <Text
-                className={`text-[11px] font-mono font-medium ${
+                className={`text-[11px] font-mono ${
                   language === lang
-                    ? 'text-white dark:text-[#111111] font-bold'
+                    ? 'font-bold text-note-cyan'
                     : 'text-light-textSecondary dark:text-dark-textSecondary'
                 }`}
               >
@@ -143,35 +157,33 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
         </View>
       )}
 
-      {/* Code Editor Body with Line Numbers */}
-      <View className="flex-row p-3 font-mono">
-        {/* Line Numbers Gutter */}
-        <View className="pr-3 border-r border-light-border/40 dark:border-white/5 select-none opacity-40 items-end">
+      {/* Code Text Area with Line Numbers */}
+      <View className="flex-row p-3 bg-black/[0.02] dark:bg-[#181818] min-h-[100px]">
+        {/* Line Numbers Column */}
+        <View className="pr-3 mr-2 border-r border-light-border/40 dark:border-white/5 select-none">
           {lineNumbers.map((num) => (
             <Text
               key={num}
-              className="text-xs font-mono text-light-textMuted dark:text-dark-textMuted leading-6"
+              className="text-xs font-mono text-light-textMuted dark:text-dark-textMuted/40 text-right leading-5"
             >
               {num}
             </Text>
           ))}
         </View>
 
-        {/* Code Input Area */}
+        {/* Code Input */}
         <TextInput
-          multiline
           value={code}
-          onFocus={onFocus}
           onChangeText={onUpdateCode}
-          placeholder="// Paste or write code snippet..."
+          onFocus={onFocus}
+          multiline
+          placeholder="// Paste or write code snippet here..."
           placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
-          className="flex-1 pl-3 font-mono text-xs md:text-sm text-light-textPrimary dark:text-[#E6E6E6] leading-6 py-0"
-          textAlignVertical="top"
+          className="flex-1 font-mono text-xs text-light-textPrimary dark:text-dark-textPrimary leading-5 py-0"
           autoCapitalize="none"
           autoCorrect={false}
-          spellCheck={false}
         />
       </View>
-    </View>
+    </Pressable>
   );
 };

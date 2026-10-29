@@ -4,10 +4,10 @@ import { useTheme } from '../../../theme';
 import { 
   Globe, 
   ExternalLink, 
-  Compass, 
   Link2, 
   Edit3, 
-  Check 
+  Check,
+  X
 } from 'lucide-react-native';
 
 interface BookmarkBlockProps {
@@ -16,8 +16,10 @@ interface BookmarkBlockProps {
   description?: string;
   previewUrl?: string;
   isSelected?: boolean;
+  isDragging?: boolean;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
   onEndDrag?: () => void;
   onDelete?: () => void;
   onUpdateBookmark: (url: string, title?: string, description?: string, previewUrl?: string) => void;
@@ -29,8 +31,10 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
   description = 'A framework for building native applications using React.',
   previewUrl = 'https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=600&q=80',
   isSelected = false,
+  isDragging = false,
   onFocus,
   onLongPress,
+  onStartDrag,
   onEndDrag,
   onDelete,
   onUpdateBookmark,
@@ -59,7 +63,6 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
       setCurrentUrl(formattedUrl);
     }
 
-    // Auto-generate title if default
     let updatedTitle = currentTitle;
     if (!currentTitle || currentTitle === 'Web Bookmark') {
       try {
@@ -82,15 +85,34 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
   };
 
   return (
-    <View className="w-full">
+    <Pressable
+      onPress={onFocus}
+      style={[
+        {
+          borderColor: isSelected
+            ? '#06B6D4'
+            : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.07)'),
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+        },
+      ]}
+      className="my-1.5 w-full rounded-2xl border p-3.5 flex-row items-center transition-all group"
+    >
       {/* Edit Mode URL Bar */}
       {isEditing ? (
-        <View className="p-3">
-          <View className="flex-row items-center gap-2 mb-2">
-            <Link2 size={13} color={isDark ? '#8EDCEB' : '#08C4E5'} />
-            <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
-              Bookmark URL
-            </Text>
+        <View className="w-full">
+          <View className="flex-row items-center justify-between mb-2">
+            <View className="flex-row items-center gap-1.5">
+              <Link2 size={13} color={isDark ? '#8EDCEB' : '#08C4E5'} />
+              <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                Edit Bookmark Link
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => setIsEditing(false)}
+              className="p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+            >
+              <X size={12} color={isDark ? '#B5B5B5' : '#626262'} />
+            </Pressable>
           </View>
 
           <TextInput
@@ -127,21 +149,15 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
           </View>
         </View>
       ) : (
-        /* Rendered Rich Bookmark Card */
-        <Pressable
-          onPress={() => {
-            onFocus?.();
-            handleOpenLink();
-          }}
-          className="flex-row items-center p-3.5 group"
-        >
+        /* Rendered Seamless Web Bookmark Embed */
+        <View className="flex-row items-center w-full justify-between">
           {/* Left Text Column */}
-          <View className="flex-1 mr-3 justify-between min-h-[70px]">
+          <View className="flex-1 mr-3.5 justify-between min-h-[64px]">
             <View>
               {/* Domain & Favicon */}
               <View className="flex-row items-center gap-1.5 mb-1">
                 <Globe size={11} color={isDark ? '#8EDCEB' : '#08C4E5'} />
-                <Text className="text-[11px] font-bold text-light-textMuted dark:text-dark-textMuted uppercase tracking-wider">
+                <Text className="text-[10px] font-bold text-light-textMuted dark:text-dark-textMuted uppercase tracking-wider">
                   {domain}
                 </Text>
               </View>
@@ -149,7 +165,7 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
               {/* Title */}
               <Text
                 numberOfLines={1}
-                className="text-xs md:text-sm font-bold text-light-textPrimary dark:text-dark-textPrimary mb-1"
+                className="text-xs md:text-sm font-bold text-light-textPrimary dark:text-dark-textPrimary mb-0.5"
               >
                 {currentTitle}
               </Text>
@@ -165,22 +181,26 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
 
             {/* Bottom URL link & Edit Trigger */}
             <View className="flex-row items-center gap-3 mt-2">
-              <View className="flex-row items-center gap-1">
-                <ExternalLink size={10} color={isDark ? '#B5B5B5' : '#626262'} />
+              <Pressable
+                onPress={handleOpenLink}
+                className="flex-row items-center gap-1 hover:underline"
+              >
+                <ExternalLink size={10} color={isDark ? '#8EDCEB' : '#08C4E5'} />
                 <Text
                   numberOfLines={1}
-                  className="text-[10px] text-light-textMuted dark:text-dark-textMuted max-w-[180px]"
+                  className="text-[10px] text-light-textMuted dark:text-dark-textMuted max-w-[200px]"
                 >
                   {currentUrl}
                 </Text>
-              </View>
+              </Pressable>
 
               <Pressable
                 onPress={(e) => {
                   e.stopPropagation();
+                  onFocus?.();
                   setIsEditing(true);
                 }}
-                className="p-1 rounded opacity-50 hover:opacity-100"
+                className="p-1 rounded opacity-60 hover:opacity-100"
                 accessibilityLabel="Edit Bookmark"
               >
                 <Edit3 size={11} color={isDark ? '#B5B5B5' : '#626262'} />
@@ -190,7 +210,7 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
 
           {/* Right Thumbnail Preview */}
           {currentThumb ? (
-            <View className="w-20 h-20 rounded-xl overflow-hidden bg-black/5 dark:bg-white/5 border border-light-border/40 dark:border-white/5">
+            <View className="w-20 h-20 rounded-xl overflow-hidden bg-black/5 dark:bg-white/5 border border-light-border/40 dark:border-white/5 flex-shrink-0">
               <Image
                 source={{ uri: currentThumb }}
                 className="w-full h-full object-cover"
@@ -198,8 +218,8 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
               />
             </View>
           ) : null}
-        </Pressable>
+        </View>
       )}
-    </View>
+    </Pressable>
   );
 };

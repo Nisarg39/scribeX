@@ -22,8 +22,10 @@ interface StrokePath {
 interface DrawingBlockProps {
   initialPaths?: StrokePath[];
   isSelected?: boolean;
+  isDragging?: boolean;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
   onEndDrag?: () => void;
   onDelete?: () => void;
   onUpdateDrawing: (paths: StrokePath[]) => void;
@@ -42,8 +44,10 @@ const PALETTE = [
 export const DrawingBlock: React.FC<DrawingBlockProps> = ({
   initialPaths = [],
   isSelected = false,
+  isDragging = false,
   onFocus,
   onLongPress,
+  onStartDrag,
   onEndDrag,
   onDelete,
   onUpdateDrawing,
@@ -158,7 +162,17 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
   };
 
   return (
-    <View className="w-full">
+    <Pressable
+      onPress={onFocus}
+      style={[
+        {
+          borderColor: isSelected
+            ? '#06B6D4'
+            : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)'),
+        },
+      ]}
+      className="my-1.5 w-full rounded-2xl border overflow-hidden transition-all group"
+    >
       {/* Top Toolbar */}
       <View className="p-2.5 bg-light-appBg dark:bg-dark-raised border-b border-light-border/60 dark:border-white/5">
         <View className="flex-row items-center justify-between">
@@ -321,6 +335,6 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
           </View>
         )}
       </View>
-    </View>
+    </Pressable>
   );
 };

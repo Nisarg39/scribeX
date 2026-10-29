@@ -14,7 +14,6 @@ import {
   BookmarkBlock,
   ChecklistBlock,
 } from './blocks';
-import { UniversalBlockWrapper } from './UniversalBlockWrapper';
 import {
   DividerBlock,
   HeadingBlock,
@@ -206,25 +205,19 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
       {/* Code Block */}
       {block.type === 'code' && (
-        <UniversalBlockWrapper
-          blockType="code"
+        <CodeBlock
+          code={block.content}
+          language={block.metadata?.language || 'typescript'}
+          fileName={block.metadata?.fileName || ''}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
+          onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-          noPadding
-        >
-          <CodeBlock
-            code={block.content}
-            language={block.metadata?.language || 'typescript'}
-            fileName={block.metadata?.fileName || ''}
-            onFocus={onFocus}
-            onDelete={onDelete}
-            onUpdateCode={onUpdateContent}
-            onUpdateLanguage={(language) => onUpdateMetadata({ ...block.metadata, language })}
-            onUpdateFileName={(fileName) => onUpdateMetadata({ ...block.metadata, fileName })}
-          />
-        </UniversalBlockWrapper>
+          onUpdateCode={onUpdateContent}
+          onUpdateLanguage={(language) => onUpdateMetadata({ ...block.metadata, language })}
+          onUpdateFileName={(fileName) => onUpdateMetadata({ ...block.metadata, fileName })}
+        />
       )}
 
       {/* Typography: Blockquote */}
@@ -245,112 +238,85 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
       {/* Table Block */}
       {block.type === 'table' && (
-        <UniversalBlockWrapper
-          blockType="table"
+        <TableBlock
+          columns={block.metadata?.columns || ['Header 1', 'Header 2']}
+          rows={block.metadata?.rows || [['', '']]}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
+          onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-        >
-          <TableBlock
-            columns={block.metadata?.columns || ['Header 1', 'Header 2']}
-            rows={block.metadata?.rows || [['', '']]}
-            onFocus={onFocus}
-            onDelete={onDelete}
-            onUpdateTable={(columns, rows) => {
-              onUpdateMetadata({ ...block.metadata, columns, rows });
-              const header = `| ${columns.join(' | ')} |`;
-              const sep = `| ${columns.map(() => '---').join(' | ')} |`;
-              const rowLines = rows.map((r) => `| ${r.join(' | ')} |`);
-              onUpdateContent([header, sep, ...rowLines].join('\n'));
-            }}
-          />
-        </UniversalBlockWrapper>
+          onUpdateTable={(columns, rows) => {
+            onUpdateMetadata({ ...block.metadata, columns, rows });
+            const header = `| ${columns.join(' | ')} |`;
+            const sep = `| ${columns.map(() => '---').join(' | ')} |`;
+            const rowLines = rows.map((r) => `| ${r.join(' | ')} |`);
+            onUpdateContent([header, sep, ...rowLines].join('\n'));
+          }}
+        />
       )}
 
       {/* Callout Block */}
       {block.type === 'callout' && (
-        <UniversalBlockWrapper
-          blockType="callout"
+        <CalloutBlock
+          content={block.content}
+          variant={block.metadata?.variant || 'info'}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
+          onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-        >
-          <CalloutBlock
-            content={block.content}
-            variant={block.metadata?.variant || 'info'}
-            onFocus={onFocus}
-            onDelete={onDelete}
-            onUpdateContent={onUpdateContent}
-            onUpdateVariant={(variant) => onUpdateMetadata({ ...block.metadata, variant })}
-          />
-        </UniversalBlockWrapper>
+          onUpdateContent={onUpdateContent}
+          onUpdateVariant={(variant) => onUpdateMetadata({ ...block.metadata, variant })}
+        />
       )}
 
       {/* Equation Block */}
       {block.type === 'equation' && (
-        <UniversalBlockWrapper
-          blockType="equation"
+        <EquationBlock
+          latex={block.content}
+          displayMode={block.metadata?.displayMode ?? true}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
+          onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-          noPadding
-        >
-          <EquationBlock
-            latex={block.content}
-            displayMode={block.metadata?.displayMode ?? true}
-            onFocus={onFocus}
-            onDelete={onDelete}
-            onUpdateLatex={onUpdateContent}
-            onUpdateDisplayMode={(displayMode) => onUpdateMetadata({ ...block.metadata, displayMode })}
-          />
-        </UniversalBlockWrapper>
+          onUpdateLatex={onUpdateContent}
+          onUpdateDisplayMode={(displayMode) => onUpdateMetadata({ ...block.metadata, displayMode })}
+        />
       )}
 
       {/* Drawing Block */}
       {block.type === 'drawing' && (
-        <UniversalBlockWrapper
-          blockType="drawing"
+        <DrawingBlock
+          initialPaths={block.metadata?.paths || []}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
+          onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-          noPadding
-        >
-          <DrawingBlock
-            initialPaths={block.metadata?.paths || []}
-            onFocus={onFocus}
-            onDelete={onDelete}
-            onUpdateDrawing={(paths) => {
-              onUpdateMetadata({ ...block.metadata, paths });
-              onUpdateContent(JSON.stringify(paths));
-            }}
-          />
-        </UniversalBlockWrapper>
+          onUpdateDrawing={(paths) => {
+            onUpdateMetadata({ ...block.metadata, paths });
+            onUpdateContent(JSON.stringify(paths));
+          }}
+        />
       )}
 
       {/* Audio Block */}
       {block.type === 'audio' && (
-        <UniversalBlockWrapper
-          blockType="audio"
+        <AudioBlock
+          assetId={block.metadata?.assetId}
+          durationSec={block.metadata?.durationSec || 94}
+          transcription={block.metadata?.transcription || ''}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
+          onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-        >
-          <AudioBlock
-            assetId={block.metadata?.assetId}
-            durationSec={block.metadata?.durationSec || 94}
-            transcription={block.metadata?.transcription || ''}
-            onFocus={onFocus}
-            onDelete={onDelete}
-            onUpdateMetadata={(meta) => {
-              onUpdateMetadata({ ...block.metadata, ...meta });
-            }}
-          />
-        </UniversalBlockWrapper>
+          onUpdateMetadata={(meta) => {
+            onUpdateMetadata({ ...block.metadata, ...meta });
+          }}
+        />
       )}
 
       {/* Image Embed Block */}
@@ -375,50 +341,39 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
 
       {/* File Attachment Block */}
       {block.type === 'file' && (
-        <UniversalBlockWrapper
-          blockType="file"
+        <FileBlock
+          fileName={block.metadata?.fileName || 'Attachment.pdf'}
+          sizeBytes={block.metadata?.sizeBytes || 1845600}
+          url={block.content || block.metadata?.url || '#'}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
+          onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-        >
-          <FileBlock
-            fileName={block.metadata?.fileName || 'Attachment.pdf'}
-            sizeBytes={block.metadata?.sizeBytes || 1845600}
-            url={block.content || block.metadata?.url || '#'}
-            onFocus={onFocus}
-            onDelete={onDelete}
-            onUpdateFile={(fileName, sizeBytes, url) => {
-              if (url) onUpdateContent(url);
-              onUpdateMetadata({ ...block.metadata, fileName, sizeBytes, url });
-            }}
-          />
-        </UniversalBlockWrapper>
+          onUpdateFile={(fileName, sizeBytes, url) => {
+            if (url) onUpdateContent(url);
+            onUpdateMetadata({ ...block.metadata, fileName, sizeBytes, url });
+          }}
+        />
       )}
 
       {/* Bookmark Block */}
       {block.type === 'bookmark' && (
-        <UniversalBlockWrapper
-          blockType="bookmark"
+        <BookmarkBlock
+          url={block.content || block.metadata?.url || 'https://reactnative.dev'}
+          title={block.metadata?.title}
+          description={block.metadata?.description}
+          previewUrl={block.metadata?.previewUrl}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
+          onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-          noPadding
-        >
-          <BookmarkBlock
-            url={block.content || block.metadata?.url || 'https://reactnative.dev'}
-            title={block.metadata?.title}
-            description={block.metadata?.description}
-            previewUrl={block.metadata?.previewUrl}
-            onFocus={onFocus}
-            onDelete={onDelete}
-            onUpdateBookmark={(url, title, description, previewUrl) => {
-              onUpdateContent(url);
-              onUpdateMetadata({ ...block.metadata, url, title, description, previewUrl });
-            }}
-          />
-        </UniversalBlockWrapper>
+          onUpdateBookmark={(url, title, description, previewUrl) => {
+            onUpdateContent(url);
+            onUpdateMetadata({ ...block.metadata, url, title, description, previewUrl });
+          }}
+        />
       )}
 
       {/* Typography: Standard Paragraph */}

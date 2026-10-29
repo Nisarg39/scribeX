@@ -9,8 +9,10 @@ interface CalloutBlockProps {
   content: string;
   variant?: CalloutVariant;
   isSelected?: boolean;
+  isDragging?: boolean;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
   onEndDrag?: () => void;
   onDelete?: () => void;
   onUpdateContent: (content: string) => void;
@@ -47,8 +49,10 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
   content,
   variant = 'info',
   isSelected = false,
+  isDragging = false,
   onFocus,
   onLongPress,
+  onStartDrag,
   onEndDrag,
   onDelete,
   onUpdateContent,
@@ -94,12 +98,17 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
   }, [content]);
 
   return (
-    <View 
+    <Pressable 
+      onPress={onFocus}
       style={{
         borderLeftColor: config.color,
         borderLeftWidth: 4,
+        borderColor: isSelected
+          ? '#06B6D4'
+          : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)'),
+        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.018)',
       }}
-      className="pl-3 py-1 w-full"
+      className="my-1.5 pl-3.5 pr-3 py-2.5 rounded-r-xl border-t border-r border-b w-full transition-all group"
     >
       {/* Top Variant Pill Selector */}
       <View className="flex-row items-center justify-between mb-2">
@@ -138,10 +147,9 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
               >
                 <Text
                   style={{
-                    color: isVariantActive ? '#191919' : (isDark ? '#B5B5B5' : '#626262'),
-                    fontWeight: isVariantActive ? '700' : '500',
+                    color: isVariantActive ? '#191919' : isDark ? '#B5B5B5' : '#626262',
                   }}
-                  className="text-[10px] capitalize"
+                  className="text-[10px] font-bold capitalize"
                 >
                   {v}
                 </Text>
@@ -151,25 +159,17 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
         </View>
       </View>
 
-      {/* Editable Callout Body */}
+      {/* Editable Callout Content Area */}
       <TextInput
-        ref={(el) => {
-          inputRef.current = el;
-          if (el) adjustWebTextareaHeight(el);
-        }}
-        multiline
-        scrollEnabled={false}
+        ref={inputRef}
         value={content}
+        onChangeText={onUpdateContent}
         onFocus={onFocus}
-        onChangeText={(text) => {
-          onUpdateContent(text);
-          adjustWebTextareaHeight(inputRef.current);
-        }}
-        placeholder={`Write ${config.label.toLowerCase()} text or highlight...`}
-        placeholderTextColor={isDark ? '#858585' : '#929292'}
-        className="text-sm leading-relaxed text-light-textPrimary dark:text-dark-textPrimary py-0 outline-none"
-        textAlignVertical="top"
+        placeholder="Type a callout message or highlight note..."
+        placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
+        multiline
+        className="text-xs md:text-sm text-light-textPrimary dark:text-dark-textPrimary leading-relaxed py-1"
       />
-    </View>
+    </Pressable>
   );
 };

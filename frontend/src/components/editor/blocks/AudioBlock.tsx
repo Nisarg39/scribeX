@@ -15,8 +15,10 @@ interface AudioBlockProps {
   durationSec?: number;
   transcription?: string;
   isSelected?: boolean;
+  isDragging?: boolean;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
   onEndDrag?: () => void;
   onDelete?: () => void;
   onUpdateMetadata: (meta: { assetId?: string; durationSec: number; transcription?: string }) => void;
@@ -31,8 +33,10 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   durationSec = 94,
   transcription = '',
   isSelected = false,
+  isDragging = false,
   onFocus,
   onLongPress,
+  onStartDrag,
   onEndDrag,
   onDelete,
   onUpdateMetadata,
@@ -97,7 +101,18 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   const progressPct = durationSec > 0 ? (playbackPos / durationSec) * 100 : 0;
 
   return (
-    <View>
+    <Pressable
+      onPress={onFocus}
+      style={[
+        {
+          borderColor: isSelected
+            ? '#06B6D4'
+            : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.07)'),
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+        },
+      ]}
+      className="my-1.5 w-full rounded-2xl border p-3.5 transition-all group"
+    >
       {/* Top Header: Recording Status or Audio Title */}
       <View className="flex-row items-center justify-between mb-3">
         <View className="flex-row items-center gap-2">
@@ -178,40 +193,35 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
         <Pressable
           onPress={() => setIsPlaying(!isPlaying)}
           disabled={isRecording}
-          style={({ pressed }) => [
-            { backgroundColor: NoteColors.cyan },
-            pressed ? { transform: [{ scale: 0.9 }] } : undefined,
-          ]}
-          className="w-9 h-9 rounded-full items-center justify-center"
+          style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+          className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-iconBg dark:bg-white"
         >
           {isPlaying ? (
-            <Pause size={16} color="#191919" fill="#191919" />
+            <Pause size={12} color={isDark ? '#111111' : '#FFFFFF'} />
           ) : (
-            <Play size={16} color="#191919" fill="#191919" className="ml-0.5" />
+            <Play size={12} color={isDark ? '#111111' : '#FFFFFF'} fill={isDark ? '#111111' : '#FFFFFF'} />
           )}
+          <Text className="text-xs font-bold text-white dark:text-[#111111]">
+            {isPlaying ? 'Pause' : 'Play Audio'}
+          </Text>
         </Pressable>
 
-        {/* Friday AI Transcription Badge & Field */}
-        <View className="flex-1 ml-3">
-          <View className="flex-row items-center gap-1 mb-0.5">
-            <Sparkles size={11} color={NoteColors.lavender} />
-            <Text className="text-[10px] font-bold text-light-textMuted dark:text-dark-textMuted uppercase tracking-wider">
-              Friday AI Whisper Transcript
-            </Text>
-          </View>
-          <TextInput
-            value={textTranscript}
-            onFocus={onFocus}
-            onChangeText={(text) => {
-              setTextTranscript(text);
-              onUpdateMetadata({ durationSec, transcription: text });
-            }}
-            placeholder="Auto-transcription appears here or type notes..."
-            placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
-            className="text-xs text-light-textSecondary dark:text-dark-textSecondary py-0"
-          />
+        <View className="flex-row items-center gap-1.5">
+          <Sparkles size={12} color={NoteColors.lavender} />
+          <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+            {textTranscript ? 'Transcribed' : 'AI Speech to Text'}
+          </Text>
         </View>
       </View>
-    </View>
+
+      {/* Optional Transcription Drawer */}
+      {textTranscript ? (
+        <View className="mt-2.5 p-2.5 rounded-xl bg-black/[0.02] dark:bg-black/20 border border-light-border/30 dark:border-white/5">
+          <Text className="text-[11px] text-light-textSecondary dark:text-dark-textSecondary leading-relaxed">
+            {textTranscript}
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
   );
 };

@@ -15,8 +15,10 @@ interface FileBlockProps {
   sizeBytes?: number;
   url?: string;
   isSelected?: boolean;
+  isDragging?: boolean;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
   onEndDrag?: () => void;
   onDelete?: () => void;
   onUpdateFile: (fileName: string, sizeBytes: number, url?: string) => void;
@@ -35,8 +37,10 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   sizeBytes = 1845600,
   url = '#',
   isSelected = false,
+  isDragging = false,
   onFocus,
   onLongPress,
+  onStartDrag,
   onEndDrag,
   onDelete,
   onUpdateFile,
@@ -68,14 +72,31 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     onUpdateFile(name.trim() || 'Document.pdf', sizeBytes, url);
   };
 
+  const handleDownload = () => {
+    if (Platform.OS === 'web' && url && url !== '#') {
+      window.open(url, '_blank');
+    }
+  };
+
   return (
-    <View className="flex-row items-center justify-between">
+    <Pressable
+      onPress={onFocus}
+      style={[
+        {
+          borderColor: isSelected
+            ? '#06B6D4'
+            : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.07)'),
+          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
+        },
+      ]}
+      className="my-1 w-full rounded-2xl border p-3 flex-row items-center justify-between transition-all group"
+    >
       {/* Left: Icon & File Info */}
       <View className="flex-row items-center gap-3 flex-1 mr-3">
-        {/* Color-coded Icon Container */}
+        {/* Color-coded Icon Capsule */}
         <View
-          style={{ backgroundColor: `${badge.color}25` }}
-          className="w-10 h-10 rounded-xl items-center justify-center"
+          style={{ backgroundColor: `${badge.color}20` }}
+          className="w-10 h-10 rounded-xl items-center justify-center flex-shrink-0"
         >
           <IconComponent size={18} color={badge.color} />
         </View>
@@ -103,34 +124,28 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           )}
 
           <View className="flex-row items-center gap-2 mt-0.5">
-            <Text className="text-[10px] font-bold text-light-textMuted dark:text-dark-textMuted uppercase">
+            <Text className="text-[10px] font-bold text-light-textMuted dark:text-dark-textMuted uppercase tracking-wider">
               {badge.label}
             </Text>
+            <View className="w-1 h-1 rounded-full bg-light-textMuted dark:bg-dark-textMuted opacity-40" />
             <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
-              • {formatBytes(sizeBytes)}
+              {formatBytes(sizeBytes)}
             </Text>
           </View>
         </View>
       </View>
 
-      {/* Right Action: Download / Open */}
+      {/* Right: Quick Action Pill */}
       <Pressable
-        onPress={(e) => {
-          e?.stopPropagation?.();
-          onFocus?.();
-          if (Platform.OS === 'web' && url && url !== '#') {
-            window.open(url, '_blank');
-          }
-        }}
+        onPress={handleDownload}
         style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
-        className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10"
-        accessibilityLabel="Download File"
+        className="flex-row items-center gap-1 px-3 py-1.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10 hover:border-note-cyan/50"
       >
         <Download size={12} color={isDark ? '#F7F7F7' : '#171717'} />
         <Text className="text-[11px] font-semibold text-light-textPrimary dark:text-dark-textPrimary">
           Download
         </Text>
       </Pressable>
-    </View>
+    </Pressable>
   );
 };

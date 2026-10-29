@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
 import { useTheme } from '../../../theme';
-import { Eye, Edit3, Sigma, Sparkles } from 'lucide-react-native';
+import { Edit3, Check, Sigma, Sparkles } from 'lucide-react-native';
 
 interface EquationBlockProps {
   latex: string;
   displayMode?: boolean;
   isSelected?: boolean;
+  isDragging?: boolean;
   onFocus?: () => void;
   onLongPress?: () => void;
+  onStartDrag?: (pageY?: number) => void;
   onEndDrag?: () => void;
   onDelete?: () => void;
   onUpdateLatex: (latex: string) => void;
@@ -68,15 +70,17 @@ export const EquationBlock: React.FC<EquationBlockProps> = ({
   latex,
   displayMode = true,
   isSelected = false,
+  isDragging = false,
   onFocus,
   onLongPress,
+  onStartDrag,
   onEndDrag,
   onDelete,
   onUpdateLatex,
   onUpdateDisplayMode,
 }) => {
   const { isDark } = useTheme();
-  const [activeTab, setActiveTab] = useState<'preview' | 'edit'>('preview');
+  const [isEditing, setIsEditing] = useState(!latex || latex.trim() === '');
 
   const handleInsertSymbol = (snippet: string) => {
     const updated = latex ? `${latex} ${snippet}` : snippet;
@@ -86,118 +90,114 @@ export const EquationBlock: React.FC<EquationBlockProps> = ({
   const previewText = renderReadableMath(latex);
 
   return (
-    <View className="w-full">
-      {/* Top Header Controls */}
-      <View className="flex-row items-center justify-between px-3 py-2 bg-light-appBg dark:bg-dark-raised border-b border-light-border/60 dark:border-white/5">
-        {/* Title */}
-        <View className="flex-row items-center gap-1.5">
-          <Sigma size={13} color={isDark ? '#B18AF3' : '#8B5CF6'} />
-          <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
-            LaTeX Formula
-          </Text>
-        </View>
-
-        {/* View / Edit Mode Switcher */}
-        <View className="flex-row items-center gap-1">
+    <Pressable
+      onPress={onFocus}
+      style={[
+        {
+          borderColor: isSelected
+            ? '#06B6D4'
+            : isEditing
+            ? (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)')
+            : 'transparent',
+          backgroundColor: isSelected
+            ? (isDark ? 'rgba(6, 182, 212, 0.03)' : 'rgba(6, 182, 212, 0.02)')
+            : isEditing
+            ? (isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)')
+            : 'transparent',
+        },
+      ]}
+      className="my-1.5 w-full rounded-2xl border-2 p-3 transition-all relative group"
+    >
+      {/* Floating Toolbar when selected in preview mode */}
+      {isSelected && !isEditing && (
+        <View className="absolute top-2 right-2 flex-row items-center gap-1 bg-black/60 backdrop-blur-md px-2 py-1 rounded-full shadow-lg z-20">
           <Pressable
-            onPress={() => setActiveTab('preview')}
-            className={`flex-row items-center gap-1 px-2.5 py-1 rounded-lg ${
-              activeTab === 'preview' 
-                ? 'bg-light-iconBg dark:bg-white' 
-                : 'bg-black/5 dark:bg-white/5'
-            }`}
+            onPress={() => {
+              onFocus?.();
+              setIsEditing(true);
+            }}
+            className="flex-row items-center gap-1 px-2 py-0.5 rounded-full hover:bg-white/20"
           >
-            <Eye 
-              size={11} 
-              color={activeTab === 'preview' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} 
-            />
-            <Text
-              className={`text-[11px] font-semibold ${
-                activeTab === 'preview'
-                  ? 'text-white dark:text-[#111111] font-bold'
-                  : 'text-light-textSecondary dark:text-dark-textSecondary'
-              }`}
-            >
-              Preview
-            </Text>
+            <Edit3 size={11} color="#FFFFFF" />
+            <Text className="text-[10px] font-bold text-white">Edit Formula</Text>
           </Pressable>
-
-          <Pressable
-            onPress={() => setActiveTab('edit')}
-            className={`flex-row items-center gap-1 px-2.5 py-1 rounded-lg ${
-              activeTab === 'edit' 
-                ? 'bg-light-iconBg dark:bg-white' 
-                : 'bg-black/5 dark:bg-white/5'
-            }`}
-          >
-            <Edit3 
-              size={11} 
-              color={activeTab === 'edit' ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} 
-            />
-            <Text
-              className={`text-[11px] font-semibold ${
-                activeTab === 'edit'
-                  ? 'text-white dark:text-[#111111] font-bold'
-                  : 'text-light-textSecondary dark:text-dark-textSecondary'
-              }`}
-            >
-              Formula
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Symbol Toolbar (visible in edit mode) */}
-      {activeTab === 'edit' && (
-        <View className="p-2 border-b border-light-border/40 dark:border-white/5 flex-row flex-wrap gap-1 bg-black/[0.01] dark:bg-black/20">
-          {COMMON_SYMBOLS.map((s) => (
-            <Pressable
-              key={s.label}
-              onPress={() => handleInsertSymbol(s.insert)}
-              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
-              className="px-2 py-1 rounded-md bg-light-surface dark:bg-[#252525] border border-light-border/40 dark:border-white/5"
-            >
-              <Text className="text-xs font-mono font-bold text-light-textPrimary dark:text-dark-textPrimary">
-                {s.label}
-              </Text>
-            </Pressable>
-          ))}
         </View>
       )}
 
-      {/* Body: Preview or Edit */}
-      {activeTab === 'preview' ? (
-        <Pressable
-          onPress={() => { onFocus?.(); setActiveTab('edit'); }}
-          className="p-5 items-center justify-center min-h-[70px]"
-        >
+      {/* Mode 1: Edit LaTeX formula */}
+      {isEditing ? (
+        <View className="w-full">
+          <View className="flex-row items-center justify-between mb-2 pb-2 border-b border-light-border/40 dark:border-white/5">
+            <View className="flex-row items-center gap-1.5">
+              <Sigma size={13} color={isDark ? '#8EDCEB' : '#08C4E5'} />
+              <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                LaTeX Formula
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => setIsEditing(false)}
+              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+              className="flex-row items-center gap-1 px-3 py-1 rounded-full bg-light-iconBg dark:bg-white"
+            >
+              <Check size={12} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
+              <Text className="text-[11px] font-bold text-white dark:text-[#111111]">
+                Done
+              </Text>
+            </Pressable>
+          </View>
+
+          {/* LaTeX Input Box */}
+          <TextInput
+            value={latex}
+            onChangeText={onUpdateLatex}
+            onFocus={onFocus}
+            placeholder="Type LaTeX e.g. \frac{a}{b} or E = mc^{2}"
+            placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
+            multiline
+            className="p-2.5 rounded-xl bg-light-appBg dark:bg-dark-raised border border-light-border dark:border-white/10 font-mono text-xs text-light-textPrimary dark:text-dark-textPrimary min-h-[48px] mb-2"
+          />
+
+          {/* Symbol Quick-Insert Chips */}
+          <View className="flex-row flex-wrap items-center gap-1 mb-2">
+            {COMMON_SYMBOLS.map((s) => (
+              <Pressable
+                key={s.label}
+                onPress={() => handleInsertSymbol(s.insert)}
+                className="px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10 border border-light-border/40 dark:border-white/5"
+              >
+                <Text className="text-[10px] font-mono font-medium text-light-textPrimary dark:text-dark-textPrimary">
+                  {s.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Live Preview Strip */}
           {latex ? (
-            <Text className="text-lg md:text-xl font-serif text-light-textPrimary dark:text-dark-textPrimary tracking-widest text-center">
+            <View className="p-2 rounded-xl bg-black/[0.02] dark:bg-black/20 border border-light-border/30 dark:border-white/5 items-center justify-center">
+              <Text className="text-sm font-mono text-light-textPrimary dark:text-dark-textPrimary tracking-wider">
+                {previewText}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : (
+        /* Mode 2: Clean Mathematical Typography sitting directly on the canvas */
+        <View className="py-2 px-1 items-center justify-center w-full min-h-[44px]">
+          {latex ? (
+            <Text 
+              className="text-base md:text-lg font-mono italic text-light-textPrimary dark:text-dark-textPrimary text-center tracking-wide leading-relaxed"
+            >
               {previewText}
             </Text>
           ) : (
-            <Text className="text-xs italic text-light-textMuted dark:text-dark-textMuted">
-              Empty equation. Tap to edit LaTeX...
+            <Text className="text-xs italic text-light-textMuted dark:text-dark-textMuted text-center">
+              Empty LaTeX formula. Click to edit math notation.
             </Text>
           )}
-        </Pressable>
-      ) : (
-        <View className="p-3">
-          <TextInput
-            multiline
-            value={latex}
-            onFocus={onFocus}
-            onChangeText={onUpdateLatex}
-            placeholder="e.g. \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}"
-            placeholderTextColor={isDark ? '#626262' : '#A0A0A0'}
-            className="font-mono text-xs md:text-sm text-light-textPrimary dark:text-[#E6E6E6] py-1"
-            textAlignVertical="top"
-            autoCapitalize="none"
-            autoCorrect={false}
-            spellCheck={false}
-          />
         </View>
       )}
-    </View>
+    </Pressable>
   );
 };
