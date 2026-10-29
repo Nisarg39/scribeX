@@ -20,6 +20,7 @@ export interface ChecklistPoint {
   id: string;
   text: string;
   checked: boolean;
+  indent?: number; // 0 = root, 1 = nested sub-task, 2 = deep sub-task
   priority?: TaskPriority;
   dueDate?: string;
   style?: ChecklistPointStyle;
@@ -44,6 +45,12 @@ export type BlockType =
   | 'paragraph'
   | 'heading'
   | 'checklist'
+  | 'habit'
+  | 'kanban'
+  | 'event'
+  | 'contact'
+  | 'expense'
+  | 'reading'
   | 'bulleted_list'
   | 'numbered_list'
   | 'toggle'

@@ -13,12 +13,18 @@ import {
   FileBlock,
   BookmarkBlock,
   ChecklistBlock,
+  HabitBlock,
+  KanbanBlock,
   BulletedListBlock,
   NumberedListBlock,
   ToggleBlock,
   VideoBlock,
   NoteLinkBlock,
   LocationBlock,
+  EventBlock,
+  ContactBlock,
+  ExpenseBlock,
+  ReadingBlock,
 } from './blocks';
 import {
   DividerBlock,
@@ -239,6 +245,59 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
             }
           }}
           onUpdateContent={onUpdateContent}
+        />
+      )}
+
+      {/* Habit Tracker Block */}
+      {block.type === 'habit' && (
+        <HabitBlock
+          title={block.metadata?.title || block.content || ''}
+          frequency={block.metadata?.frequency || 'daily'}
+          streak={block.metadata?.streak ?? 0}
+          targetDays={block.metadata?.targetDays ?? 7}
+          history={block.metadata?.history || {}}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateHabit={(updates) => {
+            const nextMeta = { ...block.metadata, ...updates };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: updates.title !== undefined ? updates.title : block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (updates.title !== undefined) {
+                onUpdateContent(updates.title);
+              }
+            }
+          }}
+        />
+      )}
+
+      {/* In-Note Kanban Board Block */}
+      {block.type === 'kanban' && (
+        <KanbanBlock
+          metadata={block.metadata as any}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateKanban={(kanbanData) => {
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: kanbanData as any,
+                content: 'Kanban Board',
+              });
+            } else {
+              onUpdateMetadata(kanbanData as any);
+              onUpdateContent('Kanban Board');
+            }
+          }}
         />
       )}
 
@@ -512,6 +571,106 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
               lat,
               lng,
             });
+          }}
+        />
+      )}
+
+      {/* Date & Event Block */}
+      {block.type === 'event' && (
+        <EventBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateEvent={(eventData) => {
+            const nextMeta = { ...block.metadata, ...eventData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: eventData.title || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (eventData.title) onUpdateContent(eventData.title);
+            }
+          }}
+        />
+      )}
+
+      {/* Contact / Person Profile Block */}
+      {block.type === 'contact' && (
+        <ContactBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateContact={(contactData) => {
+            const nextMeta = { ...block.metadata, ...contactData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: contactData.name || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (contactData.name) onUpdateContent(contactData.name);
+            }
+          }}
+        />
+      )}
+
+      {/* Expense / Financial Record Block */}
+      {block.type === 'expense' && (
+        <ExpenseBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateExpense={(expenseData) => {
+            const nextMeta = { ...block.metadata, ...expenseData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: expenseData.merchant || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (expenseData.merchant) onUpdateContent(expenseData.merchant);
+            }
+          }}
+        />
+      )}
+
+      {/* Reading List / Book Progress Block */}
+      {block.type === 'reading' && (
+        <ReadingBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateReading={(readingData) => {
+            const nextMeta = { ...block.metadata, ...readingData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: readingData.title || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (readingData.title) onUpdateContent(readingData.title);
+            }
           }}
         />
       )}

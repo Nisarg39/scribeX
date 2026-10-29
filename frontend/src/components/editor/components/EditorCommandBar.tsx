@@ -64,6 +64,10 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
       <View className="flex-row items-center gap-2">
         <Pressable
           onPress={onOpenInsertPalette}
+          accessibilityLabel="Open Insert Palette"
+          accessibilityRole="button"
+          dataSet={{ scribexInsertBtn: 'true' }}
+          {...({ 'data-scribex-insert-btn': 'true' } as any)}
           className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-iconBg dark:bg-white shadow-sm"
           style={({ pressed }) => (pressed ? { transform: [{ scale: 0.95 }] } : undefined)}
         >

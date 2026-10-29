@@ -21,6 +21,8 @@ Remaining Tasks to fix
 12 - [x] Inline Slash Command (/) Menu & Fast Markdown Typing Shortcuts (#, ##, ###, >, -, 1., [], ---, ```, $$, >>) with keyboard navigation and non-generic canvas dock (COMPLETED)
 13 - [x] Note Templates & Scaffolding: Meeting Notes, Daily Standup, Project Spec, Weekly Review, Research Note with 1-tap empty note starter pills and full Tier-1 Undo/Redo tracking (COMPLETED)
 14 - [x] Backlinks & Lateral Knowledge Graph Relations: Automatic bottom-of-note linked references strip tracking bidirectional note_links with one-tap deep navigation (COMPLETED)
+15 - [x] Phase 1 Manual Input Methods: Nested Checklists (Tab/Shift+Tab, multi-level hierarchy, tree guide lines), Habit Tracker (7-day matrix, dynamic streak calculations, frequency cycles), and In-Note Kanban Board (To Do, In Progress, Done lanes with directional advance controls) with 100% round-trip Markdown AST serialization (COMPLETED)
+16 - [x] Phase 2 Manual Input Methods: Date & Calendar Event (#33), Contact / Person Profile (#34), Expense / Financial Record (#35), and Reading Queue / Book Item (#36) with 100% round-trip Markdown AST serialization and canvas-native styling (COMPLETED)
 
 
 

@@ -14,11 +14,12 @@ export function coalesceChecklistBlocks(blocks: ComposableBlock[]): ComposableBl
   for (const block of blocks) {
     if (block.type === 'checklist') {
       const items: ChecklistPoint[] = Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
-        ? block.metadata.items
+        ? block.metadata.items.map((it: any) => ({ ...it, indent: it.indent || 0 }))
         : [{
             id: block.metadata?.taskId || block.id,
             text: block.content || '',
             checked: !!block.metadata?.checked,
+            indent: block.metadata?.indent || 0,
             priority: block.metadata?.priority || 'none',
             dueDate: block.metadata?.dueDate || 'Today',
             style: block.metadata?.style || 'paragraph',
@@ -266,6 +267,152 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
+    // Habit Tracker: <!-- scribex:block type=habit title="..." frequency="..." streak=... targetDays=... history="..." -->
+    const habitMatch = line.trim().match(/^<!--\s*scribex:block\s+type=habit\s+([^>]+)-->/);
+    if (habitMatch) {
+      flushParagraph();
+      const metaStr = habitMatch[1];
+      const titleMatch = metaStr.match(/title="([^"]*)"/);
+      const freqMatch = metaStr.match(/frequency="([^"]*)"/);
+      const streakMatch = metaStr.match(/streak=(\d+)/);
+      const targetMatch = metaStr.match(/targetDays=(\d+)/);
+      const histMatch = metaStr.match(/history=(['"])(.*?)\1/);
+      let history: Record<string, boolean> = {};
+      try {
+        if (histMatch) history = JSON.parse(histMatch[2]);
+      } catch (_) {}
+
+      const habitTitle = titleMatch ? titleMatch[1] : 'Habit Tracker';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'habit',
+        content: habitTitle,
+        metadata: {
+          title: habitTitle,
+          frequency: (freqMatch ? freqMatch[1] : 'daily') as any,
+          streak: streakMatch ? parseInt(streakMatch[1], 10) : 0,
+          targetDays: targetMatch ? parseInt(targetMatch[1], 10) : 7,
+          history,
+        },
+      });
+      if (i + 1 < lines.length && lines[i + 1].trim().startsWith('**Habit:')) {
+        i++;
+      }
+      continue;
+    }
+
+    // In-Note Kanban Board: <!-- scribex:block type=kanban data='...' -->
+    const kanbanMatch = line.trim().match(/^<!--\s*scribex:block\s+type=kanban\s+data=(['"])(.*?)\1\s*-->/);
+    if (kanbanMatch) {
+      flushParagraph();
+      let kanbanData: any = null;
+      try {
+        kanbanData = JSON.parse(kanbanMatch[2]);
+      } catch (_) {}
+
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'kanban',
+        content: 'Kanban Board',
+        metadata: kanbanData || {
+          columns: [
+            { id: 'todo', title: 'To Do', color: '#38BDF8', cardIds: [] },
+            { id: 'in_progress', title: 'In Progress', color: '#F59E0B', cardIds: [] },
+            { id: 'done', title: 'Done', color: '#10B981', cardIds: [] },
+          ],
+          cards: {},
+        },
+      });
+      while (i + 1 < lines.length && (lines[i + 1].trim().startsWith('### Kanban Board') || lines[i + 1].trim().startsWith('- **') || (lines[i + 1].trim() === '' && i + 2 < lines.length && lines[i + 2].trim().startsWith('- **')))) {
+        i++;
+      }
+      continue;
+    }
+
+    // Date & Event Block: <!-- scribex:block type=event data='...' -->
+    const eventMatch = line.trim().match(/^<!--\s*scribex:block\s+type=event\s+data=(['"])(.*?)\1\s*-->/);
+    if (eventMatch) {
+      flushParagraph();
+      let eventData: any = null;
+      try {
+        eventData = JSON.parse(eventMatch[2]);
+      } catch (_) {}
+      const eventTitle = eventData?.title || 'Event / Meeting';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'event',
+        content: eventTitle,
+        metadata: eventData || { title: eventTitle },
+      });
+      if (i + 1 < lines.length && (lines[i + 1].trim().startsWith('📅 **Event:') || lines[i + 1].trim().startsWith('**Event:'))) {
+        i++;
+      }
+      continue;
+    }
+
+    // Contact Profile Block: <!-- scribex:block type=contact data='...' -->
+    const contactMatch = line.trim().match(/^<!--\s*scribex:block\s+type=contact\s+data=(['"])(.*?)\1\s*-->/);
+    if (contactMatch) {
+      flushParagraph();
+      let contactData: any = null;
+      try {
+        contactData = JSON.parse(contactMatch[2]);
+      } catch (_) {}
+      const contactName = contactData?.name || 'Contact';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'contact',
+        content: contactName,
+        metadata: contactData || { name: contactName },
+      });
+      if (i + 1 < lines.length && (lines[i + 1].trim().startsWith('👤 **Contact:') || lines[i + 1].trim().startsWith('**Contact:'))) {
+        i++;
+      }
+      continue;
+    }
+
+    // Expense / Receipt Block: <!-- scribex:block type=expense data='...' -->
+    const expenseMatch = line.trim().match(/^<!--\s*scribex:block\s+type=expense\s+data=(['"])(.*?)\1\s*-->/);
+    if (expenseMatch) {
+      flushParagraph();
+      let expenseData: any = null;
+      try {
+        expenseData = JSON.parse(expenseMatch[2]);
+      } catch (_) {}
+      const merchant = expenseData?.merchant || 'Expense';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'expense',
+        content: merchant,
+        metadata: expenseData || { merchant },
+      });
+      if (i + 1 < lines.length && (lines[i + 1].trim().startsWith('💳 **Expense:') || lines[i + 1].trim().startsWith('**Expense:'))) {
+        i++;
+      }
+      continue;
+    }
+
+    // Reading List Item Block: <!-- scribex:block type=reading data='...' -->
+    const readingMatch = line.trim().match(/^<!--\s*scribex:block\s+type=reading\s+data=(['"])(.*?)\1\s*-->/);
+    if (readingMatch) {
+      flushParagraph();
+      let readingData: any = null;
+      try {
+        readingData = JSON.parse(readingMatch[2]);
+      } catch (_) {}
+      const bookTitle = readingData?.title || 'Reading Item';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'reading',
+        content: bookTitle,
+        metadata: readingData || { title: bookTitle },
+      });
+      if (i + 1 < lines.length && (lines[i + 1].trim().startsWith('📖 **Reading:') || lines[i + 1].trim().startsWith('**Reading:'))) {
+        i++;
+      }
+      continue;
+    }
+
     // Annotated Video: ![Caption](url) <!-- scribex:media type=video width=100% align=center -->
     const videoMatch = line.trim().match(/^!\[(.*?)\]\((.*?)\)\s*<!--\s*scribex:media\s+type=video\s*([^>]*)-->/);
     if (videoMatch) {
@@ -419,11 +566,13 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
     }
 
     // 8. Checklist (- [ ] or - [x])
-    const checkMatch = line.match(/^[-*]\s+\[([ xX])\]\s+(.+)$/);
+    const checkMatch = line.match(/^(\s*)[-*]\s+\[([ xX])\]\s+(.+)$/);
     if (checkMatch) {
       flushParagraph();
-      const isChecked = checkMatch[1].toLowerCase() === 'x';
-      let rawText = checkMatch[2].trim();
+      const leadingSpaces = checkMatch[1].length;
+      let indent = Math.min(2, Math.floor(leadingSpaces / 2));
+      const isChecked = checkMatch[2].toLowerCase() === 'x';
+      let rawText = checkMatch[3].trim();
       let taskId = `task-${Date.now()}-${blocks.length + 1}`;
       let priority = 'none';
       let dueDate = 'Today';
@@ -436,10 +585,12 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
         const prioMatch = metaStr.match(/priority=([^\s]+)/);
         const dueMatch = metaStr.match(/due=([^\s]+)/);
         const styleMatch = metaStr.match(/style=([^\s]+)/);
+        const indentMatch = metaStr.match(/indent=(\d+)/);
 
         if (idMatch) taskId = idMatch[1];
         if (prioMatch) priority = prioMatch[1];
         if (dueMatch) dueDate = dueMatch[1];
+        if (indentMatch) indent = parseInt(indentMatch[1], 10);
         if (styleMatch && ['paragraph', 'h1', 'h2', 'quote'].includes(styleMatch[1])) {
           style = styleMatch[1];
         }
@@ -463,6 +614,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
         id: taskId,
         text: rawText,
         checked: isChecked,
+        indent: Math.max(0, Math.min(2, indent)),
         priority: priority as any,
         dueDate,
         style,
@@ -611,7 +763,7 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
       case 'checklist': {
         const items: ChecklistPoint[] = Array.isArray(block.metadata?.items) && block.metadata.items.length > 0
           ? block.metadata.items
-          : (block.content ? [{ id: block.metadata?.taskId || block.id, text: block.content, checked: !!block.metadata?.checked, priority: block.metadata?.priority || 'none', dueDate: block.metadata?.dueDate || 'Today' }] : []);
+          : (block.content ? [{ id: block.metadata?.taskId || block.id, text: block.content, checked: !!block.metadata?.checked, indent: block.metadata?.indent || 0, priority: block.metadata?.priority || 'none', dueDate: block.metadata?.dueDate || 'Today' }] : []);
         
         const lines = items.map((item) => {
           const checked = item.checked ? 'x' : ' ';
@@ -619,9 +771,43 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
           const priority = item.priority && item.priority !== 'none' ? ` priority=${item.priority}` : '';
           const due = item.dueDate ? ` due=${item.dueDate}` : '';
           const style = item.style && item.style !== 'paragraph' ? ` style=${item.style}` : '';
-          return `- [${checked}] ${item.text.trim()} <!-- scribex:task id=${taskId}${style}${priority}${due} -->`;
+          const indent = Math.max(0, Math.min(2, item.indent || 0));
+          const indentPrefix = '  '.repeat(indent);
+          const indentAttr = indent > 0 ? ` indent=${indent}` : '';
+          return `${indentPrefix}- [${checked}] ${item.text.trim()} <!-- scribex:task id=${taskId}${style}${priority}${due}${indentAttr} -->`;
         });
         chunks.push(lines.join('\n'));
+        break;
+      }
+
+      case 'habit': {
+        const title = (block.metadata?.title || block.content || 'Habit').replace(/"/g, "'");
+        const freq = block.metadata?.frequency || 'daily';
+        const streak = block.metadata?.streak ?? 0;
+        const target = block.metadata?.targetDays ?? 7;
+        const histJson = JSON.stringify(block.metadata?.history || {}).replace(/'/g, "\\'");
+        chunks.push(`<!-- scribex:block type=habit title="${title}" frequency="${freq}" streak=${streak} targetDays=${target} history='${histJson}' -->\n**Habit: ${title}** (${freq} • 🔥 ${streak} days)`);
+        break;
+      }
+
+      case 'kanban': {
+        const data = block.metadata || {
+          columns: [
+            { id: 'todo', title: 'To Do', color: '#38BDF8', cardIds: [] },
+            { id: 'in_progress', title: 'In Progress', color: '#F59E0B', cardIds: [] },
+            { id: 'done', title: 'Done', color: '#10B981', cardIds: [] },
+          ],
+          cards: {},
+        };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const summaryLines: string[] = ['### Kanban Board'];
+        if (Array.isArray(data.columns)) {
+          for (const col of data.columns) {
+            const cardTitles = (col.cardIds || []).map((id: string) => data.cards?.[id]?.title).filter(Boolean);
+            summaryLines.push(`- **${col.title}**: ${cardTitles.join(', ') || '(empty)'}`);
+          }
+        }
+        chunks.push(`<!-- scribex:block type=kanban data='${dataJson}' -->\n${summaryLines.join('\n')}`);
         break;
       }
 
@@ -752,6 +938,46 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
         const lat = block.metadata?.lat ?? 37.7785;
         const lng = block.metadata?.lng ?? -122.3998;
         chunks.push(`📍 [${place}](geo:${lat},${lng}) <!-- scribex:block type=location address="${address}" lat=${lat} lng=${lng} -->`);
+        break;
+      }
+
+      case 'event': {
+        const data = block.metadata || { title: block.content || 'Event' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const title = data.title || block.content || 'Event';
+        const dateStr = data.startDate ? `${data.startDate}${data.startTime ? ' ' + data.startTime : ''}` : '';
+        const locStr = data.location ? ` @ ${data.location}` : '';
+        chunks.push(`<!-- scribex:block type=event data='${dataJson}' -->\n📅 **Event: ${title}** (${dateStr}${locStr})`);
+        break;
+      }
+
+      case 'contact': {
+        const data = block.metadata || { name: block.content || 'Contact' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const name = data.name || block.content || 'Contact';
+        const roleStr = data.role ? `${data.role}${data.company ? ' @ ' + data.company : ''}` : data.company || '';
+        const emailStr = data.email ? ` • ${data.email}` : '';
+        chunks.push(`<!-- scribex:block type=contact data='${dataJson}' -->\n👤 **Contact: ${name}** (${roleStr}${emailStr})`);
+        break;
+      }
+
+      case 'expense': {
+        const data = block.metadata || { merchant: block.content || 'Expense' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const merchant = data.merchant || block.content || 'Expense';
+        const amtStr = `${data.currency || '$'}${data.amount || '0.00'}`;
+        const catStr = data.category ? ` • ${data.category}` : '';
+        chunks.push(`<!-- scribex:block type=expense data='${dataJson}' -->\n💳 **Expense: ${merchant}** (${amtStr}${catStr})`);
+        break;
+      }
+
+      case 'reading': {
+        const data = block.metadata || { title: block.content || 'Reading Item' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const title = data.title || block.content || 'Book';
+        const authorStr = data.author ? ` by ${data.author}` : '';
+        const progressStr = data.currentPage && data.totalPages ? ` • ${data.currentPage}/${data.totalPages} pages` : '';
+        chunks.push(`<!-- scribex:block type=reading data='${dataJson}' -->\n📖 **Reading: ${title}**${authorStr} (${data.status || 'reading'}${progressStr})`);
         break;
       }
 

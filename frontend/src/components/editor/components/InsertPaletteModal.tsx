@@ -22,6 +22,12 @@ import {
   Video,
   Link2,
   MapPin,
+  Flame,
+  Kanban,
+  Calendar,
+  User,
+  Receipt,
+  BookOpen,
 } from 'lucide-react-native';
 import { BlockType } from '../../../types/note';
 import { useTheme } from '../../../theme';
@@ -312,6 +318,59 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
               </Pressable>
 
               <Pressable
+                onPress={() =>
+                  onInsertBlock('habit', {
+                    title: 'Daily Habit',
+                    frequency: 'daily',
+                    streak: 0,
+                    targetDays: 7,
+                    history: {},
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-amber-500/15 items-center justify-center mb-2">
+                  <Flame size={16} color="#F59E0B" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Habit Tracker
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  7-day streak matrix
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('kanban', {
+                    columns: [
+                      { id: 'todo', title: 'To Do', color: '#38BDF8', cardIds: ['k-1'] },
+                      { id: 'in_progress', title: 'In Progress', color: '#F59E0B', cardIds: ['k-2'] },
+                      { id: 'done', title: 'Done', color: '#10B981', cardIds: ['k-3'] },
+                    ],
+                    cards: {
+                      'k-1': { id: 'k-1', title: 'Action item 1' },
+                      'k-2': { id: 'k-2', title: 'Action item 2' },
+                      'k-3': { id: 'k-3', title: 'Action item 3' },
+                    },
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center mb-2">
+                  <Kanban size={16} color="#06B6D4" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Kanban Board
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Interactive lane workflow
+                </Text>
+              </Pressable>
+
+              <Pressable
                 onPress={() => onInsertBlock('code', { language: 'typescript' })}
                 style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
                 className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
@@ -432,6 +491,107 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
                 </Text>
                 <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
                   Place & coordinates
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('event', {
+                    title: 'Sprint Review & Sync',
+                    startDate: new Date().toISOString().split('T')[0],
+                    startTime: '10:00',
+                    endTime: '11:00',
+                    isAllDay: false,
+                    location: 'Room 4B / Zoom',
+                    reminder: '15m before',
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center mb-2">
+                  <Calendar size={16} color="#06B6D4" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Event / Calendar
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Date, time & location
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('contact', {
+                    name: 'Alex Morgan',
+                    role: 'Lead Architect',
+                    company: 'Distributed Labs',
+                    email: 'alex@example.com',
+                    phone: '',
+                    notes: '',
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-purple-500/15 items-center justify-center mb-2">
+                  <User size={16} color="#8B5CF6" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Person Profile
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Contact card & context
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('expense', {
+                    merchant: 'Server Hosting / SaaS',
+                    amount: '49.99',
+                    currency: '$',
+                    category: 'Tech',
+                    date: new Date().toISOString().split('T')[0],
+                    status: 'cleared',
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-emerald-500/15 items-center justify-center mb-2">
+                  <Receipt size={16} color="#10B981" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Expense Record
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Financial receipt & status
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('reading', {
+                    title: 'Designing Data-Intensive Applications',
+                    author: 'Martin Kleppmann',
+                    status: 'reading',
+                    currentPage: 120,
+                    totalPages: 560,
+                    rating: 5,
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-sky-500/15 items-center justify-center mb-2">
+                  <BookOpen size={16} color="#0284C7" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Reading Queue
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Book progress & ratings
                 </Text>
               </Pressable>
             </View>

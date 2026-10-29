@@ -10,7 +10,9 @@ import {
   Plus,
   ChevronUp,
   ChevronDown,
-  Type
+  Type,
+  ListIndentIncrease,
+  ListIndentDecrease
 } from 'lucide-react-native';
 
 interface ChecklistBlockProps {
@@ -118,11 +120,12 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
 
   // Normalize items to ensure a checklist container array
   const checklistItems: ChecklistPoint[] = Array.isArray(items) && items.length > 0
-    ? items.map(it => ({ ...it, style: it.style || 'paragraph' }))
+    ? items.map(it => ({ ...it, style: it.style || 'paragraph', indent: it.indent || 0 }))
     : [{
         id: taskId || `task-${Date.now()}-1`,
         text: content || '',
         checked: checked,
+        indent: 0,
         priority: priority || 'none',
         dueDate: dueDate || 'Today',
         style: 'paragraph',
@@ -187,15 +190,31 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
     handleCommitItems(next);
   };
 
+  const handleIndentItem = (index: number, delta: number) => {
+    onFocus?.();
+    const currentIndent = checklistItems[index].indent || 0;
+    const prevIndent = index > 0 ? (checklistItems[index - 1].indent || 0) : 0;
+    const maxAllowed = Math.min(2, prevIndent + 1);
+    const nextIndent = Math.max(0, Math.min(maxAllowed, currentIndent + delta));
+    if (nextIndent === currentIndent) return;
+
+    const next = checklistItems.map((it, i) =>
+      i === index ? { ...it, indent: nextIndent } : it
+    );
+    handleCommitItems(next);
+  };
+
   const handleAddItem = (afterIndex?: number) => {
     onFocus?.();
     const newId = `task-${Date.now()}-${checklistItems.length + 1}`;
     setNewlyAddedId(newId);
     onFocusItem?.(newId);
+    const parentIndent = afterIndex !== undefined ? (checklistItems[afterIndex]?.indent || 0) : 0;
     const newPoint: ChecklistPoint = {
       id: newId,
       text: '',
       checked: false,
+      indent: parentIndent,
       priority: 'none',
       dueDate: 'Today',
       style: 'paragraph',
@@ -329,9 +348,29 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
           }
 
           const isItemChecked = !!item.checked;
+          const indentLevel = Math.max(0, Math.min(2, item.indent || 0));
 
           return (
-            <View key={item.id || idx} className="flex-row items-start gap-3 py-1.5 group">
+            <View
+              key={item.id || idx}
+              style={{ marginLeft: indentLevel * 24 }}
+              className="flex-row items-start gap-3 py-1.5 group relative"
+            >
+              {/* Hierarchical Tree Guide Line for Nested Tasks */}
+              {indentLevel > 0 && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: -14,
+                    top: 2,
+                    bottom: 6,
+                    width: 2,
+                    borderBottomLeftRadius: 4,
+                  }}
+                  className="bg-light-border/80 dark:bg-white/10"
+                />
+              )}
+
               {/* Checkbox Toggle */}
               <Pressable
                 onPress={() => handleToggleItem(idx)}
@@ -373,11 +412,17 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                       returnKeyType="next"
                       blurOnSubmit={false}
                       onKeyPress={(e: any) => {
-                        if (e.nativeEvent.key === 'Enter') {
+                        if (e.nativeEvent.key === 'Tab') {
+                          e.preventDefault?.();
+                          handleIndentItem(idx, e.nativeEvent.shiftKey ? -1 : 1);
+                        } else if (e.nativeEvent.key === 'Enter') {
                           e.preventDefault?.();
                           handleAddItem(idx);
                         } else if (e.nativeEvent.key === 'Backspace' && item.text === '') {
-                          if (item.style && item.style !== 'paragraph') {
+                          if ((item.indent || 0) > 0) {
+                            e.preventDefault?.();
+                            handleIndentItem(idx, -1);
+                          } else if (item.style && item.style !== 'paragraph') {
                             e.preventDefault?.();
                             const next = checklistItems.map((it, i) =>
                               i === idx ? { ...it, style: 'paragraph' as ChecklistPointStyle } : it
@@ -422,11 +467,17 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                     returnKeyType="next"
                     blurOnSubmit={false}
                     onKeyPress={(e: any) => {
-                      if (e.nativeEvent.key === 'Enter') {
+                      if (e.nativeEvent.key === 'Tab') {
+                        e.preventDefault?.();
+                        handleIndentItem(idx, e.nativeEvent.shiftKey ? -1 : 1);
+                      } else if (e.nativeEvent.key === 'Enter') {
                         e.preventDefault?.();
                         handleAddItem(idx);
                       } else if (e.nativeEvent.key === 'Backspace' && item.text === '') {
-                        if (item.style && item.style !== 'paragraph') {
+                        if ((item.indent || 0) > 0) {
+                          e.preventDefault?.();
+                          handleIndentItem(idx, -1);
+                        } else if (item.style && item.style !== 'paragraph') {
                           e.preventDefault?.();
                           const next = checklistItems.map((it, i) =>
                             i === idx ? { ...it, style: 'paragraph' as ChecklistPointStyle } : it
@@ -517,8 +568,38 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                     </Pressable>
                   </View>
 
-                  {/* Right: Point Reorder (Up/Down) & Delete Controls */}
+                  {/* Right: Point Reorder (Up/Down), Indent/Outdent & Delete Controls */}
                   <View className="flex-row items-center gap-0.5">
+                    {/* Outdent (Shift+Tab) */}
+                    <Pressable
+                      onPress={() => handleIndentItem(idx, -1)}
+                      disabled={indentLevel === 0}
+                      className={`p-1 rounded-full ${
+                        indentLevel === 0
+                          ? 'opacity-20'
+                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10'
+                      }`}
+                      style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
+                      accessibilityLabel="Outdent task (Shift+Tab)"
+                    >
+                      <ListIndentDecrease size={14} color={isDark ? '#B5B5B5' : '#626262'} strokeWidth={2.2} />
+                    </Pressable>
+
+                    {/* Indent (Tab) */}
+                    <Pressable
+                      onPress={() => handleIndentItem(idx, 1)}
+                      disabled={indentLevel >= 2 || idx === 0}
+                      className={`p-1 rounded-full ${
+                        indentLevel >= 2 || idx === 0
+                          ? 'opacity-20'
+                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10'
+                      }`}
+                      style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
+                      accessibilityLabel="Indent task (Tab)"
+                    >
+                      <ListIndentIncrease size={14} color={isDark ? '#B5B5B5' : '#626262'} strokeWidth={2.2} />
+                    </Pressable>
+
                     {/* Move Up */}
                     <Pressable
                       onPress={() => handleMoveItemUp(idx)}
