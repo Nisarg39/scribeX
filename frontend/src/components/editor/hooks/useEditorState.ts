@@ -535,23 +535,25 @@ export const useEditorState = ({
   };
 
   const handleInsertBlock = (type: BlockType, metadata?: Record<string, any>, initialContent: string = '') => {
+    const currentBlocks = blocksRef.current;
+    const currentActiveId = activeBlockIdRef.current;
     const newBlock: ComposableBlock = {
-      id: `b-${Date.now()}-${blocks.length + 1}`,
+      id: `b-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       type,
       content: initialContent,
       metadata,
     };
 
-    const activeIndex = activeBlockId ? blocks.findIndex((b) => b.id === activeBlockId) : -1;
+    const activeIndex = currentActiveId ? currentBlocks.findIndex((b) => b.id === currentActiveId) : -1;
     let nextBlocks: ComposableBlock[];
     if (activeIndex !== -1) {
       nextBlocks = [
-        ...blocks.slice(0, activeIndex + 1),
+        ...currentBlocks.slice(0, activeIndex + 1),
         newBlock,
-        ...blocks.slice(activeIndex + 1),
+        ...currentBlocks.slice(activeIndex + 1),
       ];
     } else {
-      nextBlocks = [...blocks, newBlock];
+      nextBlocks = [...currentBlocks, newBlock];
     }
 
     actionHistory.recordAction({
@@ -559,10 +561,14 @@ export const useEditorState = ({
       type: 'INSERT_BLOCK',
       description: `Insert ${type}`,
       blockId: newBlock.id,
-      before: { blocks: blocksRef.current },
+      before: { blocks: currentBlocks },
       after: { blocks: nextBlocks },
     });
 
+    blocksRef.current = nextBlocks;
+    activeBlockIdRef.current = newBlock.id;
+    blocksRef.current = nextBlocks;
+    activeBlockIdRef.current = newBlock.id;
     setBlocks(nextBlocks);
     setActiveBlockId(newBlock.id);
     persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
@@ -646,6 +652,8 @@ export const useEditorState = ({
       after: { blocks: nextBlocks },
     });
 
+    blocksRef.current = nextBlocks;
+    activeBlockIdRef.current = newBlock.id;
     setBlocks(nextBlocks);
     setActiveBlockId(newBlock.id);
     setFocusTarget({
@@ -742,6 +750,95 @@ export const useEditorState = ({
       template.colorToken,
       newBlocks
     );
+  };
+
+  const handleInsertMultipleBlocks = (
+    newBlocks: { type: BlockType; content?: string; metadata?: Record<string, any> }[],
+    targetBlockId?: string | null
+  ) => {
+    const currentBlocks = blocksRef.current;
+    if (newBlocks.length === 0) return;
+
+    const instantiated: ComposableBlock[] = newBlocks.map((b, idx) => ({
+      id: `b-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      type: b.type,
+      content: b.content || '',
+      metadata: b.metadata || {},
+    }));
+
+    let nextBlocks: ComposableBlock[];
+    if (targetBlockId) {
+      const targetIndex = currentBlocks.findIndex((b) => b.id === targetBlockId);
+      if (targetIndex !== -1) {
+        nextBlocks = [
+          ...currentBlocks.slice(0, targetIndex + 1),
+          ...instantiated,
+          ...currentBlocks.slice(targetIndex + 1),
+        ];
+      } else {
+        nextBlocks = [...currentBlocks, ...instantiated];
+      }
+    } else {
+      nextBlocks = [...currentBlocks, ...instantiated];
+    }
+
+    actionHistory.recordAction({
+      tier: 2,
+      type: 'INSERT_BLOCK',
+      description: `Insert ${instantiated.length} elements`,
+      before: { blocks: currentBlocks },
+      after: { blocks: nextBlocks },
+    });
+
+    blocksRef.current = nextBlocks;
+    const lastInserted = instantiated[instantiated.length - 1];
+    activeBlockIdRef.current = lastInserted.id;
+    setBlocks(nextBlocks);
+    setActiveBlockId(lastInserted.id);
+    persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
+  };
+
+  const handleImportBlocks = (
+    importedBlocks: ComposableBlock[],
+    importedTitle?: string,
+    importedColor?: NoteColorToken
+  ) => {
+    const currentBlocks = blocksRef.current;
+    const currentTitle = titleRef.current;
+    const nextTitle = importedTitle || currentTitle;
+    const nextColor = importedColor || colorTokenRef.current;
+
+    actionHistory.recordAction({
+      tier: 1,
+      type: 'APPLY_TEMPLATE',
+      description: 'Import Document',
+      before: {
+        title: currentTitle,
+        colorToken: colorTokenRef.current,
+        blocks: currentBlocks,
+      },
+      after: {
+        title: nextTitle,
+        colorToken: nextColor,
+        blocks: importedBlocks,
+      },
+    });
+
+    if (importedTitle) {
+      setTitle(importedTitle);
+      titleRef.current = importedTitle;
+    }
+    if (importedColor) {
+      setColorToken(importedColor);
+      colorTokenRef.current = importedColor;
+    }
+    blocksRef.current = importedBlocks;
+    if (importedBlocks.length > 0) {
+      activeBlockIdRef.current = importedBlocks[0].id;
+      setActiveBlockId(importedBlocks[0].id);
+    }
+    setBlocks(importedBlocks);
+    persistChanges(nextTitle, nextColor, importedBlocks);
   };
 
   const handleSwitchActiveType = (type: BlockType, metadata?: Record<string, any>) => {
@@ -1070,6 +1167,8 @@ export const useEditorState = ({
     handleApplyTemplate,
     handleDeleteBlock,
     handleInsertBlock,
+    handleInsertMultipleBlocks,
+    handleImportBlocks,
     handleSwitchActiveType,
     handleSplitBlock,
     handleMergeWithPrevious,

@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Platform } from 'react-native';
 import { NoteItem } from '../../types/note';
 import { useTheme, NoteColors } from '../../theme';
-import { Folder } from 'lucide-react-native';
+import { Folder, Upload } from 'lucide-react-native';
 import { BlockRenderer } from './BlockRenderer';
 import {
   EditorHeader,
@@ -15,6 +15,7 @@ import {
   useEditorState,
   useEditorDragAndDrop,
   useEditorInteractions,
+  useEditorCapture,
 } from './hooks';
 
 export interface BlockEditorProps {
@@ -70,6 +71,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     handleApplyTemplate,
     handleDeleteBlock,
     handleInsertBlock,
+    handleInsertMultipleBlocks,
+    handleImportBlocks,
     handleSwitchActiveType,
     handleSplitBlock,
     handleMergeWithPrevious,
@@ -197,6 +200,24 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     }, 1500);
   };
 
+  // 5. Ingestion & Smart Capture Pipeline (#37 Clipboard, #39 Drag-and-Drop, #40 Import/Export)
+  const {
+    isDraggingFiles,
+    handleExportMarkdown,
+    handleExportJSON,
+    handleTriggerImport,
+  } = useEditorCapture({
+    note,
+    title,
+    colorToken,
+    blocks,
+    blocksRef,
+    activeBlockIdRef,
+    handleInsertBlock,
+    handleInsertMultipleBlocks,
+    handleImportBlocks,
+  });
+
   return (
     <View className="flex-1 w-full bg-light-surface dark:bg-dark-surface relative">
       {/* Top Editorial Header Bar */}
@@ -209,6 +230,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         onTogglePin={handleTogglePin}
         onToggleFavorite={handleToggleFavorite}
         onDeleteNote={handleDeleteNote}
+        onExportMarkdown={handleExportMarkdown}
+        onExportJSON={handleExportJSON}
+        onImportFile={handleTriggerImport}
       />
 
       {/* Top Sticky Editorial Command Bar */}
@@ -416,6 +440,40 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           setIsInsertPaletteOpen(false);
         }}
       />
+
+      {/* Desktop Drag-and-Drop Ingestion Overlay (#39) */}
+      {isDraggingFiles && (
+        <View
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: isDark ? 'rgba(9, 9, 11, 0.88)' : 'rgba(255, 255, 255, 0.92)',
+            zIndex: 9999,
+          }}
+          className="items-center justify-center p-8 backdrop-blur-md"
+        >
+          <View
+            style={{
+              borderColor: NoteColors.cyan,
+              borderStyle: 'dashed',
+            }}
+            className="w-full max-w-xl h-72 rounded-3xl border-2 items-center justify-center p-6 bg-cyan-500/[0.04]"
+          >
+            <View className="w-16 h-16 rounded-full bg-cyan-500/10 items-center justify-center mb-4">
+              <Upload size={32} color={NoteColors.cyan} />
+            </View>
+            <Text className="text-base font-bold text-light-textPrimary dark:text-dark-textPrimary mb-1">
+              Drop files to insert into note
+            </Text>
+            <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center max-w-sm">
+              Supports images, audio recordings, video clips, PDF documents, spreadsheets (CSV), and Markdown
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 };
