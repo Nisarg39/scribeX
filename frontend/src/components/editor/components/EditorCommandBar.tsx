@@ -10,6 +10,7 @@ import {
   ChevronUp,
   ChevronDown,
   Trash2,
+  Mic,
 } from 'lucide-react-native';
 import { BlockType, ChecklistPointStyle } from '../../../types/note';
 import { useTheme } from '../../../theme';
@@ -22,9 +23,11 @@ interface EditorCommandBarProps {
   hasActiveBlock: boolean;
   canMoveUp: boolean;
   canMoveDown: boolean;
+  isDictating?: boolean;
   onOpenInsertPalette: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  onToggleDictate?: () => void;
   onSwitchActiveType: (type: BlockType, metadata?: Record<string, any>) => void;
   onInsertQuickTask: () => void;
   onInsertQuickMedia: () => void;
@@ -41,9 +44,11 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
   hasActiveBlock,
   canMoveUp,
   canMoveDown,
+  isDictating = false,
   onOpenInsertPalette,
   onUndo,
   onRedo,
+  onToggleDictate,
   onSwitchActiveType,
   onInsertQuickTask,
   onInsertQuickMedia,
@@ -238,6 +243,28 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
             Media
           </Text>
         </Pressable>
+
+        {Boolean(onToggleDictate) && (
+          <Pressable
+            onPress={onToggleDictate}
+            className={`flex-row items-center gap-1 px-2.5 py-1 rounded-full border ${
+              isDictating
+                ? 'bg-rose-500/20 border-rose-500/50'
+                : 'bg-light-surface dark:bg-dark-raised border-light-border/70 dark:border-white/5'
+            }`}
+            style={({ pressed }) => (pressed ? { transform: [{ scale: 0.95 }] } : undefined)}
+            accessibilityLabel={isDictating ? 'Stop Voice Dictation' : 'Start Voice Dictation'}
+          >
+            <Mic size={12} color={isDictating ? '#EF4444' : isDark ? '#F43F5E' : '#E11D48'} />
+            <Text
+              className={`text-xs font-semibold ${
+                isDictating ? 'text-rose-500 font-bold' : 'text-light-textPrimary dark:text-dark-textPrimary'
+              }`}
+            >
+              {isDictating ? 'Listening...' : 'Dictate'}
+            </Text>
+          </Pressable>
+        )}
 
         {hasActiveBlock && (
           <>

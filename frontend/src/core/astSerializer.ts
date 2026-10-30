@@ -178,7 +178,7 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
         type: 'audio',
         content: match ? match[2] : '',
         metadata: {
-          durationSec: durMatch ? parseInt(durMatch[1], 10) : 94,
+          durationSec: durMatch ? parseInt(durMatch[1], 10) : 0,
           transcription: transMatch ? transMatch[1] : '',
         },
       });
@@ -408,6 +408,191 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
         metadata: readingData || { title: bookTitle },
       });
       if (i + 1 < lines.length && (lines[i + 1].trim().startsWith('📖 **Reading:') || lines[i + 1].trim().startsWith('**Reading:'))) {
+        i++;
+      }
+      continue;
+    }
+
+    // Video / Lecture Note Block: <!-- scribex:block type=lecture_note data='...' -->
+    const lectureMatch = line.trim().match(/^<!--\s*scribex:block\s+type=lecture_note\s+data=(['"])(.*?)\1\s*-->/);
+    if (lectureMatch) {
+      flushParagraph();
+      let lectureData: any = null;
+      try {
+        lectureData = JSON.parse(lectureMatch[2]);
+      } catch (_) {}
+      const lectureTitle = lectureData?.title || 'Lecture Note';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'lecture_note',
+        content: lectureTitle,
+        metadata: lectureData || { title: lectureTitle },
+      });
+      while (i + 1 < lines.length && (
+        lines[i + 1].trim().startsWith('🎬 **Lecture:') ||
+        lines[i + 1].trim().startsWith('**Lecture:') ||
+        lines[i + 1].trim().startsWith('- [')
+      )) {
+        i++;
+      }
+      continue;
+    }
+
+    // Email & Message Thread Block: <!-- scribex:block type=message_thread data='...' -->
+    const threadMatch = line.trim().match(/^<!--\s*scribex:block\s+type=message_thread\s+data=(['"])(.*?)\1\s*-->/);
+    if (threadMatch) {
+      flushParagraph();
+      let threadData: any = null;
+      try {
+        threadData = JSON.parse(threadMatch[2]);
+      } catch (_) {}
+      const threadSubject = threadData?.subject || 'Message Thread';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'message_thread',
+        content: threadSubject,
+        metadata: threadData || { subject: threadSubject },
+      });
+      while (i + 1 < lines.length && (
+        lines[i + 1].trim().startsWith('💬 **Thread:') ||
+        lines[i + 1].trim().startsWith('**Thread:') ||
+        lines[i + 1].trim().startsWith('- **')
+      )) {
+        i++;
+      }
+      continue;
+    }
+
+    // Meeting Notes Block: <!-- scribex:block type=meeting_notes data='...' -->
+    const meetingMatch = line.trim().match(/^<!--\s*scribex:block\s+type=meeting_notes\s+data=(['"])(.*?)\1\s*-->/);
+    if (meetingMatch) {
+      flushParagraph();
+      let meetingData: any = null;
+      try {
+        meetingData = JSON.parse(meetingMatch[2]);
+      } catch (_) {}
+      const meetingTitle = meetingData?.title || 'Meeting Minutes';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'meeting_notes',
+        content: meetingTitle,
+        metadata: meetingData || { title: meetingTitle },
+      });
+      while (i + 1 < lines.length && (
+        lines[i + 1].trim().startsWith('👥 **Meeting:') ||
+        lines[i + 1].trim().startsWith('**Meeting:') ||
+        lines[i + 1].trim().startsWith('- [') ||
+        lines[i + 1].trim().startsWith('- **') ||
+        lines[i + 1].trim().startsWith('>')
+      )) {
+        i++;
+      }
+      continue;
+    }
+
+    // Spreadsheet Block: <!-- scribex:block type=sheet data='...' -->
+    const sheetMatch = line.trim().match(/^<!--\s*scribex:block\s+type=sheet\s+data=(['"])(.*?)\1\s*-->/);
+    if (sheetMatch) {
+      flushParagraph();
+      let sheetData: any = null;
+      try {
+        sheetData = JSON.parse(sheetMatch[2]);
+      } catch (_) {}
+      const sheetTitle = sheetData?.title || 'Spreadsheet';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'sheet',
+        content: sheetTitle,
+        metadata: sheetData || { title: sheetTitle },
+      });
+      while (i + 1 < lines.length && (
+        lines[i + 1].trim().startsWith('📊 **Sheet:') ||
+        lines[i + 1].trim().startsWith('**Sheet:') ||
+        lines[i + 1].trim().startsWith('|')
+      )) {
+        i++;
+      }
+      continue;
+    }
+
+    // Diagram & Whiteboard Block: <!-- scribex:block type=diagram data='...' -->
+    const diagramMatch = line.trim().match(/^<!--\s*scribex:block\s+type=diagram\s+data=(['"])(.*?)\1\s*-->/);
+    if (diagramMatch) {
+      flushParagraph();
+      let diagramData: any = null;
+      try {
+        diagramData = JSON.parse(diagramMatch[2]);
+      } catch (_) {}
+      const diagramTitle = diagramData?.title || 'Diagram';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'diagram',
+        content: diagramTitle,
+        metadata: diagramData || { title: diagramTitle },
+      });
+      // Skip fallback diagram title
+      if (i + 1 < lines.length && (lines[i + 1].trim().startsWith('📐 **Diagram:') || lines[i + 1].trim().startsWith('**Diagram:'))) {
+        i++;
+      }
+      // Skip fallback mermaid code fence
+      if (i + 1 < lines.length && lines[i + 1].trim().startsWith('```mermaid')) {
+        i++;
+        while (i + 1 < lines.length && !lines[i + 1].trim().startsWith('```')) {
+          i++;
+        }
+        if (i + 1 < lines.length && lines[i + 1].trim().startsWith('```')) {
+          i++;
+        }
+      }
+      continue;
+    }
+
+    // Web Clipping & Reader Mode Block: <!-- scribex:block type=web_clip data='...' -->
+    const webClipMatch = line.trim().match(/^<!--\s*scribex:block\s+type=web_clip\s+data=(['"])(.*?)\1\s*-->/);
+    if (webClipMatch) {
+      flushParagraph();
+      let clipData: any = null;
+      try {
+        clipData = JSON.parse(webClipMatch[2]);
+      } catch (_) {}
+      const clipTitle = clipData?.title || 'Web Clip';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'web_clip',
+        content: clipTitle,
+        metadata: clipData || { title: clipTitle },
+      });
+      while (i + 1 < lines.length && (
+        lines[i + 1].trim().startsWith('🌐 **Article:') ||
+        lines[i + 1].trim().startsWith('**Article:') ||
+        lines[i + 1].trim().startsWith('> ') ||
+        lines[i + 1].trim().startsWith('- ')
+      )) {
+        i++;
+      }
+      continue;
+    }
+
+    // Voice-to-Text Dictation Block: <!-- scribex:block type=voice_dictation data='...' -->
+    const dictationMatch = line.trim().match(/^<!--\s*scribex:block\s+type=voice_dictation\s+data=(['"])(.*?)\1\s*-->/);
+    if (dictationMatch) {
+      flushParagraph();
+      let dictationData: any = null;
+      try {
+        dictationData = JSON.parse(dictationMatch[2]);
+      } catch (_) {}
+      const transcript = dictationData?.transcript || 'Voice Dictation';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'voice_dictation',
+        content: transcript,
+        metadata: dictationData || { transcript },
+      });
+      while (i + 1 < lines.length && (
+        lines[i + 1].trim().startsWith('🎙️ **Dictation') ||
+        lines[i + 1].trim().startsWith('**Dictation') ||
+        lines[i + 1].trim().startsWith('>')
+      )) {
         i++;
       }
       continue;
@@ -867,7 +1052,7 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
 
       case 'audio': {
         const url = block.content || '';
-        const dur = block.metadata?.durationSec || 94;
+        const dur = block.metadata?.durationSec ?? 0;
         const trans = (block.metadata?.transcription || '').replace(/"/g, "'");
         chunks.push(`![Audio](${url}) <!-- scribex:block type=audio duration=${dur} transcription="${trans}" -->`);
         break;
@@ -978,6 +1163,99 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
         const authorStr = data.author ? ` by ${data.author}` : '';
         const progressStr = data.currentPage && data.totalPages ? ` • ${data.currentPage}/${data.totalPages} pages` : '';
         chunks.push(`<!-- scribex:block type=reading data='${dataJson}' -->\n📖 **Reading: ${title}**${authorStr} (${data.status || 'reading'}${progressStr})`);
+        break;
+      }
+
+      case 'lecture_note': {
+        const data = block.metadata || { title: block.content || 'Lecture Note' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const title = data.title || block.content || 'Lecture Note';
+        const speakerStr = data.speaker ? ` (${data.speaker})` : '';
+        const checkpoints = Array.isArray(data.checkpoints) ? data.checkpoints : [];
+        const cpLines = checkpoints.map((c: any) => `- [${c.timestamp || '00:00'}] ${c.note || ''}`);
+        const summary = [`🎬 **Lecture: ${title}**${speakerStr}`, ...cpLines].join('\n');
+        chunks.push(`<!-- scribex:block type=lecture_note data='${dataJson}' -->\n${summary}`);
+        break;
+      }
+
+      case 'message_thread': {
+        const data = block.metadata || { subject: block.content || 'Message Thread' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const subject = data.subject || block.content || 'Message Thread';
+        const channelStr = data.channel ? ` (${data.channel})` : '';
+        const messages = Array.isArray(data.messages) ? data.messages : [];
+        const msgLines = messages.map((m: any) => `- **${m.sender || 'User'}** (${m.timestamp || ''}): ${m.content || ''}`);
+        const summary = [`💬 **Thread: ${subject}**${channelStr}`, ...msgLines].join('\n');
+        chunks.push(`<!-- scribex:block type=message_thread data='${dataJson}' -->\n${summary}`);
+        break;
+      }
+
+      case 'meeting_notes': {
+        const data = block.metadata || { title: block.content || 'Meeting Minutes' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const title = data.title || block.content || 'Meeting Minutes';
+        const dateStr = data.date ? ` (${data.date})` : '';
+        const summary = data.summary ? `> ${data.summary}` : '';
+        const decisions = Array.isArray(data.decisions) ? data.decisions.map((d: string) => `- [x] Decision: ${d}`) : [];
+        const actions = Array.isArray(data.actionItems) ? data.actionItems.map((a: any) => `- [${a.checked ? 'x' : ' '}] @${a.assignee}: ${a.text}`) : [];
+        const transcript = Array.isArray(data.transcript) ? data.transcript.map((t: any) => `- **${t.speaker}** (${t.timestamp}): ${t.text}`) : [];
+        const lines = [
+          `👥 **Meeting: ${title}**${dateStr}`,
+          summary,
+          ...decisions,
+          ...actions,
+          ...transcript,
+        ].filter(Boolean);
+        chunks.push(`<!-- scribex:block type=meeting_notes data='${dataJson}' -->\n${lines.join('\n')}`);
+        break;
+      }
+
+      case 'sheet': {
+        const data = block.metadata || { title: block.content || 'Spreadsheet' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const title = data.title || block.content || 'Spreadsheet';
+        const activeTab = Array.isArray(data.tabs) ? data.tabs.find((t: any) => t.id === data.activeTabId) || data.tabs[0] : null;
+        const summaryLines = [`📊 **Sheet: ${title}**`];
+        if (activeTab && Array.isArray(activeTab.columns) && Array.isArray(activeTab.rows)) {
+          const header = `| ${activeTab.columns.map((c: any) => c.name).join(' | ')} |`;
+          const sep = `| ${activeTab.columns.map(() => '---').join(' | ')} |`;
+          const rows = activeTab.rows.slice(0, 5).map((r: any[]) => `| ${r.join(' | ')} |`);
+          summaryLines.push(header, sep, ...rows);
+        }
+        chunks.push(`<!-- scribex:block type=sheet data='${dataJson}' -->\n${summaryLines.join('\n')}`);
+        break;
+      }
+
+      case 'diagram': {
+        const data = block.metadata || { title: block.content || 'Diagram' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const title = data.title || block.content || 'Diagram';
+        const code = data.code || 'flowchart TD\n  A --> B';
+        chunks.push(`<!-- scribex:block type=diagram data='${dataJson}' -->\n📐 **Diagram: ${title}**\n\`\`\`mermaid\n${code}\n\`\`\``);
+        break;
+      }
+
+      case 'web_clip': {
+        const data = block.metadata || { title: block.content || 'Web Article Clip' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const title = data.title || block.content || 'Web Article Clip';
+        const domainStr = data.domain ? ` (${data.domain})` : '';
+        const bylineStr = data.author ? ` by ${data.author}` : '';
+        const quotes = Array.isArray(data.highlights) ? data.highlights.map((h: string) => `> "${h}"`) : [];
+        const lines = [
+          `🌐 **Article: ${title}**${domainStr}${bylineStr}`,
+          ...quotes,
+        ].filter(Boolean);
+        chunks.push(`<!-- scribex:block type=web_clip data='${dataJson}' -->\n${lines.join('\n')}`);
+        break;
+      }
+
+      case 'voice_dictation': {
+        const data = block.metadata || { transcript: block.content || '' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const transcript = data.transcript || block.content || '';
+        const dur = data.durationSec ? ` (${data.durationSec}s)` : '';
+        chunks.push(`<!-- scribex:block type=voice_dictation data='${dataJson}' -->\n🎙️ **Dictation${dur}:**\n> ${transcript}`);
         break;
       }
 

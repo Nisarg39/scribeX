@@ -534,11 +534,11 @@ export const useEditorState = ({
     persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
   };
 
-  const handleInsertBlock = (type: BlockType, metadata?: Record<string, any>) => {
+  const handleInsertBlock = (type: BlockType, metadata?: Record<string, any>, initialContent: string = '') => {
     const newBlock: ComposableBlock = {
       id: `b-${Date.now()}-${blocks.length + 1}`,
       type,
-      content: '',
+      content: initialContent,
       metadata,
     };
 

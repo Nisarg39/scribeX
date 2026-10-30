@@ -25,6 +25,13 @@ import {
   ContactBlock,
   ExpenseBlock,
   ReadingBlock,
+  LectureNoteBlock,
+  MessageThreadBlock,
+  MeetingNotesBlock,
+  SpreadsheetBlock,
+  DiagramBlock,
+  WebClipBlock,
+  VoiceDictationBlock,
 } from './blocks';
 import {
   DividerBlock,
@@ -454,17 +461,21 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       {/* Audio Block */}
       {block.type === 'audio' && (
         <AudioBlock
+          audioUrl={block.content || block.metadata?.url}
           assetId={block.metadata?.assetId}
-          durationSec={block.metadata?.durationSec || 94}
+          durationSec={block.metadata?.durationSec ?? 0}
           transcription={block.metadata?.transcription || ''}
+          waveform={block.metadata?.waveform}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
           onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
+          onUpdateContent={onUpdateContent}
           onUpdateMetadata={(meta) => {
             onUpdateMetadata({ ...block.metadata, ...meta });
           }}
+          onInsertAfter={onInsertAfter}
         />
       )}
 
@@ -670,6 +681,186 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
             } else {
               onUpdateMetadata(nextMeta);
               if (readingData.title) onUpdateContent(readingData.title);
+            }
+          }}
+        />
+      )}
+
+      {/* Video / Lecture Notes Block */}
+      {block.type === 'lecture_note' && (
+        <LectureNoteBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateLecture={(lectureData) => {
+            const nextMeta = { ...block.metadata, ...lectureData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: lectureData.title || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (lectureData.title) onUpdateContent(lectureData.title);
+            }
+          }}
+        />
+      )}
+
+      {/* Email & Message Thread Block */}
+      {block.type === 'message_thread' && (
+        <MessageThreadBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateThread={(threadData) => {
+            const nextMeta = { ...block.metadata, ...threadData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: threadData.subject || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (threadData.subject) onUpdateContent(threadData.subject);
+            }
+          }}
+        />
+      )}
+
+      {/* Meeting Notes & Diarized Minutes Block */}
+      {block.type === 'meeting_notes' && (
+        <MeetingNotesBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateMeeting={(meetingData) => {
+            const nextMeta = { ...block.metadata, ...meetingData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: meetingData.title || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (meetingData.title) onUpdateContent(meetingData.title);
+            }
+          }}
+        />
+      )}
+
+      {/* Multi-Sheet Spreadsheet Block */}
+      {block.type === 'sheet' && (
+        <SpreadsheetBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateSheet={(sheetData) => {
+            const nextMeta = { ...block.metadata, ...sheetData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: sheetData.title || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (sheetData.title) onUpdateContent(sheetData.title);
+            }
+          }}
+        />
+      )}
+
+      {/* Diagram & Whiteboard Block */}
+      {block.type === 'diagram' && (
+        <DiagramBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateDiagram={(diagramData) => {
+            const nextMeta = { ...block.metadata, ...diagramData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: diagramData.title || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (diagramData.title) onUpdateContent(diagramData.title);
+            }
+          }}
+        />
+      )}
+
+      {/* Web Article Clip & Reader Block */}
+      {block.type === 'web_clip' && (
+        <WebClipBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateWebClip={(clipData) => {
+            const nextMeta = { ...block.metadata, ...clipData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: clipData.title || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (clipData.title) onUpdateContent(clipData.title);
+            }
+          }}
+        />
+      )}
+
+      {/* Voice-to-Text Dictation Block */}
+      {block.type === 'voice_dictation' && (
+        <VoiceDictationBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateDictation={(dictationData) => {
+            const nextMeta = { ...block.metadata, ...dictationData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: dictationData.transcript || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (dictationData.transcript) onUpdateContent(dictationData.transcript);
+            }
+          }}
+          onConvertToText={(text) => {
+            if (onConvertBlock) {
+              onConvertBlock('paragraph', text);
             }
           }}
         />

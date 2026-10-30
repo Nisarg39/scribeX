@@ -16,6 +16,19 @@ export interface UniversalBlockMeta {
  */
 export const UNIVERSAL_BLOCK_REGISTRY: Record<string, UniversalBlockMeta> = {
   checklist: { label: 'Checklist Group', category: 'interactive' },
+  habit: { label: 'Habit Tracker', category: 'interactive' },
+  kanban: { label: 'Kanban Board', category: 'interactive' },
+  event: { label: 'Calendar Event', category: 'interactive' },
+  contact: { label: 'Person Profile', category: 'interactive' },
+  expense: { label: 'Expense Record', category: 'interactive' },
+  reading: { label: 'Reading Queue', category: 'interactive' },
+  lecture_note: { label: 'Lecture Notes', category: 'media' },
+  message_thread: { label: 'Message Thread', category: 'embed' },
+  meeting_notes: { label: 'Meeting Minutes', category: 'media' },
+  sheet: { label: 'Spreadsheet Grid', category: 'data' },
+  diagram: { label: 'Diagram & Whiteboard', category: 'interactive' },
+  web_clip: { label: 'Web Article Clip', category: 'embed' },
+  voice_dictation: { label: 'Voice Dictation', category: 'media' },
   code: { label: 'Code Snippet', category: 'data' },
   table: { label: 'Table Grid', category: 'data' },
   callout: { label: 'Callout Box', category: 'interactive' },
@@ -23,6 +36,7 @@ export const UNIVERSAL_BLOCK_REGISTRY: Record<string, UniversalBlockMeta> = {
   drawing: { label: 'Drawing Canvas', category: 'interactive' },
   audio: { label: 'Voice Memo', category: 'media' },
   image: { label: 'Media Embed', category: 'media' },
+  video: { label: 'Video Embed', category: 'media' },
   file: { label: 'File Attachment', category: 'embed' },
   bookmark: { label: 'Web Bookmark', category: 'embed' },
 };

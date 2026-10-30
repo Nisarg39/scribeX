@@ -28,6 +28,11 @@ import {
   User,
   Receipt,
   BookOpen,
+  Mail,
+  Users,
+  Workflow,
+  BookmarkCheck,
+  Mic,
 } from 'lucide-react-native';
 import { BlockType } from '../../../types/note';
 import { useTheme } from '../../../theme';
@@ -117,7 +122,7 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
               </Pressable>
 
               <Pressable
-                onPress={() => onInsertBlock('audio', { durationSec: 94 })}
+                onPress={() => onInsertBlock('audio', { durationSec: 0 })}
                 style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
                 className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
               >
@@ -186,6 +191,143 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
                 </Text>
                 <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
                   YouTube, Vimeo, Loom, MP4
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('lecture_note', {
+                    videoUrl: 'https://www.youtube.com/watch?v=R2Cq3ALIazA',
+                    title: 'Distributed Systems & Consensus',
+                    speaker: 'MIT 6.824 · Prof. Robert Morris',
+                    checkpoints: [
+                      { id: 'cp-1', timestamp: '01:15', seconds: 75, note: 'System model assumptions & partition failures', category: 'Concept' },
+                      { id: 'cp-2', timestamp: '05:40', seconds: 340, note: 'Raft leader election invariants & heartbeat leases', category: 'Theorem' },
+                      { id: 'cp-3', timestamp: '12:20', seconds: 740, note: 'Split-brain prevention in 3-node quorums', category: 'Question' },
+                    ],
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center mb-2">
+                  <Video size={16} color="#06B6D4" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Lecture & Video Notes
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Interactive timecode scrubbing
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('message_thread', {
+                    channel: 'email',
+                    subject: 'Re: ScribeX Local Storage & SQLite Engine Performance',
+                    participants: ['Sarah Chen', 'Marcus Vance'],
+                    date: 'Oct 28, 2026',
+                    messages: [
+                      { id: 'm1', sender: 'Sarah Chen', senderEmail: 'sarah@acme.corp', timestamp: '10:14 AM', content: 'Sub-5ms write latency verified across SQLite replication benchmarks.', isMe: false },
+                      { id: 'm2', sender: 'Marcus Vance', senderEmail: 'marcus@acme.corp', timestamp: '10:28 AM', content: 'Does that include background LanceDB vector indexing?', isMe: true },
+                      { id: 'm3', sender: 'Sarah Chen', senderEmail: 'sarah@acme.corp', timestamp: '10:35 AM', content: 'Both! Worker queues handle vector embeddings without locking the main thread.', isMe: false },
+                    ],
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-violet-500/15 items-center justify-center mb-2">
+                  <Mail size={16} color="#8B5CF6" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Message Thread
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Email & chat stream capture
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('meeting_notes', {
+                    title: 'Sprint Review & Sync',
+                    date: 'Oct 30, 2026 · 10:00 AM',
+                    duration: '45m',
+                    participants: ['Sarah Chen', 'Marcus Vance', 'Elena Rostova'],
+                    summary: 'Team reviewed local SQLite latency benchmarks and confirmed sub-5ms write responsiveness.',
+                    decisions: ['Adopt local SQLite replica architecture.', 'Move vector indexing to worker queue.'],
+                    actionItems: [
+                      { id: 'a1', text: 'Benchmark IndexedDB on Safari', assignee: 'Sarah', checked: true },
+                      { id: 'a2', text: 'Review conflict resolution heuristics', assignee: 'Elena', checked: false },
+                    ],
+                    transcript: [
+                      { id: 's1', speaker: 'Sarah Chen', timestamp: '00:15', seconds: 15, text: 'Confirming local storage architecture.' },
+                      { id: 's2', speaker: 'Marcus Vance', timestamp: '01:20', seconds: 80, text: 'Transactions pass all benchmarks.' },
+                    ],
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-sky-500/15 items-center justify-center mb-2">
+                  <Users size={16} color="#38BDF8" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Meeting Minutes
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Diarized audio & actions
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('web_clip', {
+                    url: 'https://danluu.com/productivity-velocity/',
+                    title: 'Engineering Velocity & Tactile Latency at Scale',
+                    domain: 'danluu.com',
+                    author: 'Dan Luu',
+                    readingTime: '6 min read',
+                    highlights: [
+                      'Sub-5ms write responsiveness dominates user satisfaction and perceived velocity.',
+                    ],
+                    readerContent: 'Offline-first database engines remove network round-trips from user interactions completely.',
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-purple-500/15 items-center justify-center mb-2">
+                  <BookmarkCheck size={16} color="#A855F7" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Web Article Clip
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Reader mode & quotes
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('voice_dictation', {
+                    transcript: '',
+                    language: 'en-US',
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-rose-500/15 items-center justify-center mb-2">
+                  <Mic size={16} color="#F43F5E" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Voice Dictation
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Live speech-to-text engine
                 </Text>
               </Pressable>
             </View>
@@ -404,6 +546,73 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
                 </Text>
                 <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
                   Matrix grid editor
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('sheet', {
+                    title: 'Financial & Operational Sheet',
+                    tabs: [
+                      {
+                        id: 'tab-1',
+                        name: 'Sheet 1',
+                        columns: [
+                          { id: 'c1', name: 'Item', type: 'text' },
+                          { id: 'c2', name: 'Category', type: 'text' },
+                          { id: 'c3', name: 'Amount', type: 'currency' },
+                        ],
+                        rows: [
+                          ['Hosting & Infrastructure', 'Operations', '1250.00'],
+                          ['CI/CD Pipeline Quota', 'Tooling', '450.00'],
+                        ],
+                        summaryFunction: 'sum',
+                      },
+                    ],
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-emerald-500/15 items-center justify-center mb-2">
+                  <Table size={16} color="#10B981" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Spreadsheet
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Multi-tab & formulas
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('diagram', {
+                    preset: 'architecture',
+                    title: 'System Topology & Flow',
+                    code: 'flowchart TD\n  Client[Expo App] --> Core[SQLite Vault]\n  Core --> AI[Friday AI]',
+                    nodes: [
+                      { id: 'n1', label: 'Client App', color: '#38BDF8' },
+                      { id: 'n2', label: 'SQLite Vault', color: '#10B981' },
+                      { id: 'n3', label: 'Friday AI', color: '#F59E0B' },
+                    ],
+                    edges: [
+                      { from: 'n1', to: 'n2', label: 'local' },
+                      { from: 'n2', to: 'n3', label: 'embeddings' },
+                    ],
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center mb-2">
+                  <Workflow size={16} color="#06B6D4" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Diagram / Whiteboard
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Flowchart & Mermaid models
                 </Text>
               </Pressable>
 
