@@ -447,19 +447,52 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       {block.type === 'drawing' && (
         <DrawingBlock
           initialPaths={block.metadata?.paths || []}
-          caption={block.metadata?.caption || block.metadata?.title || ''}
+          caption={
+            block.metadata?.caption ||
+            (block.metadata?.title && block.metadata.title !== 'Sketch'
+              ? block.metadata.title
+              : '')
+          }
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
           onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
           onUpdateDrawing={(paths, caption) => {
-            const nextCaption = caption !== undefined ? caption : (block.metadata?.caption || block.metadata?.title || '');
-            onUpdateMetadata({ ...block.metadata, paths, caption: nextCaption, title: nextCaption || 'Sketch' });
-            onUpdateContent(JSON.stringify(paths));
+            const nextCaption =
+              caption !== undefined
+                ? caption
+                : block.metadata?.caption ||
+                  (block.metadata?.title !== 'Sketch' ? block.metadata?.title : '') ||
+                  '';
+            const nextMeta = {
+              ...block.metadata,
+              paths,
+              caption: nextCaption,
+              title: nextCaption || 'Sketch',
+            };
+            const nextContent = JSON.stringify(paths);
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: nextContent,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              onUpdateContent(nextContent);
+            }
           }}
           onUpdateCaption={(caption) => {
-            onUpdateMetadata({ ...block.metadata, caption, title: caption || 'Sketch' });
+            const nextMeta = {
+              ...block.metadata,
+              caption,
+              title: caption || 'Sketch',
+            };
+            if (onUpdateBlock) {
+              onUpdateBlock({ metadata: nextMeta });
+            } else {
+              onUpdateMetadata(nextMeta);
+            }
           }}
         />
       )}
@@ -498,8 +531,13 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           isSelected={isActive}
           isDragging={isDragging}
           onUpdateImage={(url, caption, width, align, aspectRatio) => {
-            onUpdateContent(url);
-            onUpdateMetadata({ ...block.metadata, url, caption, width, align, aspectRatio });
+            const nextMeta = { ...block.metadata, url, caption, width, align, aspectRatio };
+            if (onUpdateBlock) {
+              onUpdateBlock({ content: url, metadata: nextMeta });
+            } else {
+              onUpdateContent(url);
+              onUpdateMetadata(nextMeta);
+            }
           }}
           onFocus={onFocus}
           onStartDrag={handleStartDragFromChild}
@@ -519,8 +557,16 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
           onUpdateFile={(fileName, sizeBytes, url) => {
-            if (url) onUpdateContent(url);
-            onUpdateMetadata({ ...block.metadata, fileName, sizeBytes, url });
+            const nextMeta = { ...block.metadata, fileName, sizeBytes, url };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                ...(url ? { content: url } : {}),
+                metadata: nextMeta,
+              });
+            } else {
+              if (url) onUpdateContent(url);
+              onUpdateMetadata(nextMeta);
+            }
           }}
         />
       )}
@@ -538,8 +584,13 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
           onUpdateVideo={(url, caption, width, align) => {
-            onUpdateContent(url);
-            onUpdateMetadata({ ...block.metadata, url, caption, width, align });
+            const nextMeta = { ...block.metadata, url, caption, width, align };
+            if (onUpdateBlock) {
+              onUpdateBlock({ content: url, metadata: nextMeta });
+            } else {
+              onUpdateContent(url);
+              onUpdateMetadata(nextMeta);
+            }
           }}
         />
       )}

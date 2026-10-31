@@ -160,11 +160,22 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       const match = line.match(/!\[(.*?)\]\((.*?)\)/);
       const captionMatch = line.match(/caption="([^"]*)"/);
       const label = captionMatch ? captionMatch[1] : (match && match[1] ? match[1] : 'Sketch');
+      const rawContent = match ? match[2] : '';
+      let parsedPaths: any[] = [];
+      if (rawContent && rawContent.trim().startsWith('[')) {
+        try {
+          parsedPaths = JSON.parse(rawContent);
+        } catch (_) {}
+      }
       blocks.push({
         id: `b-${Date.now()}-${blocks.length + 1}`,
         type: 'drawing',
-        content: match ? match[2] : '',
-        metadata: { title: label, caption: label === 'Sketch' ? '' : label },
+        content: rawContent,
+        metadata: {
+          title: label,
+          caption: label === 'Sketch' ? '' : label,
+          paths: parsedPaths,
+        },
       });
       continue;
     }
@@ -1078,8 +1089,10 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
 
       case 'drawing': {
         const url = block.content || '';
-        const label = (block.metadata?.caption || block.metadata?.title || 'Sketch').replace(/\]/g, '');
-        chunks.push(`![${label}](${url}) <!-- scribex:block type=drawing -->`);
+        const rawCaption = (block.metadata?.caption || '').replace(/"/g, "'");
+        const label = (rawCaption || block.metadata?.title || 'Sketch').replace(/\]/g, '');
+        const captionAttr = rawCaption ? ` caption="${rawCaption}"` : '';
+        chunks.push(`![${label}](${url}) <!-- scribex:block type=drawing${captionAttr} -->`);
         break;
       }
 

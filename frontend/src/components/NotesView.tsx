@@ -1,28 +1,27 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Modal } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useTheme, NoteColors } from '../theme';
+import { useTheme } from '../theme';
 import { useNotesStore } from '../state/useNotesStore';
 import { NoteItem } from '../types/note';
+import { NoteCard } from './notes/NoteCard';
 import { 
   Star, 
-  Pencil, 
   Mic, 
-  Paperclip, 
-  ArrowUp, 
+  Search,
   Folder,
   Plus,
   Pin,
   Archive,
   Trash2,
-  RotateCcw,
   Tag,
   X,
   Check,
   FilePlus,
   ChevronRight,
   CornerDownRight,
-  FolderPlus
+  FolderPlus,
+  Clock
 } from 'lucide-react-native';
 
 export const NotesView: React.FC = () => {
@@ -34,10 +33,27 @@ export const NotesView: React.FC = () => {
     tags,
     activeFilter, 
     setActiveFilter, 
-    addNote, 
+    queryRequest,
+    setStatusScopeFilter,
+    setFolderFilter,
+    toggleTagFilter,
+    searchQuery,
+    setSearchQuery,
+    pinnedCards,
+    feedCards,
+    totalMatches,
+    mainFeedTotal,
+    visibleCount,
+    hasMore,
+    isSearchActive,
+    partitionCounts,
+    loadNextPage,
+    recentSearches,
+    recordSearchHistory,
+    deleteSearchHistoryItem,
+    clearSearchHistory,
     toggleFavorite,
     togglePin,
-    archiveNote,
     unarchiveNote,
     restoreNote,
     permanentlyDeleteNote,
@@ -45,11 +61,94 @@ export const NotesView: React.FC = () => {
     createFolder
   } = useNotesStore();
 
-  const [quickThought, setQuickThought] = useState('');
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedParentPath, setSelectedParentPath] = useState<string>('');
+
+  // Voice-to-Text Search Dictation State
+  const [isVoiceSearching, setIsVoiceSearching] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const loadingMoreLockRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (_) {}
+      }
+    };
+  }, []);
+
+  const handleToggleVoiceSearch = () => {
+    if (isVoiceSearching) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (_) {}
+        recognitionRef.current = null;
+      }
+      setIsVoiceSearching(false);
+      if (searchQuery.trim()) {
+        recordSearchHistory(searchQuery.trim(), 'voice');
+      }
+      return;
+    }
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const SpeechRecognition =
+        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = false;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
+
+          recognition.onresult = (event: any) => {
+            let transcript = '';
+            for (let i = 0; i < event.results.length; ++i) {
+              transcript += event.results[i][0].transcript;
+            }
+            if (transcript.trim()) {
+              setSearchQuery(transcript.trim());
+            }
+          };
+
+          recognition.onerror = () => setIsVoiceSearching(false);
+          recognition.onend = () => {
+            setIsVoiceSearching(false);
+          };
+          recognition.start();
+          recognitionRef.current = recognition;
+          setIsVoiceSearching(true);
+          return;
+        } catch (_) {
+          setIsVoiceSearching(false);
+        }
+      }
+    }
+
+    // Mobile / fallback voice search toggle feedback
+    setIsVoiceSearching(true);
+    setTimeout(() => {
+      setIsVoiceSearching(false);
+    }, 2000);
+  };
+
+  const handleScrollFeed = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (!hasMore || loadingMoreLockRef.current) return;
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y);
+    if (distanceFromBottom < 160) {
+      loadingMoreLockRef.current = true;
+      loadNextPage();
+      setTimeout(() => {
+        loadingMoreLockRef.current = false;
+      }, 250);
+    }
+  };
 
   const handleOpenFolderModal = () => {
     setSelectedParentPath('');
@@ -58,19 +157,10 @@ export const NotesView: React.FC = () => {
   };
 
   const handleOpenNote = (note: NoteItem) => {
-    router.push(`/note/${note.id}`);
-  };
-
-  const handleQuickCapture = async () => {
-    if (!quickThought.trim()) return;
-    const parts = quickThought.trim().split('\n');
-    const title = parts[0].slice(0, 48);
-    const content = quickThought.trim();
-    const created = await addNote(title, content);
-    setQuickThought('');
-    if (created?.id) {
-      router.push(`/note/${created.id}`);
+    if (searchQuery.trim()) {
+      recordSearchHistory(searchQuery.trim());
     }
+    router.push(`/note/${note.id}`);
   };
 
   const handleCreateNewBlankNote = () => {
@@ -84,7 +174,7 @@ export const NotesView: React.FC = () => {
     const targetPath = created?.path || (selectedParentPath ? `${selectedParentPath}/${clean}` : clean);
     setNewFolderName('');
     setSelectedParentPath(targetPath);
-    setActiveFilter(`folder:${targetPath}`);
+    setFolderFilter(targetPath);
   };
 
   const handleCreateAndCloseFolderModal = async () => {
@@ -94,21 +184,15 @@ export const NotesView: React.FC = () => {
     const targetPath = created?.path || (selectedParentPath ? `${selectedParentPath}/${clean}` : clean);
     setNewFolderName('');
     setIsFolderModalOpen(false);
-    setActiveFilter(`folder:${targetPath}`);
+    setFolderFilter(targetPath);
   };
-
-  // Status partitions
-  const activeNotes = notes.filter((n) => n.status !== 'trashed' && n.status !== 'archived');
-  const archivedNotes = notes.filter((n) => n.status === 'archived');
-  const trashedNotes = notes.filter((n) => n.status === 'trashed');
-  const pinnedNotes = activeNotes.filter((n) => n.isPinned);
 
   // Derive all active folders from repository and notes (including intermediate parent paths)
   const rawFolderPaths = Array.from(
     new Set([
       'General',
       ...folders.map((f) => f.path || f.name),
-      ...activeNotes.map((n) => n.folderPath).filter(Boolean) as string[],
+      ...notes.filter((n) => n.status !== 'trashed' && n.status !== 'archived').map((n) => n.folderPath).filter(Boolean) as string[],
     ])
   );
 
@@ -147,25 +231,6 @@ export const NotesView: React.FC = () => {
     }));
   }, [selectedParentPath]);
 
-  // Filter notes based on activeFilter
-  const getDisplayedNotes = (): NoteItem[] => {
-    if (activeFilter === 'all') return activeNotes;
-    if (activeFilter === 'favorites') return activeNotes.filter((n) => n.isFavorite);
-    if (activeFilter === 'archive') return archivedNotes;
-    if (activeFilter === 'trash') return trashedNotes;
-    if (activeFilter.startsWith('folder:')) {
-      const folder = activeFilter.slice(7);
-      return activeNotes.filter((n) => (n.folderPath || 'General') === folder);
-    }
-    if (activeFilter.startsWith('tag:')) {
-      const tag = activeFilter.slice(4);
-      return activeNotes.filter((n) => n.tags && n.tags.includes(tag));
-    }
-    return activeNotes;
-  };
-
-  const displayedNotes = getDisplayedNotes();
-
   const formattedDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'short',
@@ -177,6 +242,8 @@ export const NotesView: React.FC = () => {
       className="flex-1"
       contentContainerStyle={{ paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
+      onScroll={handleScrollFeed}
+      scrollEventThrottle={16}
     >
       {/* Editorial Page Heading + Add Note Button */}
       <View style={{ zIndex: 50 }} className="flex-row items-baseline justify-between mb-6">
@@ -185,7 +252,7 @@ export const NotesView: React.FC = () => {
             Notes
           </Text>
           <Text className="text-xs md:text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary mt-1">
-            {formattedDate} • {activeNotes.length} thoughts & captures
+            {formattedDate} • {partitionCounts.allActive} thoughts & captures
           </Text>
         </View>
 
@@ -239,67 +306,127 @@ export const NotesView: React.FC = () => {
         </View>
       </View>
 
-      {/* Universal Quick Capture Ribbon (Level 0 Ingest) */}
-      <View 
-        className="mb-8 p-3.5 rounded-2xl bg-light-surface dark:bg-dark-raised border border-light-border dark:border-dark-border shadow-sm"
-      >
-        <TextInput
-          placeholder="Capture a thought, task, or paste markdown..."
-          placeholderTextColor={isDark ? '#858585' : '#929292'}
-          value={quickThought}
-          onChangeText={setQuickThought}
-          onSubmitEditing={handleQuickCapture}
-          className="text-base font-medium text-light-textPrimary dark:text-dark-textPrimary px-2 py-1 mb-2"
-        />
+      {/* Universal Local Search Bar (Text + Voice-to-Text Search) */}
+      <View className="mb-6">
+        <View
+          style={{
+            borderColor: isVoiceSearching
+              ? '#F43F5E'
+              : isSearchActive
+              ? '#06B6D4'
+              : isDark
+              ? 'rgba(255,255,255,0.08)'
+              : 'rgba(0,0,0,0.08)',
+          }}
+          className="flex-row items-center px-3.5 py-2.5 rounded-2xl bg-light-surface dark:bg-dark-raised border shadow-sm"
+        >
+          <Search
+            size={18}
+            color={
+              isSearchActive
+                ? '#06B6D4'
+                : isDark
+                ? '#858585'
+                : '#929292'
+            }
+          />
 
-        <View className="flex-row items-center justify-between pt-1 border-t border-light-border/60 dark:border-dark-border/60">
-          {/* Multi-Modal Ingest Icons */}
-          <View className="flex-row items-center gap-1.5">
+          <TextInput
+            placeholder={
+              isVoiceSearching
+                ? 'Listening for voice search query...'
+                : 'Search notes, tasks, audio, sketches, or files...'
+            }
+            placeholderTextColor={isVoiceSearching ? '#F43F5E' : isDark ? '#858585' : '#929292'}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={() => {
+              if (searchQuery.trim()) recordSearchHistory(searchQuery.trim());
+            }}
+            returnKeyType="search"
+            className="flex-1 text-base font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-1"
+          />
+
+          {searchQuery.length > 0 && (
             <Pressable
- hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} 
-              accessibilityLabel="Audio Voice Memo"
-              className="w-8 h-8 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10 active:scale-90"
+              hitSlop={10}
+              onPress={() => setSearchQuery('')}
+              accessibilityLabel="Clear Search Query"
+              className="w-7 h-7 rounded-full bg-black/5 dark:bg-white/10 items-center justify-center mr-1.5 active:scale-90"
             >
-              <Mic size={16} color={isDark ? '#B5B5B5' : '#626262'} />
+              <X size={14} color={isDark ? '#B5B5B5' : '#626262'} />
             </Pressable>
+          )}
 
-            <Pressable
- hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} 
-              accessibilityLabel="File & Image Attachment"
-              className="w-8 h-8 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10 active:scale-90"
-            >
-              <Paperclip size={16} color={isDark ? '#B5B5B5' : '#626262'} />
-            </Pressable>
-
-            <View className="h-4 w-[1px] bg-light-border dark:bg-dark-border mx-1" />
-
-            <View className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-surface">
-              <Folder size={11} color={isDark ? '#858585' : '#929292'} />
-              <Text className="text-[11px] font-medium text-light-textMuted dark:text-dark-textMuted">
-                Universal Inbox
-              </Text>
-            </View>
-          </View>
-
-          {/* Quick Submit Arrow */}
+          {/* Voice-to-Text Search Mic Button */}
           <Pressable
- hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            onPress={handleQuickCapture}
-            accessibilityLabel="Capture Note"
-            disabled={!quickThought.trim()}
-            className={`w-8 h-8 rounded-full items-center justify-center transition-all ${
-              quickThought.trim() 
-                ? 'bg-light-iconBg dark:bg-white active:scale-90' 
-                : 'bg-black/10 dark:bg-white/10 opacity-50'
+            hitSlop={10}
+            onPress={handleToggleVoiceSearch}
+            accessibilityLabel="Voice to Text Search"
+            className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95 ${
+              isVoiceSearching
+                ? 'bg-rose-500'
+                : 'bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15'
             }`}
           >
-            <ArrowUp 
-              size={16} 
-              color={quickThought.trim() ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#858585' : '#929292')} 
-              strokeWidth={2.5} 
+            <Mic
+              size={15}
+              color={isVoiceSearching ? '#FFFFFF' : isDark ? '#E4E4E7' : '#27272A'}
             />
+            {isVoiceSearching && (
+              <Text className="text-[11px] font-bold text-white">Listening</Text>
+            )}
           </Pressable>
         </View>
+
+        {/* Recent Searches Strip (Shown when search input is empty and history exists) */}
+        {!isSearchActive && recentSearches.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flexGrow: 0, flexShrink: 0, marginTop: 10 }}
+            contentContainerStyle={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 2 }}
+          >
+            <View className="flex-row items-center gap-1 mr-1">
+              <Clock size={11} color={isDark ? '#71717A' : '#A1A1AA'} />
+              <Text className="text-[11px] font-medium text-light-textMuted dark:text-dark-textMuted">
+                Recent:
+              </Text>
+            </View>
+            {recentSearches.map((q) => (
+              <View
+                key={q}
+                className="flex-row items-center rounded-full bg-light-surface dark:bg-dark-raised border border-light-border dark:border-white/10"
+              >
+                <Pressable
+                  onPress={() => setSearchQuery(q)}
+                  className="pl-2.5 pr-1.5 py-1 active:scale-95"
+                >
+                  <Text className="text-[11px] font-medium text-light-textSecondary dark:text-dark-textSecondary">
+                    {q}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  hitSlop={8}
+                  onPress={() => deleteSearchHistoryItem(q)}
+                  accessibilityLabel={`Remove recent search ${q}`}
+                  className="pr-2 py-1 active:opacity-60"
+                >
+                  <X size={10} color={isDark ? '#71717A' : '#A1A1AA'} />
+                </Pressable>
+              </View>
+            ))}
+            <Pressable
+              hitSlop={8}
+              onPress={clearSearchHistory}
+              className="px-2 py-1 rounded-full active:opacity-70"
+            >
+              <Text className="text-[11px] font-semibold text-light-textMuted dark:text-dark-textMuted">
+                Clear
+              </Text>
+            </Pressable>
+          </ScrollView>
+        )}
       </View>
 
       {/* Dynamic Context, Status & Filter Pills Track */}
@@ -311,111 +438,111 @@ export const NotesView: React.FC = () => {
       >
         {/* All Notes Pill */}
         <Pressable
-          onPress={() => setActiveFilter('all')}
+          onPress={() => setStatusScopeFilter('active')}
           className={`flex-row items-center gap-1.5 px-4 py-1.5 rounded-full border transition-all ${
-            activeFilter === 'all'
+            queryRequest.statusScope === 'active' && !queryRequest.folderPath && (!queryRequest.tags || queryRequest.tags.length === 0)
               ? 'bg-light-iconBg dark:bg-white border-transparent'
               : 'bg-transparent border-light-border dark:border-dark-border'
           }`}
         >
           <Text className={`text-xs font-semibold ${
-            activeFilter === 'all'
+            queryRequest.statusScope === 'active' && !queryRequest.folderPath && (!queryRequest.tags || queryRequest.tags.length === 0)
               ? 'text-white dark:text-[#111111]'
               : 'text-light-textSecondary dark:text-dark-textSecondary'
           }`}>
             All Notes
           </Text>
           <Text className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-            activeFilter === 'all'
+            queryRequest.statusScope === 'active' && !queryRequest.folderPath && (!queryRequest.tags || queryRequest.tags.length === 0)
               ? 'bg-white/20 dark:bg-black/20 text-white dark:text-[#111111]'
               : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
           }`}>
-            {activeNotes.length}
+            {partitionCounts.allActive}
           </Text>
         </Pressable>
 
         {/* Favorites Pill */}
         <Pressable
-          onPress={() => setActiveFilter('favorites')}
+          onPress={() => setStatusScopeFilter('favorites')}
           className={`flex-row items-center gap-1.5 px-4 py-1.5 rounded-full border transition-all ${
-            activeFilter === 'favorites'
+            queryRequest.statusScope === 'favorites'
               ? 'bg-light-iconBg dark:bg-white border-transparent'
               : 'bg-transparent border-light-border dark:border-dark-border'
           }`}
         >
           <Star 
             size={12} 
-            color={activeFilter === 'favorites' ? '#FFD43B' : (isDark ? '#B5B5B5' : '#626262')} 
-            fill={activeFilter === 'favorites' ? '#FFD43B' : 'transparent'} 
+            color={queryRequest.statusScope === 'favorites' ? '#FFD43B' : (isDark ? '#B5B5B5' : '#626262')} 
+            fill={queryRequest.statusScope === 'favorites' ? '#FFD43B' : 'transparent'} 
           />
           <Text className={`text-xs font-semibold ${
-            activeFilter === 'favorites'
+            queryRequest.statusScope === 'favorites'
               ? 'text-white dark:text-[#111111]'
               : 'text-light-textSecondary dark:text-dark-textSecondary'
           }`}>
             Favorites
           </Text>
           <Text className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-            activeFilter === 'favorites'
+            queryRequest.statusScope === 'favorites'
               ? 'bg-white/20 dark:bg-black/20 text-white dark:text-[#111111]'
               : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
           }`}>
-            {activeNotes.filter((n) => n.isFavorite).length}
+            {partitionCounts.favorites}
           </Text>
         </Pressable>
 
         {/* Archive Pill */}
         <Pressable
-          onPress={() => setActiveFilter('archive')}
+          onPress={() => setStatusScopeFilter('archived')}
           className={`flex-row items-center gap-1.5 px-4 py-1.5 rounded-full border transition-all ${
-            activeFilter === 'archive'
+            queryRequest.statusScope === 'archived'
               ? 'bg-cyan-500 border-transparent'
               : 'bg-transparent border-light-border dark:border-dark-border'
           }`}
         >
-          <Archive size={12} color={activeFilter === 'archive' ? '#FFFFFF' : (isDark ? '#B5B5B5' : '#626262')} />
+          <Archive size={12} color={queryRequest.statusScope === 'archived' ? '#FFFFFF' : (isDark ? '#B5B5B5' : '#626262')} />
           <Text className={`text-xs font-semibold ${
-            activeFilter === 'archive'
+            queryRequest.statusScope === 'archived'
               ? 'text-white'
               : 'text-light-textSecondary dark:text-dark-textSecondary'
           }`}>
             Archive
           </Text>
-          {archivedNotes.length > 0 && (
+          {partitionCounts.archived > 0 && (
             <Text className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-              activeFilter === 'archive'
+              queryRequest.statusScope === 'archived'
                 ? 'bg-white/20 text-white'
                 : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
             }`}>
-              {archivedNotes.length}
+              {partitionCounts.archived}
             </Text>
           )}
         </Pressable>
 
         {/* Trash Pill */}
         <Pressable
-          onPress={() => setActiveFilter('trash')}
+          onPress={() => setStatusScopeFilter('trashed')}
           className={`flex-row items-center gap-1.5 px-4 py-1.5 rounded-full border transition-all ${
-            activeFilter === 'trash'
+            queryRequest.statusScope === 'trashed'
               ? 'bg-red-500 border-transparent'
               : 'bg-transparent border-light-border dark:border-dark-border'
           }`}
         >
-          <Trash2 size={12} color={activeFilter === 'trash' ? '#FFFFFF' : (isDark ? '#B5B5B5' : '#626262')} />
+          <Trash2 size={12} color={queryRequest.statusScope === 'trashed' ? '#FFFFFF' : (isDark ? '#B5B5B5' : '#626262')} />
           <Text className={`text-xs font-semibold ${
-            activeFilter === 'trash'
+            queryRequest.statusScope === 'trashed'
               ? 'text-white'
               : 'text-light-textSecondary dark:text-dark-textSecondary'
           }`}>
             Trash
           </Text>
-          {trashedNotes.length > 0 && (
+          {partitionCounts.trashed > 0 && (
             <Text className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${
-              activeFilter === 'trash'
+              queryRequest.statusScope === 'trashed'
                 ? 'bg-white/20 text-white'
                 : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
             }`}>
-              {trashedNotes.length}
+              {partitionCounts.trashed}
             </Text>
           )}
         </Pressable>
@@ -425,11 +552,11 @@ export const NotesView: React.FC = () => {
 
         {/* Dynamic Folder Pills */}
         {allFolderNames.map((folderName) => {
-          const isSelected = activeFilter === `folder:${folderName}`;
+          const isSelected = queryRequest.folderPath === folderName;
           return (
             <Pressable
               key={folderName}
-              onPress={() => setActiveFilter(isSelected ? 'all' : `folder:${folderName}`)}
+              onPress={() => setFolderFilter(isSelected ? null : folderName)}
               className={`flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border transition-all ${
                 isSelected
                   ? 'bg-light-iconBg dark:bg-white border-transparent'
@@ -462,11 +589,13 @@ export const NotesView: React.FC = () => {
         {tags.length > 0 && <View className="h-5 w-[1px] bg-light-border dark:bg-dark-border mx-1 self-center" />}
 
         {tags.map((tag) => {
-          const isSelected = activeFilter === `tag:${tag}`;
+          const isSelected = (queryRequest.tags || []).some(
+            (t) => t.toLowerCase() === tag.toLowerCase()
+          );
           return (
             <Pressable
               key={tag}
-              onPress={() => setActiveFilter(isSelected ? 'all' : `tag:${tag}`)}
+              onPress={() => toggleTagFilter(tag)}
               className={`flex-row items-center gap-1 px-3 py-1.5 rounded-full border transition-all ${
                 isSelected
                   ? 'bg-cyan-500/20 border-cyan-500/50'
@@ -485,18 +614,18 @@ export const NotesView: React.FC = () => {
       </ScrollView>
 
       {/* Trash View Action Banner */}
-      {activeFilter === 'trash' && (
+      {queryRequest.statusScope === 'trashed' && (
         <View className="flex-row items-center justify-between mb-6 p-4 rounded-2xl bg-red-500/10 border border-red-500/20">
           <View className="flex-row items-center gap-2.5">
             <Trash2 size={18} color="#EF4444" />
             <View>
               <Text className="text-sm font-bold text-red-500">Trash Bin</Text>
               <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
-                {trashedNotes.length} notes in trash. Permanently delete or restore them anytime.
+                {partitionCounts.trashed} notes in trash. Permanently delete or restore them anytime.
               </Text>
             </View>
           </View>
-          {trashedNotes.length > 0 && (
+          {partitionCounts.trashed > 0 && (
             <Pressable
               onPress={emptyTrash}
               accessibilityLabel="Empty All Trash"
@@ -509,321 +638,143 @@ export const NotesView: React.FC = () => {
       )}
 
       {/* Archive View Action Banner */}
-      {activeFilter === 'archive' && (
+      {queryRequest.statusScope === 'archived' && (
         <View className="flex-row items-center gap-3 mb-6 p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20">
           <Archive size={18} color="#06B6D4" />
           <View>
             <Text className="text-sm font-bold text-cyan-400">Archived Notes</Text>
             <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
-              {archivedNotes.length} notes preserved. Tap unarchive on any note to restore it to your main notebook.
+              {partitionCounts.archived} notes preserved. Tap unarchive on any note to restore it to your main notebook.
             </Text>
           </View>
         </View>
       )}
 
-      {/* Pinned Notes Top Shelf (When viewing All Notes and pinned notes exist) */}
-      {activeFilter === 'all' && pinnedNotes.length > 0 && (
+      {/* Pinned Notes Top Shelf (When viewing All Notes without an active search query) */}
+      {!isSearchActive && pinnedCards.length > 0 && (
         <View className="mb-8">
           <View className="flex-row items-center gap-2 mb-3">
             <Pin size={13} color="#FFC96F" fill="#FFC96F" />
             <Text className="text-xs font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted">
-              Pinned Notes ({pinnedNotes.length})
+              Pinned Notes ({pinnedCards.length})
             </Text>
           </View>
 
           <View className="flex-row flex-wrap -mx-2.5">
-            {pinnedNotes.map((note) => {
-              const pastelHex = NoteColors[note.colorToken] || '#FFC96F';
-              return (
-                <View key={note.id} className="w-full sm:w-1/2 lg:w-1/3 p-2.5">
-                  <Pressable
-                    onPress={() => handleOpenNote(note)}
-                    accessibilityLabel={`Open pinned note ${note.title}`}
-                    style={{ backgroundColor: pastelHex, minHeight: 130 }}
-                    className="p-4 rounded-[18px] justify-between shadow-sm active:scale-[0.99] transition-transform relative overflow-hidden"
-                  >
-                    {/* Top Row: Folder Badge, Pin Badge, Favorite */}
-                    <View className="flex-row items-center justify-between mb-3">
-                      <View className="flex-row items-center gap-1.5">
-                        <View className="px-2.5 py-1 rounded-full bg-black/10">
-                          <Text className="text-[11px] font-semibold text-[#191919] tracking-tight">
-                            {note.folderPath || 'General'}
-                          </Text>
-                        </View>
-                        <View className="w-6 h-6 rounded-full bg-black/10 items-center justify-center">
-                          <Pin size={11} color="#191919" fill="#191919" />
-                        </View>
-                      </View>
-
-                      <View className="flex-row items-center gap-1">
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            togglePin(note.id);
-                          }}
-                          accessibilityLabel="Unpin note"
-                          className="w-7 h-7 rounded-full items-center justify-center active:scale-90"
-                        >
-                          <Pin size={15} color="#191919" fill="#191919" />
-                        </Pressable>
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            toggleFavorite(note.id);
-                          }}
-                          accessibilityLabel="Toggle Favorite"
-                          className="w-7 h-7 rounded-full items-center justify-center active:scale-90"
-                        >
-                          <Star 
-                            size={16} 
-                            color={note.isFavorite ? '#FFD43B' : 'rgba(25, 25, 25, 0.4)'} 
-                            fill={note.isFavorite ? '#FFD43B' : 'transparent'} 
-                            strokeWidth={2}
-                          />
-                        </Pressable>
-                      </View>
-                    </View>
-
-                    {/* Title & Preview */}
-                    <View style={{ flexGrow: 1, flexShrink: 0 }} className="mb-3">
-                      <Text className="text-xl font-bold text-[#191919] tracking-tight mb-1.5 leading-tight">
-                        {note.title}
-                      </Text>
-                      <Text numberOfLines={3} className="text-sm text-[#191919]/80 leading-relaxed font-normal">
-                        {note.contentMarkdown}
-                      </Text>
-                    </View>
-
-                    {/* Tag Chips */}
-                    {note.tags && note.tags.length > 0 && (
-                      <View className="flex-row flex-wrap gap-1 mb-3">
-                        {note.tags.map((t) => (
-                          <View key={t} className="px-2 py-0.5 rounded-full bg-black/10">
-                            <Text className="text-[10px] font-bold text-[#191919]">#{t}</Text>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-
-                    {/* Bottom Row */}
-                    <View className="flex-row items-center justify-between pt-2">
-                      <Text className="text-xs font-medium text-[#191919]/60">{note.createdAt}</Text>
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          handleOpenNote(note);
-                        }}
-                        accessibilityLabel="Edit Note"
-                        className="w-8 h-8 rounded-full bg-[#111111] items-center justify-center active:scale-95 shadow-sm"
-                      >
-                        <Pencil size={14} color="#FFFFFF" strokeWidth={2.2} />
-                      </Pressable>
-                    </View>
-                  </Pressable>
-                </View>
-              );
-            })}
+            {pinnedCards.map((vm) => (
+              <NoteCard
+                key={vm.note.id}
+                viewModel={vm}
+                isPinnedShelfCard
+                onOpenNote={handleOpenNote}
+                onTogglePin={togglePin}
+                onToggleFavorite={toggleFavorite}
+                onRestoreNote={restoreNote}
+                onPermanentlyDeleteNote={permanentlyDeleteNote}
+                onUnarchiveNote={unarchiveNote}
+              />
+            ))}
           </View>
 
           <Text className="text-xs font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-3 mt-6">
-            All Notes ({activeNotes.filter((n) => !n.isPinned).length})
+            All Notes ({mainFeedTotal})
           </Text>
         </View>
       )}
 
-      {/* Main Notes Grid */}
-      <View className="flex-row flex-wrap -mx-2.5">
-        {(activeFilter === 'all' && pinnedNotes.length > 0
-          ? displayedNotes.filter((n) => !n.isPinned)
-          : displayedNotes
-        ).map((note) => {
-          const pastelHex = NoteColors[note.colorToken] || '#FFC96F';
-          const isTrashed = note.status === 'trashed';
-          const isArchived = note.status === 'archived';
-
-          return (
-            <View 
-              key={note.id}
-              className="w-full sm:w-1/2 lg:w-1/3 p-2.5"
+      {/* Search Results Header Banner */}
+      {isSearchActive && (
+        <View className="flex-row items-center justify-between mb-3 px-1">
+          <Text className="text-xs font-bold uppercase tracking-wider text-cyan-500">
+            Search Results ({totalMatches} {totalMatches === 1 ? 'match' : 'matches'} for "{searchQuery.trim()}")
+          </Text>
+          {(queryRequest.statusScope !== 'active' || queryRequest.folderPath || (queryRequest.tags && queryRequest.tags.length > 0)) && totalMatches === 0 && (
+            <Pressable
+              onPress={() => setStatusScopeFilter('active')}
+              className="px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 active:scale-95"
             >
-              <Pressable
-                onPress={() => !isTrashed && handleOpenNote(note)}
-                accessibilityLabel={`Open note ${note.title}`}
-                style={{ backgroundColor: pastelHex, minHeight: 130 }}
-                className="p-4 rounded-[18px] justify-between shadow-sm active:scale-[0.99] transition-transform"
-              >
-                {/* Top Row: Folder Badge, Status Chips & Action Buttons */}
-                <View className="flex-row items-center justify-between mb-3">
-                  <View className="flex-row items-center gap-1.5">
-                    <View className="px-2.5 py-1 rounded-full bg-black/10">
-                      <Text className="text-[11px] font-semibold text-[#191919] tracking-tight">
-                        {note.folderPath || 'General'}
-                      </Text>
-                    </View>
-                    {isArchived && (
-                      <View className="px-2 py-0.5 rounded-full bg-cyan-700/20">
-                        <Text className="text-[10px] font-bold text-[#191919]">Archived</Text>
-                      </View>
-                    )}
-                    {isTrashed && (
-                      <View className="px-2 py-0.5 rounded-full bg-red-700/20">
-                        <Text className="text-[10px] font-bold text-[#191919]">Trash</Text>
-                      </View>
-                    )}
-                  </View>
+              <Text className="text-[11px] font-bold text-cyan-400">
+                Search in All Notes
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
 
-                  {!isTrashed && (
-                    <View className="flex-row items-center gap-1">
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          togglePin(note.id);
-                        }}
-                        accessibilityLabel="Toggle Pin"
-                        className="w-7 h-7 rounded-full items-center justify-center active:scale-90"
-                      >
-                        <Pin 
-                          size={15} 
-                          color={note.isPinned ? '#191919' : 'rgba(25, 25, 25, 0.4)'} 
-                          fill={note.isPinned ? '#191919' : 'transparent'} 
-                        />
-                      </Pressable>
-
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          toggleFavorite(note.id);
-                        }}
-                        accessibilityLabel="Toggle Favorite"
-                        className="w-7 h-7 rounded-full items-center justify-center active:scale-90"
-                      >
-                        <Star 
-                          size={17} 
-                          color={note.isFavorite ? '#FFD43B' : 'rgba(25, 25, 25, 0.4)'} 
-                          fill={note.isFavorite ? '#FFD43B' : 'transparent'} 
-                          strokeWidth={2}
-                        />
-                      </Pressable>
-                    </View>
-                  )}
-                </View>
-
-                {/* Note Title & Body */}
-                <View style={{ flexGrow: 1, flexShrink: 0 }} className="mb-3">
-                  <Text className="text-xl font-bold text-[#191919] tracking-tight mb-2 leading-tight">
-                    {note.title}
-                  </Text>
-                  <Text 
-                    numberOfLines={4}
-                    className="text-sm text-[#191919]/80 leading-relaxed font-normal"
-                  >
-                    {note.contentMarkdown}
-                  </Text>
-                </View>
-
-                {/* Tag Chips */}
-                {note.tags && note.tags.length > 0 && (
-                  <View className="flex-row flex-wrap gap-1 mb-3">
-                    {note.tags.map((t) => (
-                      <View key={t} className="px-2 py-0.5 rounded-full bg-black/10">
-                        <Text className="text-[10px] font-bold text-[#191919]">#{t}</Text>
-                      </View>
-                    ))}
-                  </View>
-                )}
-
-                {/* Bottom Row Actions */}
-                <View className="flex-row items-center justify-between pt-2">
-                  <Text className="text-xs font-medium text-[#191919]/60">
-                    {note.createdAt}
-                  </Text>
-
-                  {isTrashed ? (
-                    <View className="flex-row items-center gap-1.5">
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          restoreNote(note.id);
-                        }}
-                        accessibilityLabel="Restore Note"
-                        className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-[#111111] active:scale-95 shadow-sm"
-                      >
-                        <RotateCcw size={11} color="#FFFFFF" />
-                        <Text className="text-[11px] font-bold text-white">Restore</Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          permanentlyDeleteNote(note.id);
-                        }}
-                        accessibilityLabel="Delete Permanently"
-                        className="p-1 rounded-full bg-red-600 active:scale-95"
-                      >
-                        <Trash2 size={13} color="#FFFFFF" />
-                      </Pressable>
-                    </View>
-                  ) : isArchived ? (
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        unarchiveNote(note.id);
-                      }}
-                      accessibilityLabel="Unarchive Note"
-                      className="flex-row items-center gap-1 px-3 py-1 rounded-full bg-[#111111] active:scale-95 shadow-sm"
-                    >
-                      <RotateCcw size={11} color="#FFFFFF" />
-                      <Text className="text-[11px] font-bold text-white">Unarchive</Text>
-                    </Pressable>
-                  ) : (
-                    <Pressable
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleOpenNote(note);
-                      }}
-                      accessibilityLabel="Edit Note"
-                      className="w-9 h-9 rounded-full bg-[#111111] items-center justify-center active:scale-95 shadow-sm"
-                    >
-                      <Pencil size={15} color="#FFFFFF" strokeWidth={2.2} />
-                    </Pressable>
-                  )}
-                </View>
-              </Pressable>
-            </View>
-          );
-        })}
+      {/* Main Notes Grid (Unified Paginated Feed — 10 notes per page) */}
+      <View className="flex-row flex-wrap -mx-2.5">
+        {feedCards.map((vm) => (
+          <NoteCard
+            key={vm.note.id}
+            viewModel={vm}
+            onOpenNote={handleOpenNote}
+            onTogglePin={togglePin}
+            onToggleFavorite={toggleFavorite}
+            onRestoreNote={restoreNote}
+            onPermanentlyDeleteNote={permanentlyDeleteNote}
+            onUnarchiveNote={unarchiveNote}
+          />
+        ))}
       </View>
 
+      {/* Dynamic 10-Note Pagination Footer */}
+      {mainFeedTotal > 0 && (
+        <View className="items-center justify-center mt-6 mb-2">
+          <Text className="text-xs font-medium text-light-textMuted dark:text-dark-textMuted mb-2">
+            Showing {visibleCount} of {mainFeedTotal} {mainFeedTotal === 1 ? 'note' : 'notes'}
+            {hasMore ? ' • Scroll down for more' : ''}
+          </Text>
+          {hasMore && (
+            <Pressable
+              onPress={loadNextPage}
+              accessibilityLabel="Load More Notes"
+              className="px-4 py-2 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border dark:border-white/10 active:scale-95"
+            >
+              <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                Load More Notes
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
       {/* Empty State */}
-      {displayedNotes.length === 0 && (
+      {totalMatches === 0 && (
         <View className="items-center justify-center py-20 px-4">
           <View className="w-16 h-16 rounded-full bg-light-surface dark:bg-dark-raised border border-light-border dark:border-white/10 items-center justify-center mb-4">
-            {activeFilter === 'trash' ? (
+            {isSearchActive ? (
+              <Search size={24} color={isDark ? '#71717A' : '#A1A1AA'} />
+            ) : queryRequest.statusScope === 'trashed' ? (
               <Trash2 size={24} color={isDark ? '#71717A' : '#A1A1AA'} />
-            ) : activeFilter === 'archive' ? (
+            ) : queryRequest.statusScope === 'archived' ? (
               <Archive size={24} color={isDark ? '#71717A' : '#A1A1AA'} />
-            ) : activeFilter === 'favorites' ? (
+            ) : queryRequest.statusScope === 'favorites' ? (
               <Star size={24} color={isDark ? '#71717A' : '#A1A1AA'} />
             ) : (
               <Folder size={24} color={isDark ? '#71717A' : '#A1A1AA'} />
             )}
           </View>
           <Text className="text-base font-bold text-light-textPrimary dark:text-dark-textPrimary mb-1">
-            {activeFilter === 'trash'
+            {isSearchActive
+              ? `No matches for "${searchQuery.trim()}"`
+              : queryRequest.statusScope === 'trashed'
               ? 'Trash is empty'
-              : activeFilter === 'archive'
+              : queryRequest.statusScope === 'archived'
               ? 'No archived notes'
-              : activeFilter === 'favorites'
+              : queryRequest.statusScope === 'favorites'
               ? 'No favorite notes yet'
               : 'No notes found'}
           </Text>
           <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center max-w-xs">
-            {activeFilter === 'trash'
+            {isSearchActive
+              ? 'Try searching for a different keyword, tag, folder, media caption, or voice transcript.'
+              : queryRequest.statusScope === 'trashed'
               ? 'Deleted notes will appear here before being permanently removed.'
-              : activeFilter === 'archive'
+              : queryRequest.statusScope === 'archived'
               ? 'Archive completed or quiet notes to keep your workspace decluttered.'
-              : activeFilter === 'favorites'
+              : queryRequest.statusScope === 'favorites'
               ? 'Tap the star icon on any note to pin it to your favorites.'
-              : 'Create a new note or capture a thought above to get started.'}
+              : 'Tap the + button in the top right to create a new note.'}
           </Text>
         </View>
       )}

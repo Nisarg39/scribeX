@@ -58,11 +58,28 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
 }) => {
   const { isDark } = useTheme();
   const [paths, setPaths] = useState<StrokePath[]>(initialPaths);
+  const pathsRef = useRef<StrokePath[]>(initialPaths);
   const [sketchCaption, setSketchCaption] = useState<string>(caption);
+  const captionRef = useRef<string>(caption);
   const [redoStack, setRedoStack] = useState<StrokePath[][]>([]);
   const [tool, setTool] = useState<'pen' | 'highlighter' | 'eraser'>('pen');
   const [selectedColorIdx, setSelectedColorIdx] = useState(0);
   const [strokeWidth, setStrokeWidth] = useState<number>(3);
+
+  React.useEffect(() => {
+    pathsRef.current = paths;
+  }, [paths]);
+
+  React.useEffect(() => {
+    captionRef.current = sketchCaption;
+  }, [sketchCaption]);
+
+  React.useEffect(() => {
+    if (caption !== undefined && caption !== captionRef.current) {
+      setSketchCaption(caption);
+      captionRef.current = caption;
+    }
+  }, [caption]);
 
   const currentPathRef = useRef<{ points: Array<{ x: number; y: number }> } | null>(null);
   const [currentStroke, setCurrentStroke] = useState<string | null>(null);
@@ -115,9 +132,10 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
 
           if (tool === 'eraser') {
             // Remove the last stroke or near stroke
-            const next = paths.slice(0, -1);
+            const next = pathsRef.current.slice(0, -1);
+            pathsRef.current = next;
             setPaths(next);
-            onUpdateDrawing(next);
+            onUpdateDrawing(next, captionRef.current);
           } else {
             const newStroke: StrokePath = {
               id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -127,10 +145,11 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
               opacity: activeOpacity,
             };
 
-            const next = [...paths, newStroke];
+            const next = [...pathsRef.current, newStroke];
+            pathsRef.current = next;
             setPaths(next);
             setRedoStack([]);
-            onUpdateDrawing(next);
+            onUpdateDrawing(next, captionRef.current);
           }
 
           currentPathRef.current = null;
@@ -145,8 +164,9 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
     const last = paths[paths.length - 1];
     const next = paths.slice(0, -1);
     setRedoStack((prev) => [...prev, [last]]);
+    pathsRef.current = next;
     setPaths(next);
-    onUpdateDrawing(next);
+    onUpdateDrawing(next, captionRef.current);
   };
 
   const handleRedo = () => {
@@ -155,15 +175,17 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
     const nextRedo = redoStack.slice(0, -1);
     const next = [...paths, ...lastRedo];
     setRedoStack(nextRedo);
+    pathsRef.current = next;
     setPaths(next);
-    onUpdateDrawing(next);
+    onUpdateDrawing(next, captionRef.current);
   };
 
   const handleClear = () => {
     if (paths.length === 0) return;
     setRedoStack((prev) => [...prev, paths]);
+    pathsRef.current = [];
     setPaths([]);
-    onUpdateDrawing([]);
+    onUpdateDrawing([], captionRef.current);
   };
 
   return (

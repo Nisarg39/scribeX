@@ -99,6 +99,32 @@ export interface DBSyncChangelog {
   created_at: string;
 }
 
+export type SearchHistorySource = 'text' | 'voice' | 'ai';
+
+export interface DBSearchHistory {
+  id: string;
+  user_id: string;
+  query_text: string;
+  source: SearchHistorySource;
+  filter_snapshot_json: string;
+  use_count: number;
+  sync_rev: number;
+  created_at: string;
+  last_used_at: string;
+}
+
+export interface SearchHistoryItem {
+  id: string;
+  userId: string;
+  queryText: string;
+  source: SearchHistorySource;
+  filterSnapshot: Record<string, any>;
+  useCount: number;
+  syncRev: number;
+  createdAt: string;
+  lastUsedAt: string;
+}
+
 // Data Transfer Objects (DTOs)
 export interface CreateNoteDTO {
   id?: string;

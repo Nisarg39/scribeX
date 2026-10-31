@@ -402,13 +402,12 @@ export const useEditorState = ({
   const handleReorderBlock = (fromIndex: number, toIndex: number) => {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return;
     const currentBlocks = blocksRef.current;
-    let nextBlocks: ComposableBlock[] = [];
-    setBlocks((prevBlocks) => {
-      nextBlocks = [...prevBlocks];
-      const [moved] = nextBlocks.splice(fromIndex, 1);
-      nextBlocks.splice(toIndex, 0, moved);
-      return nextBlocks;
-    });
+    const nextBlocks = [...currentBlocks];
+    const [moved] = nextBlocks.splice(fromIndex, 1);
+    nextBlocks.splice(toIndex, 0, moved);
+
+    blocksRef.current = nextBlocks;
+    setBlocks(nextBlocks);
 
     actionHistory.recordAction({
       tier: 2,
@@ -434,11 +433,17 @@ export const useEditorState = ({
   };
 
   const handleUpdateBlock = (blockId: string, updates: Partial<ComposableBlock>) => {
-    let nextBlocks: ComposableBlock[] = [];
-    setBlocks((prevBlocks) => {
-      nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, ...updates } : b));
-      return nextBlocks;
-    });
+    const nextBlocks = blocksRef.current.map((b) =>
+      b.id === blockId
+        ? {
+            ...b,
+            ...updates,
+            metadata: updates.metadata !== undefined ? { ...b.metadata, ...updates.metadata } : b.metadata,
+          }
+        : b
+    );
+    blocksRef.current = nextBlocks;
+    setBlocks(nextBlocks);
     if (nextBlocks.length > 0) {
       persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
     }
@@ -458,11 +463,9 @@ export const useEditorState = ({
       coalesceKey: `content_${blockId}`,
     });
 
-    let nextBlocks: ComposableBlock[] = [];
-    setBlocks((prevBlocks) => {
-      nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, content } : b));
-      return nextBlocks;
-    });
+    const nextBlocks = blocksRef.current.map((b) => (b.id === blockId ? { ...b, content } : b));
+    blocksRef.current = nextBlocks;
+    setBlocks(nextBlocks);
     if (nextBlocks.length > 0) {
       persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
     }
@@ -471,6 +474,7 @@ export const useEditorState = ({
   const handleUpdateMetadata = (blockId: string, metadata: Record<string, any>) => {
     const prevBlock = blocksRef.current.find((b) => b.id === blockId);
     const prevMeta = prevBlock?.metadata || {};
+    const mergedMeta = { ...prevMeta, ...metadata };
 
     actionHistory.recordAction({
       tier: 3,
@@ -478,17 +482,15 @@ export const useEditorState = ({
       description: 'Update Block Metadata',
       blockId,
       before: prevMeta,
-      after: metadata,
+      after: mergedMeta,
       coalesceKey: `meta_${blockId}`,
     });
 
-    let nextBlocks: ComposableBlock[] = [];
-    setBlocks((prevBlocks) => {
-      nextBlocks = prevBlocks.map((b) =>
-        b.id === blockId ? { ...b, metadata: { ...b.metadata, ...metadata } } : b
-      );
-      return nextBlocks;
-    });
+    const nextBlocks = blocksRef.current.map((b) =>
+      b.id === blockId ? { ...b, metadata: { ...b.metadata, ...metadata } } : b
+    );
+    blocksRef.current = nextBlocks;
+    setBlocks(nextBlocks);
     if (nextBlocks.length > 0) {
       persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
     }
@@ -496,11 +498,9 @@ export const useEditorState = ({
 
   const handleChangeType = (blockId: string, type: BlockType) => {
     const currentBlocks = blocksRef.current;
-    let nextBlocks: ComposableBlock[] = [];
-    setBlocks((prevBlocks) => {
-      nextBlocks = prevBlocks.map((b) => (b.id === blockId ? { ...b, type } : b));
-      return nextBlocks;
-    });
+    const nextBlocks = currentBlocks.map((b) => (b.id === blockId ? { ...b, type } : b));
+    blocksRef.current = nextBlocks;
+    setBlocks(nextBlocks);
     actionHistory.recordAction({
       tier: 2,
       type: 'CHANGE_BLOCK_TYPE',

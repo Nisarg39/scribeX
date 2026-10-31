@@ -116,6 +116,20 @@ CREATE TABLE IF NOT EXISTS sync_changelog (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 9. Search & Workspace Filter History (Local-first, Cloud-Sync Ready)
+CREATE TABLE IF NOT EXISTS search_history (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  query_text TEXT NOT NULL,
+  source TEXT CHECK(source IN ('text', 'voice', 'ai')) NOT NULL DEFAULT 'text',
+  filter_snapshot_json TEXT DEFAULT '{}',
+  use_count INTEGER NOT NULL DEFAULT 1,
+  sync_rev INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_used_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (user_id, query_text)
+);
+
 -- Sub-5ms Performance Query Indexes
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status);
@@ -126,4 +140,5 @@ CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(is_completed);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON entity_relations(source_id);
 CREATE INDEX IF NOT EXISTS idx_relations_target ON entity_relations(target_id);
 CREATE INDEX IF NOT EXISTS idx_changelog_rev ON sync_changelog(sync_rev);
+CREATE INDEX IF NOT EXISTS idx_search_history_recent ON search_history(user_id, last_used_at DESC);
 `;

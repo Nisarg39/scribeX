@@ -1,15 +1,65 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { NoteItem, TaskItem, ComposableBlock, TaskPriority } from '../types/note';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import { NoteItem, TaskItem, ComposableBlock, TaskPriority, BlockType } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
 import { notesRepo } from '../db/notesRepo';
 import { tasksRepo } from '../db/tasksRepo';
 import { foldersRepo } from '../db/foldersRepo';
 import { tagsRepo } from '../db/tagsRepo';
-import { DBFolder } from '../db/types';
+import { searchHistoryRepo } from '../db/searchHistoryRepo';
+import { DBFolder, SearchHistorySource } from '../db/types';
 import { serializeBlocksToMarkdown } from '../core/astSerializer';
+import { NoteSearchDocument, buildNoteSearchDocument } from '../core/searchIndexer';
+import {
+  NoteQueryRequest,
+  NoteStatusScope,
+  NoteSortBy,
+  NoteCardViewModel,
+  NotePartitionCounts,
+  DEFAULT_NOTE_QUERY_REQUEST,
+  executeNoteQuery,
+  mapLegacyFilterToQuery,
+  deriveLegacyFilterFromQuery,
+  buildCanonicalNoteQueryRequest,
+} from '../core/noteQueryEngine';
+
+export interface WorkspaceActivityEntry {
+  id: string;
+  timestamp: string;
+  category: 'search' | 'note_lifecycle' | 'folder' | 'tag' | 'task' | 'sync';
+  action: string;
+  targetId?: string;
+  summary: string;
+}
 
 interface NotesContextValue {
   notes: NoteItem[];
+  searchIndexMap: Map<string, NoteSearchDocument>;
+  queryRequest: NoteQueryRequest;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  setQueryRequest: (partial: Partial<NoteQueryRequest>) => void;
+  resetQueryRequest: () => void;
+  setStatusScopeFilter: (statusScope: NoteStatusScope) => void;
+  setFolderFilter: (folderPath: string | null, includeSubfolders?: boolean) => void;
+  toggleTagFilter: (tag: string) => void;
+  toggleBlockTypeFilter: (blockType: BlockType) => void;
+  setSortByFilter: (sortBy: NoteSortBy) => void;
+  pinnedCards: NoteCardViewModel[];
+  feedCards: NoteCardViewModel[];
+  totalMatches: number;
+  mainFeedTotal: number;
+  visibleCount: number;
+  hasMore: boolean;
+  isSearchActive: boolean;
+  partitionCounts: NotePartitionCounts;
+  loadNextPage: () => void;
+  resetPagination: () => void;
+  upsertSyncedNote: (note: NoteItem) => void;
+  recentSearches: string[];
+  recordSearchHistory: (query: string, source?: SearchHistorySource) => void;
+  deleteSearchHistoryItem: (query: string) => void;
+  clearSearchHistory: () => void;
+  workspaceHistory: WorkspaceActivityEntry[];
   tasks: TaskItem[];
   folders: DBFolder[];
   tags: string[];
@@ -66,6 +116,40 @@ const PASTEL_PALETTE: NoteColorToken[] = [
 
 const NotesContext = createContext<NotesContextValue>({
   notes: [],
+  searchIndexMap: new Map(),
+  queryRequest: DEFAULT_NOTE_QUERY_REQUEST,
+  searchQuery: '',
+  setSearchQuery: () => {},
+  setQueryRequest: () => {},
+  resetQueryRequest: () => {},
+  setStatusScopeFilter: () => {},
+  setFolderFilter: () => {},
+  toggleTagFilter: () => {},
+  toggleBlockTypeFilter: () => {},
+  setSortByFilter: () => {},
+  pinnedCards: [],
+  feedCards: [],
+  totalMatches: 0,
+  mainFeedTotal: 0,
+  visibleCount: 0,
+  hasMore: false,
+  isSearchActive: false,
+  partitionCounts: {
+    allActive: 0,
+    favorites: 0,
+    archived: 0,
+    trashed: 0,
+    byFolder: {},
+    byTag: {},
+  },
+  loadNextPage: () => {},
+  resetPagination: () => {},
+  upsertSyncedNote: () => {},
+  recentSearches: [],
+  recordSearchHistory: () => {},
+  deleteSearchHistoryItem: () => {},
+  clearSearchHistory: () => {},
+  workspaceHistory: [],
   tasks: [],
   folders: [],
   tags: [],
@@ -102,17 +186,192 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [folders, setFolders] = useState<DBFolder[]>([]);
   const [tags, setTags] = useState<string[]>([]);
-  const [activeFilter, setActiveFilter] = useState<string>('all');
+  const [activeFilter, setActiveFilterState] = useState<string>('all');
+  const [queryRequest, setQueryRequestState] = useState<NoteQueryRequest>(DEFAULT_NOTE_QUERY_REQUEST);
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [workspaceHistory, setWorkspaceHistory] = useState<WorkspaceActivityEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isEditingNote, setIsEditingNote] = useState<boolean>(false);
 
+  const logWorkspaceActivity = (
+    category: WorkspaceActivityEntry['category'],
+    action: string,
+    summary: string,
+    targetId?: string
+  ) => {
+    const entry: WorkspaceActivityEntry = {
+      id: `act-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      timestamp: new Date().toISOString(),
+      category,
+      action,
+      targetId,
+      summary,
+    };
+    setWorkspaceHistory((prev) => [entry, ...prev.slice(0, 49)]);
+  };
+
+  const recordSearchHistory = (
+    rawQuery: string,
+    source: SearchHistorySource = 'text'
+  ) => {
+    const clean = rawQuery.trim();
+    if (clean.length < 2) return;
+    setRecentSearches((prev) => {
+      const deduped = [clean, ...prev.filter((q) => q.toLowerCase() !== clean.toLowerCase())];
+      return deduped.slice(0, 8);
+    });
+    logWorkspaceActivity('search', 'search_query', `Searched (${source}): "${clean}"`);
+
+    const filterSnapshot = {
+      statusScope: queryRequest.statusScope,
+      folderPath: queryRequest.folderPath,
+      tags: queryRequest.tags,
+      hasBlockTypes: queryRequest.hasBlockTypes,
+    };
+    searchHistoryRepo
+      .upsertSearchQuery(clean, source, filterSnapshot)
+      .catch((err) => console.warn('Failed to persist search query via searchHistoryRepo:', err));
+  };
+
+  const deleteSearchHistoryItem = (query: string) => {
+    setRecentSearches((prev) => prev.filter((q) => q.toLowerCase() !== query.toLowerCase()));
+    searchHistoryRepo
+      .deleteSearchHistoryItem(query)
+      .catch((err) => console.warn('Failed to delete search history item:', err));
+  };
+
+  const clearSearchHistory = () => {
+    setRecentSearches([]);
+    searchHistoryRepo
+      .clearAllSearchHistory()
+      .catch((err) => console.warn('Failed to clear search history via searchHistoryRepo:', err));
+  };
+
+  const setActiveFilter = (filter: string) => {
+    setActiveFilterState(filter);
+    const mapped = mapLegacyFilterToQuery(filter);
+    setQueryRequestState((prev) => buildCanonicalNoteQueryRequest(prev, mapped));
+  };
+
+  const setSearchQuery = (searchQuery: string) => {
+    setQueryRequestState((prev) => buildCanonicalNoteQueryRequest(prev, { searchQuery }));
+  };
+
+  const setQueryRequest = (partial: Partial<NoteQueryRequest>) => {
+    setQueryRequestState((prev) => {
+      const next = buildCanonicalNoteQueryRequest(prev, partial);
+      setActiveFilterState(deriveLegacyFilterFromQuery(next));
+      return next;
+    });
+  };
+
+  const resetQueryRequest = () => {
+    setQueryRequestState(DEFAULT_NOTE_QUERY_REQUEST);
+    setActiveFilterState('all');
+  };
+
+  const setStatusScopeFilter = (statusScope: NoteStatusScope) => {
+    setQueryRequest({
+      statusScope,
+      folderPath: null,
+      tags: [],
+    });
+  };
+
+  const setFolderFilter = (folderPath: string | null, includeSubfolders: boolean = false) => {
+    setQueryRequest({
+      statusScope: 'active',
+      folderPath,
+      includeSubfolders,
+      tags: [],
+    });
+  };
+
+  const toggleTagFilter = (tag: string) => {
+    const cleanTag = tag.trim().replace(/^#/, '');
+    if (!cleanTag) return;
+    setQueryRequestState((prev) => {
+      const currentTags = prev.tags || [];
+      const exists = currentTags.some((t) => t.toLowerCase() === cleanTag.toLowerCase());
+      const nextTags = exists
+        ? currentTags.filter((t) => t.toLowerCase() !== cleanTag.toLowerCase())
+        : [...currentTags, cleanTag];
+      const next = buildCanonicalNoteQueryRequest(prev, {
+        statusScope: 'active',
+        folderPath: null,
+        tags: nextTags,
+      });
+      setActiveFilterState(deriveLegacyFilterFromQuery(next));
+      return next;
+    });
+  };
+
+  const toggleBlockTypeFilter = (blockType: BlockType) => {
+    setQueryRequestState((prev) => {
+      const currentTypes = prev.hasBlockTypes || [];
+      const exists = currentTypes.includes(blockType);
+      const nextTypes = exists
+        ? currentTypes.filter((t) => t !== blockType)
+        : [...currentTypes, blockType];
+      const next = buildCanonicalNoteQueryRequest(prev, {
+        hasBlockTypes: nextTypes,
+      });
+      return next;
+    });
+  };
+
+  const setSortByFilter = (sortBy: NoteSortBy) => {
+    setQueryRequest({ sortBy });
+  };
+
+  const loadNextPage = () => {
+    setQueryRequestState((prev) => ({
+      ...prev,
+      page: prev.page + 1,
+    }));
+  };
+
+  const resetPagination = () => {
+    setQueryRequestState((prev) => ({
+      ...prev,
+      page: 1,
+    }));
+  };
+
+  const upsertSyncedNote = (syncedNote: NoteItem) => {
+    setNotes((prev) => {
+      const exists = prev.some((n) => n.id === syncedNote.id);
+      if (exists) {
+        return prev.map((n) => (n.id === syncedNote.id ? syncedNote : n));
+      }
+      return [syncedNote, ...prev];
+    });
+    logWorkspaceActivity('sync', 'upsert_synced_note', `Synced note "${syncedNote.title}"`, syncedNote.id);
+  };
+
+  // Derived in-memory search index map (single source of truth from `notes` — zero extra DB tables)
+  const searchIndexMap = useMemo(() => {
+    const map = new Map<string, NoteSearchDocument>();
+    for (const note of notes) {
+      map.set(note.id, buildNoteSearchDocument(note));
+    }
+    return map;
+  }, [notes]);
+
+  // Execute the Unified 3-Stage Query, Ranking & 10-Note Pagination Pipeline
+  const unifiedFeed = useMemo(
+    () => executeNoteQuery(notes, searchIndexMap, queryRequest),
+    [notes, searchIndexMap, queryRequest]
+  );
+
   const refreshFromDB = async () => {
     try {
-      const [allNotes, allTasks, fetchedFolders, fetchedTags] = await Promise.all([
+      const [allNotes, allTasks, fetchedFolders, fetchedTags, savedSearchHistory] = await Promise.all([
         notesRepo.listNotes(), // Active + Archived notes (non-trashed)
         tasksRepo.listTasks(),
         foldersRepo.listFolders(),
         tagsRepo.listTags(),
+        searchHistoryRepo.loadRecentSearches(8).catch(() => []),
       ]);
 
       // Also fetch trashed notes so trash bin view can inspect them
@@ -126,6 +385,9 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setNotes(combinedNotes);
       setTasks(allTasks);
       setFolders(fetchedFolders);
+      if (Array.isArray(savedSearchHistory) && savedSearchHistory.length > 0) {
+        setRecentSearches(savedSearchHistory.map((item) => item.queryText));
+      }
 
       // Extract unique tags from notes + tag repository
       const noteTags = combinedNotes.flatMap((n) => n.tags || []);
@@ -493,6 +755,33 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <NotesContext.Provider
       value={{
         notes,
+        searchIndexMap,
+        queryRequest,
+        searchQuery: queryRequest.searchQuery,
+        setSearchQuery,
+        setQueryRequest,
+        resetQueryRequest,
+        setStatusScopeFilter,
+        setFolderFilter,
+        toggleTagFilter,
+        toggleBlockTypeFilter,
+        setSortByFilter,
+        pinnedCards: unifiedFeed.pinnedCards,
+        feedCards: unifiedFeed.feedCards,
+        totalMatches: unifiedFeed.totalMatches,
+        mainFeedTotal: unifiedFeed.mainFeedTotal,
+        visibleCount: unifiedFeed.visibleCount,
+        hasMore: unifiedFeed.hasMore,
+        isSearchActive: unifiedFeed.isSearchActive,
+        partitionCounts: unifiedFeed.counts,
+        loadNextPage,
+        resetPagination,
+        upsertSyncedNote,
+        recentSearches,
+        recordSearchHistory,
+        deleteSearchHistoryItem,
+        clearSearchHistory,
+        workspaceHistory,
         tasks,
         folders,
         tags,

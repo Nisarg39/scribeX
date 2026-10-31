@@ -17,6 +17,7 @@
     },
     "views": {
       "notesList": "frontend/src/components/NotesView.tsx",
+      "noteCard": "frontend/src/components/notes/NoteCard.tsx",
       "tasksList": "frontend/src/components/TasksView.tsx",
       "bottomDock": "frontend/src/components/BottomDock.tsx"
     },
@@ -36,15 +37,20 @@
     "stateAndData": {
       "notesStore": "frontend/src/state/useNotesStore.tsx",
       "astSerializer": "frontend/src/core/astSerializer.ts",
+      "searchIndexer": "frontend/src/core/searchIndexer.ts",
+      "noteQueryEngine": "frontend/src/core/noteQueryEngine.ts",
       "actionHistory": "frontend/src/core/actionTracker/ActionHistoryManager.ts",
       "noteTemplates": "frontend/src/core/templates/noteTemplates.ts",
       "notesRepo": "frontend/src/db/notesRepo.ts",
       "tasksRepo": "frontend/src/db/tasksRepo.ts",
+      "searchHistoryRepo": "frontend/src/db/searchHistoryRepo.ts",
       "types": "frontend/src/types/note.ts",
       "theme": "frontend/src/theme/index.ts"
     },
     "docsAndReports": {
       "architectureSpec": "docs/Universal_Note_Input_Structure_and_Relations.md",
+      "searchImplementationPlan": "docs/Search_Implementation_Plan.md",
+      "blockSearchabilityAudit": "docs/Block_Storage_and_Searchability_Audit.md",
       "blocksAuditReport": "docs/Cross_Platform_Input_Blocks_Audit_Report.md",
       "uiUxAuditReport": "docs/UI_UX_Cross_Platform_Inconsistencies_Report.md",
       "futureIdeas": "docs/future_ideas.md"
