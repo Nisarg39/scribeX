@@ -1,5 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { View, Text, Pressable, PanResponder, GestureResponderEvent, PanResponderGestureState } from 'react-native';
+import { View, Text, TextInput, Pressable, PanResponder, GestureResponderEvent, PanResponderGestureState } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme, NoteColors } from '../../../theme';
 import { 
@@ -21,6 +21,7 @@ interface StrokePath {
 
 interface DrawingBlockProps {
   initialPaths?: StrokePath[];
+  caption?: string;
   isSelected?: boolean;
   isDragging?: boolean;
   onFocus?: () => void;
@@ -28,7 +29,8 @@ interface DrawingBlockProps {
   onStartDrag?: (pageY?: number) => void;
   onEndDrag?: () => void;
   onDelete?: () => void;
-  onUpdateDrawing: (paths: StrokePath[]) => void;
+  onUpdateDrawing: (paths: StrokePath[], caption?: string) => void;
+  onUpdateCaption?: (caption: string) => void;
 }
 
 const PALETTE = [
@@ -43,6 +45,7 @@ const PALETTE = [
 
 export const DrawingBlock: React.FC<DrawingBlockProps> = ({
   initialPaths = [],
+  caption = '',
   isSelected = false,
   isDragging = false,
   onFocus,
@@ -51,9 +54,11 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
   onEndDrag,
   onDelete,
   onUpdateDrawing,
+  onUpdateCaption,
 }) => {
   const { isDark } = useTheme();
   const [paths, setPaths] = useState<StrokePath[]>(initialPaths);
+  const [sketchCaption, setSketchCaption] = useState<string>(caption);
   const [redoStack, setRedoStack] = useState<StrokePath[][]>([]);
   const [tool, setTool] = useState<'pen' | 'highlighter' | 'eraser'>('pen');
   const [selectedColorIdx, setSelectedColorIdx] = useState(0);
@@ -334,6 +339,25 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
             </Text>
           </View>
         )}
+      </View>
+
+      {/* Editable Sketch Title / Caption for Search */}
+      <View className="px-3 py-2 bg-light-appBg dark:bg-dark-raised border-t border-light-border/60 dark:border-white/5">
+        <TextInput
+          value={sketchCaption}
+          onChangeText={(text) => {
+            setSketchCaption(text);
+            if (onUpdateCaption) {
+              onUpdateCaption(text);
+            } else {
+              onUpdateDrawing(paths, text);
+            }
+          }}
+          onFocus={onFocus}
+          placeholder="Add sketch title or caption for search..."
+          placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
+          className="text-xs text-center italic text-light-textSecondary dark:text-dark-textSecondary p-0"
+        />
       </View>
     </Pressable>
   );

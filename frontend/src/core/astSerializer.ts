@@ -158,11 +158,13 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
     if (line.includes('scribex:block type=drawing')) {
       flushParagraph();
       const match = line.match(/!\[(.*?)\]\((.*?)\)/);
+      const captionMatch = line.match(/caption="([^"]*)"/);
+      const label = captionMatch ? captionMatch[1] : (match && match[1] ? match[1] : 'Sketch');
       blocks.push({
         id: `b-${Date.now()}-${blocks.length + 1}`,
         type: 'drawing',
         content: match ? match[2] : '',
-        metadata: { title: match ? match[1] : 'Sketch' },
+        metadata: { title: label, caption: label === 'Sketch' ? '' : label },
       });
       continue;
     }
@@ -173,11 +175,15 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       const match = line.match(/!\[(.*?)\]\((.*?)\)/);
       const durMatch = line.match(/duration=(\d+)/);
       const transMatch = line.match(/transcription="([^"]*)"/);
+      const titleMatch = line.match(/title="([^"]*)"/);
+      const label = titleMatch ? titleMatch[1] : (match && match[1] && match[1] !== 'Audio' ? match[1] : '');
       blocks.push({
         id: `b-${Date.now()}-${blocks.length + 1}`,
         type: 'audio',
         content: match ? match[2] : '',
         metadata: {
+          title: label,
+          caption: label,
           durationSec: durMatch ? parseInt(durMatch[1], 10) : 0,
           transcription: transMatch ? transMatch[1] : '',
         },
@@ -1072,15 +1078,17 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
 
       case 'drawing': {
         const url = block.content || '';
-        chunks.push(`![Sketch](${url}) <!-- scribex:block type=drawing -->`);
+        const label = (block.metadata?.caption || block.metadata?.title || 'Sketch').replace(/\]/g, '');
+        chunks.push(`![${label}](${url}) <!-- scribex:block type=drawing -->`);
         break;
       }
 
       case 'audio': {
         const url = block.content || '';
+        const label = (block.metadata?.caption || block.metadata?.title || 'Audio').replace(/\]/g, '');
         const dur = block.metadata?.durationSec ?? 0;
         const trans = (block.metadata?.transcription || '').replace(/"/g, "'");
-        chunks.push(`![Audio](${url}) <!-- scribex:block type=audio duration=${dur} transcription="${trans}" -->`);
+        chunks.push(`![${label}](${url}) <!-- scribex:block type=audio duration=${dur} transcription="${trans}" -->`);
         break;
       }
 

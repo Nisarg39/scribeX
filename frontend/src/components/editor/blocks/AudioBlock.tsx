@@ -31,6 +31,8 @@ import {
 export interface AudioBlockProps {
   audioUrl?: string;
   assetId?: string;
+  title?: string;
+  caption?: string;
   durationSec?: number;
   transcription?: string;
   waveform?: number[];
@@ -44,6 +46,8 @@ export interface AudioBlockProps {
   onUpdateContent?: (content: string) => void;
   onUpdateMetadata: (meta: {
     assetId?: string;
+    title?: string;
+    caption?: string;
     durationSec: number;
     transcription?: string;
     waveform?: number[];
@@ -61,6 +65,8 @@ const DEFAULT_WAVEFORM = [
 export const AudioBlock: React.FC<AudioBlockProps> = ({
   audioUrl = '',
   assetId,
+  title = '',
+  caption = '',
   durationSec = 0,
   transcription = '',
   waveform = DEFAULT_WAVEFORM,
@@ -78,6 +84,7 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   const { isDark } = useTheme();
 
   // Internal audio state
+  const [audioTitle, setAudioTitle] = useState<string>(caption || title || '');
   const [currentAudioUrl, setCurrentAudioUrl] = useState<string>(audioUrl);
   const [currentDuration, setCurrentDuration] = useState<number>(durationSec);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
@@ -669,11 +676,30 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
               <Volume2 size={16} color={hasAudio ? NoteColors.cyan : (isDark ? '#9CA3AF' : '#6B7280')} />
             )}
           </View>
-          <View>
+          <View className="flex-1 mr-2">
             <View className="flex-row items-center gap-2">
-              <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
-                {isRecording ? 'Recording Voice Memo...' : 'Voice Note / Audio Clip'}
-              </Text>
+              {isRecording ? (
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Recording Voice Memo...
+                </Text>
+              ) : (
+                <TextInput
+                  value={audioTitle}
+                  onChangeText={(text) => {
+                    setAudioTitle(text);
+                    onUpdateMetadata({
+                      title: text,
+                      caption: text,
+                      durationSec: currentDuration,
+                      transcription: textTranscript,
+                    });
+                  }}
+                  onFocus={onFocus}
+                  placeholder="Voice Note / Audio Clip (add title or caption...)"
+                  placeholderTextColor={isDark ? '#A1A1AA' : '#6B7280'}
+                  className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary p-0 flex-1"
+                />
+              )}
               {isRecording && (
                 <View className="flex-row items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-500/20">
                   <View className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />

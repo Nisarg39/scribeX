@@ -447,14 +447,19 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       {block.type === 'drawing' && (
         <DrawingBlock
           initialPaths={block.metadata?.paths || []}
+          caption={block.metadata?.caption || block.metadata?.title || ''}
           isSelected={isActive}
           isDragging={isDragging}
           onFocus={onFocus}
           onDelete={onDelete}
           onStartDrag={handleStartDragFromChild}
-          onUpdateDrawing={(paths) => {
-            onUpdateMetadata({ ...block.metadata, paths });
+          onUpdateDrawing={(paths, caption) => {
+            const nextCaption = caption !== undefined ? caption : (block.metadata?.caption || block.metadata?.title || '');
+            onUpdateMetadata({ ...block.metadata, paths, caption: nextCaption, title: nextCaption || 'Sketch' });
             onUpdateContent(JSON.stringify(paths));
+          }}
+          onUpdateCaption={(caption) => {
+            onUpdateMetadata({ ...block.metadata, caption, title: caption || 'Sketch' });
           }}
         />
       )}
@@ -464,6 +469,8 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
         <AudioBlock
           audioUrl={block.content || block.metadata?.url}
           assetId={block.metadata?.assetId}
+          title={block.metadata?.title || ''}
+          caption={block.metadata?.caption || block.metadata?.title || ''}
           durationSec={block.metadata?.durationSec ?? 0}
           transcription={block.metadata?.transcription || ''}
           waveform={block.metadata?.waveform}
