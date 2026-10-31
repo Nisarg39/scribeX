@@ -224,7 +224,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
             {onDelete && (
               <Pressable
                 onPress={onDelete}
-                className="p-1 rounded-full hover:bg-red-500/30"
+                className="p-1 rounded-full active:opacity-70 hover:bg-red-500/30"
                 accessibilityLabel="Delete Image"
               >
                 <Trash2 size={11} color="#FF6B6B" />

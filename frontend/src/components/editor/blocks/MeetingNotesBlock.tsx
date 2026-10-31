@@ -302,7 +302,7 @@ export const MeetingNotesBlock: React.FC<MeetingNotesBlockProps> = ({
           {Boolean(onDelete) && (
             <Pressable
               onPress={onDelete}
-              className="p-1.5 rounded-lg hover:bg-rose-500/10"
+              className="p-1.5 rounded-lg active:opacity-70 hover:bg-rose-500/10"
             >
               <Trash2 size={14} color="#EF4444" />
             </Pressable>

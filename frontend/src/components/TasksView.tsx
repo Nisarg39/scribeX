@@ -106,7 +106,7 @@ export const TasksView: React.FC = () => {
       {/* Filter Tracks */}
       <View className="mb-6 gap-2.5">
         {/* Priority Filter Track */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0 }}>
           <View className="flex-row items-center gap-2">
             {PRIORITY_FILTERS.map((f) => {
               const isSelected = activePriorityFilter === f.key;
@@ -142,7 +142,7 @@ export const TasksView: React.FC = () => {
         </ScrollView>
 
         {/* Due Date Filter Track */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, flexShrink: 0 }}>
           <View className="flex-row items-center gap-2">
             {DATE_FILTERS.map((d) => {
               const isSelected = activeDateFilter === d.key;
@@ -216,6 +216,7 @@ export const TasksView: React.FC = () => {
 
           {/* Submit Add Button */}
           <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={handleAddTask}
             disabled={!newTaskTitle.trim()}
             accessibilityLabel="Add Task"
@@ -282,7 +283,7 @@ export const TasksView: React.FC = () => {
                             { backgroundColor: originColor || '#E5F28B' },
                             pressed ? { transform: [{ scale: 0.95 }] } : undefined,
                           ]}
-                          className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full cursor-pointer"
+                          className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full"
                         >
                           <FileText size={10} color="#191919" />
                           <Text className="text-[10px] font-bold text-[#191919]">

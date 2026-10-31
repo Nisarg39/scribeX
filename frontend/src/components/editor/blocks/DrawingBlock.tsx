@@ -266,7 +266,7 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
           <Pressable
             onPress={handleUndo}
             disabled={paths.length === 0}
-            className={`p-1 rounded opacity-60 hover:opacity-100 ${paths.length === 0 ? 'opacity-20' : ''}`}
+            className={`p-1 rounded opacity-60 active:opacity-70 hover:opacity-100 ${paths.length === 0 ? 'opacity-20' : ''}`}
             accessibilityLabel="Undo"
           >
             <RotateCcw size={13} color={isDark ? '#B5B5B5' : '#626262'} />
@@ -275,7 +275,7 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
           <Pressable
             onPress={handleRedo}
             disabled={redoStack.length === 0}
-            className={`p-1 rounded opacity-60 hover:opacity-100 ${redoStack.length === 0 ? 'opacity-20' : ''}`}
+            className={`p-1 rounded opacity-60 active:opacity-70 hover:opacity-100 ${redoStack.length === 0 ? 'opacity-20' : ''}`}
             accessibilityLabel="Redo"
           >
             <RotateCw size={13} color={isDark ? '#B5B5B5' : '#626262'} />
@@ -284,7 +284,7 @@ export const DrawingBlock: React.FC<DrawingBlockProps> = ({
           <Pressable
             onPress={handleClear}
             disabled={paths.length === 0}
-            className={`p-1 rounded opacity-60 hover:opacity-100 ${paths.length === 0 ? 'opacity-20' : ''}`}
+            className={`p-1 rounded opacity-60 active:opacity-70 hover:opacity-100 ${paths.length === 0 ? 'opacity-20' : ''}`}
             accessibilityLabel="Clear Canvas"
           >
             <Trash2 size={13} color="#EF4444" />

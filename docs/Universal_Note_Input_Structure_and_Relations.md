@@ -1056,3 +1056,9 @@ The diagnostic run is executed across the entire codebase. **No fixes are made d
 > **Universal Fast Capture + Unified Block-Based Editor + Shared Task Model + AI Organization Pipeline.**
 
 This architectural foundation accommodates all 42 input methods without building fragmented subsystems. Users capture thoughts naturally and instantly in their chosen format, while Friday transforms raw inputs into an organized, connected, and actionable knowledge graph.
+
+---
+
+## Appendix: Cross-Platform UI/UX Audit (`npm --prefix frontend run test:uiux`)
+
+Static audit of full-bleed shells, mobile toolbar overflow, safe areas, keyboard avoidance, touch targets (hitSlop) and touch-vs-hover feedback. Results live in [`UI_UX_Cross_Platform_Inconsistencies_Report.md`](UI_UX_Cross_Platform_Inconsistencies_Report.md). Status: 11/11 checks passing after the mobile-responsive fixes (compact editor header with overflow menu, scrollable command bar and template track, safe-area dock, `KeyboardAvoidingView`, compact note cards).

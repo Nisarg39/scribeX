@@ -183,7 +183,7 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
             <View className="flex-row items-center gap-3 mt-2">
               <Pressable
                 onPress={handleOpenLink}
-                className="flex-row items-center gap-1 hover:underline"
+                className="flex-row items-center gap-1 active:opacity-70 hover:underline"
               >
                 <ExternalLink size={10} color={isDark ? '#8EDCEB' : '#08C4E5'} />
                 <Text

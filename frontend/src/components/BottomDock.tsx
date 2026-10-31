@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { FileText, CheckSquare } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 
 interface BottomDockProps {
@@ -15,9 +16,10 @@ export const BottomDock: React.FC<BottomDockProps> = ({
   pendingTasksCount,
 }) => {
   const { isDark } = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
-    <View pointerEvents="box-none" className="absolute bottom-6 left-0 right-0 items-center px-4 z-40">
+    <View pointerEvents="box-none" style={{ bottom: Math.max(insets.bottom, 0) + 12 }} className="absolute left-0 right-0 items-center px-4 z-40">
       {/* Floating Minimalist Capsule Dock */}
       <View 
         className="flex-row items-center p-1.5 rounded-full bg-light-iconBg dark:bg-dark-raised border border-light-border dark:border-dark-border shadow-lg"

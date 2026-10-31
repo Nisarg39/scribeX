@@ -18,7 +18,8 @@ import {
   RotateCcw,
   Tag,
   X,
-  Check
+  Check,
+  FilePlus
 } from 'lucide-react-native';
 
 export const NotesView: React.FC = () => {
@@ -43,6 +44,7 @@ export const NotesView: React.FC = () => {
 
   const [quickThought, setQuickThought] = useState('');
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
 
   const handleOpenNote = (note: NoteItem) => {
@@ -121,7 +123,7 @@ export const NotesView: React.FC = () => {
       showsVerticalScrollIndicator={false}
     >
       {/* Editorial Page Heading + Add Note Button */}
-      <View className="flex-row items-baseline justify-between mb-6">
+      <View style={{ zIndex: 50 }} className="flex-row items-baseline justify-between mb-6">
         <View>
           <Text className="text-4xl md:text-5xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight">
             Notes
@@ -131,14 +133,54 @@ export const NotesView: React.FC = () => {
           </Text>
         </View>
 
-        {/* Create Note Circular Button */}
-        <Pressable
-          onPress={handleCreateNewBlankNote}
-          accessibilityLabel="Create New Note in Block Editor"
-          className="w-11 h-11 rounded-full bg-light-iconBg dark:bg-white items-center justify-center active:scale-95 shadow-md transition-transform"
-        >
-          <Plus size={20} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
-        </Pressable>
+        {/* Add Menu: New Note / New Folder */}
+        <View style={{ position: 'relative', zIndex: 50 }}>
+          <Pressable
+            onPress={() => setIsAddMenuOpen((o) => !o)}
+            accessibilityLabel="Create New Note in Block Editor"
+            accessibilityHint="Opens menu with New Note and New Folder"
+            className="w-11 h-11 rounded-full bg-light-iconBg dark:bg-white items-center justify-center active:scale-95 shadow-md"
+          >
+            <Plus size={20} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
+          </Pressable>
+
+          {isAddMenuOpen && (
+            <View
+              style={{
+                position: 'absolute',
+                top: 52,
+                right: 0,
+                zIndex: 100,
+                backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+              }}
+              className="rounded-2xl border p-1.5 min-w-[170px] shadow-2xl"
+            >
+              <Pressable
+                onPress={() => {
+                  setIsAddMenuOpen(false);
+                  handleCreateNewBlankNote();
+                }}
+                accessibilityLabel="New Note"
+                className="flex-row items-center gap-3 px-3.5 py-3 rounded-xl active:bg-black/10 dark:active:bg-white/10"
+              >
+                <FilePlus size={16} color={isDark ? '#F7F7F7' : '#171717'} />
+                <Text className="text-sm font-semibold text-light-textPrimary dark:text-dark-textPrimary">New Note</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setIsAddMenuOpen(false);
+                  setIsFolderModalOpen(true);
+                }}
+                accessibilityLabel="New Folder"
+                className="flex-row items-center gap-3 px-3.5 py-3 rounded-xl active:bg-black/10 dark:active:bg-white/10"
+              >
+                <Folder size={16} color={isDark ? '#F7F7F7' : '#171717'} />
+                <Text className="text-sm font-semibold text-light-textPrimary dark:text-dark-textPrimary">New Folder</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* Universal Quick Capture Ribbon (Level 0 Ingest) */}
@@ -157,16 +199,18 @@ export const NotesView: React.FC = () => {
         <View className="flex-row items-center justify-between pt-1 border-t border-light-border/60 dark:border-dark-border/60">
           {/* Multi-Modal Ingest Icons */}
           <View className="flex-row items-center gap-1.5">
-            <Pressable 
+            <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} 
               accessibilityLabel="Audio Voice Memo"
-              className="w-8 h-8 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:scale-90"
+              className="w-8 h-8 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10 active:scale-90"
             >
               <Mic size={16} color={isDark ? '#B5B5B5' : '#626262'} />
             </Pressable>
 
-            <Pressable 
+            <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} 
               accessibilityLabel="File & Image Attachment"
-              className="w-8 h-8 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:scale-90"
+              className="w-8 h-8 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10 active:scale-90"
             >
               <Paperclip size={16} color={isDark ? '#B5B5B5' : '#626262'} />
             </Pressable>
@@ -183,6 +227,7 @@ export const NotesView: React.FC = () => {
 
           {/* Quick Submit Arrow */}
           <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={handleQuickCapture}
             accessibilityLabel="Capture Note"
             disabled={!quickThought.trim()}
@@ -205,7 +250,8 @@ export const NotesView: React.FC = () => {
       <ScrollView 
         horizontal 
         showsHorizontalScrollIndicator={false}
-        className="flex-row gap-2 mb-8 -mx-1 px-1"
+        style={{ flexGrow: 0, flexShrink: 0, marginBottom: 24 }}
+        contentContainerStyle={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4 }}
       >
         {/* All Notes Pill */}
         <Pressable
@@ -437,8 +483,8 @@ export const NotesView: React.FC = () => {
                   <Pressable
                     onPress={() => handleOpenNote(note)}
                     accessibilityLabel={`Open pinned note ${note.title}`}
-                    style={{ backgroundColor: pastelHex }}
-                    className="p-6 rounded-[22px] min-h-[200px] justify-between shadow-sm active:scale-[0.99] transition-transform cursor-pointer relative overflow-hidden"
+                    style={{ backgroundColor: pastelHex, minHeight: 130 }}
+                    className="p-4 rounded-[18px] justify-between shadow-sm active:scale-[0.99] transition-transform relative overflow-hidden"
                   >
                     {/* Top Row: Folder Badge, Pin Badge, Favorite */}
                     <View className="flex-row items-center justify-between mb-3">
@@ -483,7 +529,7 @@ export const NotesView: React.FC = () => {
                     </View>
 
                     {/* Title & Preview */}
-                    <View className="flex-1 mb-3">
+                    <View style={{ flexGrow: 1, flexShrink: 0 }} className="mb-3">
                       <Text className="text-xl font-bold text-[#191919] tracking-tight mb-1.5 leading-tight">
                         {note.title}
                       </Text>
@@ -547,8 +593,8 @@ export const NotesView: React.FC = () => {
               <Pressable
                 onPress={() => !isTrashed && handleOpenNote(note)}
                 accessibilityLabel={`Open note ${note.title}`}
-                style={{ backgroundColor: pastelHex }}
-                className="p-6 rounded-[22px] min-h-[220px] justify-between shadow-sm active:scale-[0.99] transition-transform cursor-pointer"
+                style={{ backgroundColor: pastelHex, minHeight: 130 }}
+                className="p-4 rounded-[18px] justify-between shadow-sm active:scale-[0.99] transition-transform"
               >
                 {/* Top Row: Folder Badge, Status Chips & Action Buttons */}
                 <View className="flex-row items-center justify-between mb-3">
@@ -607,7 +653,7 @@ export const NotesView: React.FC = () => {
                 </View>
 
                 {/* Note Title & Body */}
-                <View className="flex-1 mb-3">
+                <View style={{ flexGrow: 1, flexShrink: 0 }} className="mb-3">
                   <Text className="text-xl font-bold text-[#191919] tracking-tight mb-2 leading-tight">
                     {note.title}
                   </Text>
@@ -778,7 +824,7 @@ export const NotesView: React.FC = () => {
               <View className="flex-row items-center justify-end gap-2">
                 <Pressable
                   onPress={() => setIsFolderModalOpen(false)}
-                  className="px-4 py-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5"
+                  className="px-4 py-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
                 >
                   <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
                     Cancel

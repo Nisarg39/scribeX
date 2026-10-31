@@ -282,14 +282,14 @@ export const LectureNoteBlock: React.FC<LectureNoteBlockProps> = ({
           <View className="flex-row items-center gap-1">
             <Pressable
               onPress={() => setIsEditingUrl(!isEditingUrl)}
-              className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+              className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
             >
               <Edit3 size={14} color={isDark ? '#A1A1AA' : '#71717A'} />
             </Pressable>
             {Boolean(onDelete) && (
               <Pressable
                 onPress={onDelete}
-                className="p-1.5 rounded-lg hover:bg-rose-500/10"
+                className="p-1.5 rounded-lg active:opacity-70 hover:bg-rose-500/10"
               >
                 <Trash2 size={14} color="#EF4444" />
               </Pressable>
@@ -360,7 +360,7 @@ export const LectureNoteBlock: React.FC<LectureNoteBlockProps> = ({
                 </View>
                 <Pressable
                   onPress={handleAddCheckpoint}
-                  className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20"
+                  className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/10 active:opacity-70 hover:bg-cyan-500/20 border border-cyan-500/20"
                 >
                   <Plus size={11} color="#06B6D4" />
                   <Text className="text-[10px] font-bold text-cyan-400">Add Mark</Text>

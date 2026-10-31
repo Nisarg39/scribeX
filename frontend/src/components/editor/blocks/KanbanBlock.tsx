@@ -183,7 +183,7 @@ export const KanbanBlock: React.FC<KanbanBlockProps> = ({
         {onDelete && (
           <Pressable
             onPress={onDelete}
-            className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10"
+            className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 active:bg-red-500/20"
             style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
             accessibilityLabel="Delete Kanban block"
           >
@@ -196,8 +196,8 @@ export const KanbanBlock: React.FC<KanbanBlockProps> = ({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 12, width: '100%' }}
-        className="flex-row"
+        style={{ flexGrow: 0, flexShrink: 0 }}
+        contentContainerStyle={{ gap: 12, flexDirection: 'row', alignItems: 'flex-start' }}
       >
         {kanbanData.columns.map((column, colIdx) => {
           const cardCount = column.cardIds.length;
@@ -206,7 +206,7 @@ export const KanbanBlock: React.FC<KanbanBlockProps> = ({
           return (
             <View
               key={column.id}
-              className="flex-1 min-w-[220px] rounded-xl p-2 bg-light-appBg/50 dark:bg-dark-raised/50 border border-light-border/50 dark:border-white/5"
+              className="w-[240px] rounded-xl p-2 bg-light-appBg/50 dark:bg-dark-raised/50 border border-light-border/50 dark:border-white/5"
             >
               {/* Column Header */}
               <View className="flex-row items-center justify-between pb-2 mb-2 border-b border-light-border/40 dark:border-white/5 px-1">
@@ -231,7 +231,7 @@ export const KanbanBlock: React.FC<KanbanBlockProps> = ({
                     onFocus?.();
                     setAddingToColId(column.id);
                   }}
-                  className="p-1 rounded-full opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10"
+                  className="p-1 rounded-full opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15"
                   style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
                   accessibilityLabel={`Add task to ${column.title}`}
                 >
@@ -272,7 +272,7 @@ export const KanbanBlock: React.FC<KanbanBlockProps> = ({
                         {colIdx > 0 ? (
                           <Pressable
                             onPress={() => handleMoveCard(cardId, column.id, 'left')}
-                            className="flex-row items-center gap-0.5 p-1 rounded opacity-50 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10"
+                            className="flex-row items-center gap-0.5 p-1 rounded opacity-50 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15"
                             style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
                             accessibilityLabel="Move task to previous column"
                           >
@@ -289,7 +289,7 @@ export const KanbanBlock: React.FC<KanbanBlockProps> = ({
                           {/* Delete Card */}
                           <Pressable
                             onPress={() => handleDeleteCard(cardId, column.id)}
-                            className="p-1 rounded opacity-30 hover:opacity-100 hover:bg-red-500/10"
+                            className="p-1 rounded opacity-30 hover:opacity-100 hover:bg-red-500/10 active:bg-red-500/20"
                             style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
                             accessibilityLabel="Delete task"
                           >
@@ -300,7 +300,7 @@ export const KanbanBlock: React.FC<KanbanBlockProps> = ({
                           {colIdx < kanbanData.columns.length - 1 && (
                             <Pressable
                               onPress={() => handleMoveCard(cardId, column.id, 'right')}
-                              className="flex-row items-center gap-0.5 p-1 rounded opacity-50 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10"
+                              className="flex-row items-center gap-0.5 p-1 rounded opacity-50 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15"
                               style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
                               accessibilityLabel="Move task to next column"
                             >

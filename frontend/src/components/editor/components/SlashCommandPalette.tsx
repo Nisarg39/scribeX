@@ -816,7 +816,7 @@ export const SlashCommandPalette: React.FC<SlashCommandPaletteProps> = ({
                   borderLeftColor: isSelected ? '#06B6D4' : 'transparent',
                 },
               ]}
-              className="flex-row items-center justify-between px-3 py-2 transition-colors cursor-pointer group"
+              className="flex-row items-center justify-between px-3 py-2 transition-colors group"
             >
               <View className="flex-row items-center gap-2.5 flex-1 mr-2">
                 {/* Accent Icon Container */}

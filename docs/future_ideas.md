@@ -27,6 +27,8 @@ Remaining Tasks to fix
 18 - [x] Meeting Minutes & Multi-Sheet Data Matrix: Meeting Recorder & Diarized Minutes (#23 with audio visualizer, attendee tags, decisions agreed, assigned action tasks, and speaker transcript segments) and Multi-Sheet Spreadsheet Grid (#27 with multi-tab workbook, typed columns, auto-calculations SUM/AVG/COUNT, and CSV import/export) with 100% round-trip Markdown AST serialization and canvas-native styling (COMPLETED)
 19 - [x] Visual Diagramming, Web Article Clipping & Voice Dictation: Whiteboard & Diagram (#20 with interactive SVG rendering, directional flowcharts, topology models, and Mermaid syntax editor), Web Article Clipper (#29 with reader-mode drawer, domain pills, reading time, and highlighted quotations), and Voice-to-Text Dictation (#22 with Web Speech API integration in EditorCommandBar) with 100% round-trip Markdown AST serialization and canvas-native styling (COMPLETED)
 20 - [x] Ingestion & Smart Capture Pipeline: Desktop Drag-and-Drop Ingestion (#39 with dashed cyan canvas overlay for images, audio, video, PDFs, CSV, and markdown), Smart Clipboard & Paste Handler (#37 with screenshot image pasting, video URL detection, and tabular CSV parsing), and File Import & Export Engine (#40 with YAML frontmatter .md download, structured JSON export, and universal file import) (COMPLETED)
+21 - Check whether nested folder creation option is there when adding a new folder
+22 - check why is youtube video not showing for preview or playback in mobile platforms only when using video embedded block and also verify if this happens for other options as well
 
 
 

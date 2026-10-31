@@ -288,7 +288,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
       {/* Container Header Badge */}
       <Pressable
         onPress={onFocus}
-        className="flex-row items-center justify-between mb-2.5 px-1 cursor-pointer select-none"
+        className="flex-row items-center justify-between mb-2.5 px-1 select-none"
         accessibilityRole="button"
         accessibilityLabel="Select checklist group"
       >
@@ -577,7 +577,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                       className={`p-1 rounded-full ${
                         indentLevel === 0
                           ? 'opacity-20'
-                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10'
+                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15'
                       }`}
                       style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
                       accessibilityLabel="Outdent task (Shift+Tab)"
@@ -592,7 +592,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                       className={`p-1 rounded-full ${
                         indentLevel >= 2 || idx === 0
                           ? 'opacity-20'
-                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10'
+                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15'
                       }`}
                       style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
                       accessibilityLabel="Indent task (Tab)"
@@ -607,7 +607,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                       className={`p-1 rounded-full ${
                         idx === 0
                           ? 'opacity-20'
-                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10'
+                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15'
                       }`}
                       style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
                       accessibilityLabel="Move checkpoint up"
@@ -622,7 +622,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                       className={`p-1 rounded-full ${
                         idx === checklistItems.length - 1
                           ? 'opacity-20'
-                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10'
+                          : 'opacity-60 hover:opacity-100 hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15'
                       }`}
                       style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
                       accessibilityLabel="Move checkpoint down"
@@ -633,7 +633,7 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                     {/* Delete point */}
                     <Pressable
                       onPress={() => handleDeleteItem(idx)}
-                      className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 ml-1"
+                      className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 active:bg-red-500/20 ml-1"
                       style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
                       accessibilityLabel="Delete checkpoint"
                     >

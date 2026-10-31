@@ -294,9 +294,10 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
           )}
           {onDelete && (
             <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               onPress={onDelete}
               accessibilityLabel="Delete Scan Block"
-              className="w-6 h-6 rounded-full items-center justify-center hover:bg-red-500/10 active:scale-90"
+              className="w-6 h-6 rounded-full items-center justify-center hover:bg-red-500/10 active:bg-red-500/20 active:scale-90"
             >
               <Trash2 size={12} color="#EF4444" />
             </Pressable>
@@ -552,7 +553,7 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
                 setImageUrl('');
                 setOcrText('');
               }}
-              className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 active:scale-95"
+              className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10 active:scale-95"
             >
               <RotateCcw size={12} color={isDark ? '#A1A1AA' : '#71717A'} />
               <Text className="text-xs font-semibold text-light-textMuted dark:text-dark-textMuted">
@@ -583,6 +584,7 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
                   </Text>
                 </View>
                 <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={handleStopCamera}
                   className="w-8 h-8 rounded-full bg-white/10 items-center justify-center"
                 >

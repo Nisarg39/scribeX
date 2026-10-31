@@ -121,7 +121,7 @@ export const ContactBlock: React.FC<ContactBlockProps> = ({
         {onDelete && (
           <Pressable
             onPress={onDelete}
-            className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 ml-1"
+            className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 active:bg-red-500/20 ml-1"
             style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
             accessibilityLabel="Delete contact block"
           >

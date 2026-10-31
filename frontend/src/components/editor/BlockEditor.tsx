@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
 import { NoteItem } from '../../types/note';
 import { useTheme, NoteColors } from '../../theme';
 import { Folder, Upload, Tag, Plus, X, ChevronDown } from 'lucide-react-native';
@@ -243,7 +243,10 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   });
 
   return (
-    <View className="flex-1 w-full bg-light-surface dark:bg-dark-surface relative">
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      className="flex-1 w-full bg-light-surface dark:bg-dark-surface relative"
+    >
       {/* Top Editorial Header Bar */}
       <EditorHeader
         colorToken={colorToken}
@@ -326,7 +329,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         onLayout={(e) => {
           scrollViewLayoutRef.current = e.nativeEvent.layout;
         }}
-        className="flex-1 w-full px-6 md:px-16 lg:px-24 pt-6"
+        className="flex-1 w-full px-4 sm:px-6 md:px-16 lg:px-24 pt-4"
         contentContainerStyle={{ paddingBottom: 120, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
       >
@@ -435,7 +438,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                       className={`flex-row items-center justify-between px-3 py-2 rounded-xl transition-colors ${
                         isCurrent
                           ? 'bg-cyan-500/15 border border-cyan-500/30'
-                          : 'hover:bg-black/5 dark:hover:bg-white/5'
+                          : 'hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10'
                       }`}
                     >
                       <View className="flex-row items-center gap-2">
@@ -598,6 +601,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
         {/* Canvas tap area below blocks to deselect */}
         <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={handleDeselectAll}
           className="w-full h-8"
           accessibilityLabel="Click canvas to deselect"
@@ -652,6 +656,6 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           </View>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   );
 };

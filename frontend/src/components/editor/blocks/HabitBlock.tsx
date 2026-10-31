@@ -208,7 +208,7 @@ export const HabitBlock: React.FC<HabitBlockProps> = ({
           {onDelete && (
             <Pressable
               onPress={onDelete}
-              className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 ml-0.5"
+              className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 active:bg-red-500/20 ml-0.5"
               style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
               accessibilityLabel="Delete habit block"
             >
@@ -226,7 +226,7 @@ export const HabitBlock: React.FC<HabitBlockProps> = ({
             <Pressable
               key={day.iso}
               onPress={() => handleToggleDay(day.iso)}
-              className="flex-1 items-center justify-center py-2 px-1 rounded-xl cursor-pointer"
+              className="flex-1 items-center justify-center py-2 px-1 rounded-xl"
               style={({ pressed }) => [
                 {
                   backgroundColor: isDone

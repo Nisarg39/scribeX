@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import {
   Users,
   Sun,
@@ -41,7 +41,7 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({
       </View>
 
       {/* Canvas-Integrated Pill Chips (No Boxed Generic Cards) */}
-      <View className="flex-row flex-wrap items-center gap-2">
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always" contentContainerStyle={{ gap: 8, paddingRight: 16 }}>
         {NOTE_TEMPLATES.map((tpl) => {
           const IconComp = TEMPLATE_ICONS[tpl.iconName] || Sparkles;
           const accentColor = (NoteColors as Record<string, string>)[tpl.colorToken] || '#06B6D4';
@@ -73,7 +73,7 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
     </View>
   );
 };

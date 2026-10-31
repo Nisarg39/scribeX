@@ -351,7 +351,7 @@ export const SpreadsheetBlock: React.FC<SpreadsheetBlockProps> = ({
           {Boolean(onDelete) && (
             <Pressable
               onPress={onDelete}
-              className="p-1.5 rounded-lg hover:bg-rose-500/10"
+              className="p-1.5 rounded-lg active:opacity-70 hover:bg-rose-500/10"
             >
               <Trash2 size={14} color="#EF4444" />
             </Pressable>
@@ -444,7 +444,7 @@ export const SpreadsheetBlock: React.FC<SpreadsheetBlockProps> = ({
               {/* Add Column Button */}
               <Pressable
                 onPress={handleAddColumn}
-                className="w-10 items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+                className="w-10 items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
               >
                 <Plus size={12} color="#10B981" />
               </Pressable>
@@ -522,7 +522,7 @@ export const SpreadsheetBlock: React.FC<SpreadsheetBlockProps> = ({
         <View className="flex-row items-center justify-between mt-2.5 pt-2 border-t border-light-border dark:border-white/5">
           <Pressable
             onPress={handleAddRow}
-            className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20"
+            className="flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500/10 active:opacity-70 hover:bg-emerald-500/20 border border-emerald-500/20"
           >
             <Plus size={11} color="#10B981" />
             <Text className="text-[11px] font-bold text-emerald-400">Add Row</Text>

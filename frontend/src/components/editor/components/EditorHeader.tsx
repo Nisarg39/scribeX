@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, Pressable } from 'react-native';
-import { ArrowLeft, Check, Pin, Star, Trash2, Download, Upload, FileText, Archive } from 'lucide-react-native';
+import { View, Text, Pressable, useWindowDimensions } from 'react-native';
+import { ArrowLeft, Check, Pin, Star, Trash2, Download, Upload, FileText, Archive, MoreHorizontal } from 'lucide-react-native';
 import { useTheme, NoteColors, NoteColorToken } from '../../../theme';
 
 export const PASTEL_PALETTE: NoteColorToken[] = [
@@ -56,6 +56,131 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
 }) => {
   const { isDark } = useTheme();
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
+  const { width } = useWindowDimensions();
+  const isCompact = width < 640;
+  const HIT = { top: 8, bottom: 8, left: 8, right: 8 };
+  const iconColor = isDark ? '#B5B5B5' : '#626262';
+
+  if (isCompact) {
+    const menuItem = (label: string, Icon: any, color: string, onPress?: () => void) =>
+      onPress ? (
+        <Pressable
+          key={label}
+          onPress={() => {
+            setShowMoreMenu(false);
+            onPress();
+          }}
+          accessibilityLabel={label}
+          className="flex-row items-center gap-3 px-3.5 py-3 rounded-xl active:bg-black/10 dark:active:bg-white/10"
+        >
+          <Icon size={16} color={color} />
+          <Text className="text-sm font-semibold text-light-textPrimary dark:text-dark-textPrimary">{label}</Text>
+        </Pressable>
+      ) : null;
+
+    return (
+      <View
+        nativeID="scribex-editor-header"
+        dataSet={{ scribexToolbar: 'true' }}
+        {...({ 'data-scribex-toolbar': 'true' } as any)}
+        className="flex-row items-center justify-between px-3 py-2.5 border-b border-light-border dark:border-dark-border z-30 bg-light-surface dark:bg-dark-surface relative"
+      >
+        <View className="flex-row items-center gap-2">
+          <Pressable
+            onPress={onClose}
+            accessibilityLabel="Back to notes"
+            className="w-11 h-11 rounded-full bg-light-appBg dark:bg-dark-raised items-center justify-center"
+          >
+            <ArrowLeft size={18} color={isDark ? '#F7F7F7' : '#171717'} strokeWidth={2.2} />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setShowPalette(!showPalette);
+              setShowMoreMenu(false);
+            }}
+            accessibilityLabel="Change note color"
+            className="w-11 h-11 items-center justify-center"
+          >
+            <View
+              style={{ backgroundColor: NoteColors[colorToken] }}
+              className="w-7 h-7 rounded-full border-2 border-black/20 dark:border-white/30"
+            />
+          </Pressable>
+        </View>
+
+        <View className="flex-row items-center">
+          <Pressable
+            onPress={onTogglePin}
+            accessibilityLabel="Toggle Pin"
+            className="w-11 h-11 items-center justify-center"
+          >
+            <Pin size={18} color={isPinned ? '#FFC96F' : iconColor} fill={isPinned ? '#FFC96F' : 'transparent'} />
+          </Pressable>
+          <Pressable
+            onPress={onToggleFavorite}
+            accessibilityLabel="Toggle Favorite"
+            className="w-11 h-11 items-center justify-center"
+          >
+            <Star size={19} color={isFavorite ? '#FFD43B' : iconColor} fill={isFavorite ? '#FFD43B' : 'transparent'} />
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setShowMoreMenu(!showMoreMenu);
+              setShowPalette(false);
+            }}
+            accessibilityLabel="More actions"
+            className="w-11 h-11 items-center justify-center"
+          >
+            <MoreHorizontal size={20} color={iconColor} />
+          </Pressable>
+          <Pressable
+            onPress={onClose}
+            accessibilityLabel="Done"
+            className="px-4 h-10 rounded-full bg-light-iconBg dark:bg-white items-center justify-center ml-1"
+          >
+            <Text className="text-xs font-bold text-white dark:text-[#111111]">Done</Text>
+          </Pressable>
+        </View>
+
+        {showPalette && (
+          <View
+            style={{ position: 'absolute', top: 60, left: 12, zIndex: 100, backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
+            className="flex-row flex-wrap gap-2 p-3 rounded-2xl border max-w-[260px]"
+          >
+            {PASTEL_PALETTE.map((color) => (
+              <Pressable
+                key={color}
+                onPress={() => {
+                  onColorChange(color);
+                  setShowPalette(false);
+                }}
+                accessibilityLabel={`Color ${color}`}
+                style={{ backgroundColor: NoteColors[color] }}
+                className={`w-9 h-9 rounded-full items-center justify-center ${colorToken === color ? 'border-2 border-black dark:border-white' : ''}`}
+              >
+                {colorToken === color && <Check size={14} color="#191919" strokeWidth={3} />}
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        {showMoreMenu && (
+          <View
+            style={{ position: 'absolute', top: 60, right: 12, zIndex: 100, backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
+            className="rounded-2xl border p-1.5 min-w-[220px]"
+          >
+            {menuItem('Import File (.md, .json, .csv)', Upload, iconColor, onImportFile)}
+            {menuItem('Export as Markdown (.md)', FileText, NoteColors.cyan, onExportMarkdown)}
+            {menuItem('Export as JSON (.json)', Download, NoteColors.lavender, onExportJSON)}
+            {menuItem(isArchived ? 'Unarchive Note' : 'Archive Note', Archive, iconColor, onToggleArchive)}
+            {menuItem('Delete Note', Trash2, '#EF4444', onDeleteNote)}
+          </View>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View
@@ -83,6 +208,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
               key={color}
               onPress={() => onColorChange(color)}
               accessibilityLabel={`Color ${color}`}
+              hitSlop={HIT}
               style={({ pressed }) => [
                 { backgroundColor: NoteColors[color] },
                 pressed ? { transform: [{ scale: 0.9 }] } : undefined,
@@ -102,9 +228,10 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
         {/* Import File Button */}
         {onImportFile && (
           <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={onImportFile}
             accessibilityLabel="Import File (.md, .json, .csv)"
-            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
             style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
           >
             <Upload size={16} color={isDark ? '#B5B5B5' : '#626262'} />
@@ -118,7 +245,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
               onPress={() => setShowExportMenu(!showExportMenu)}
               accessibilityLabel="Export Note"
               className={`w-9 h-9 rounded-full items-center justify-center ${
-                showExportMenu ? 'bg-cyan-500/20' : 'hover:bg-black/5 dark:hover:bg-white/5'
+                showExportMenu ? 'bg-cyan-500/20' : 'hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10'
               }`}
               style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
             >
@@ -143,7 +270,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
                     setShowExportMenu(false);
                     onExportMarkdown();
                   }}
-                  className="flex-row items-center gap-2 px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5"
+                  className="flex-row items-center gap-2 px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
                 >
                   <FileText size={14} color={NoteColors.cyan} />
                   <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
@@ -157,7 +284,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
                       setShowExportMenu(false);
                       onExportJSON();
                     }}
-                    className="flex-row items-center gap-2 px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5"
+                    className="flex-row items-center gap-2 px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
                   >
                     <Download size={14} color={NoteColors.lavender} />
                     <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
@@ -171,9 +298,10 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
         )}
 
         <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={onTogglePin}
           accessibilityLabel="Toggle Pin"
-          className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+          className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
           style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
         >
           <Pin
@@ -184,9 +312,10 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
         </Pressable>
 
         <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={onToggleFavorite}
           accessibilityLabel="Toggle Favorite"
-          className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+          className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
           style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
         >
           <Star
@@ -198,9 +327,10 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
 
         {onToggleArchive && (
           <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={onToggleArchive}
             accessibilityLabel={isArchived ? 'Unarchive Note' : 'Archive Note'}
-            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
             style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
           >
             <Archive
@@ -211,9 +341,10 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
         )}
 
         <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={onDeleteNote}
           accessibilityLabel="Delete Note"
-          className="w-9 h-9 rounded-full items-center justify-center hover:bg-red-500/10"
+          className="w-9 h-9 rounded-full items-center justify-center hover:bg-red-500/10 active:bg-red-500/20"
           style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
         >
           <Trash2 size={17} color="#EF4444" />

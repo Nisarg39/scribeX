@@ -301,7 +301,7 @@ export const DiagramBlock: React.FC<DiagramBlockProps> = ({
           {Boolean(onDelete) && (
             <Pressable
               onPress={onDelete}
-              className="p-1.5 rounded-lg hover:bg-rose-500/10"
+              className="p-1.5 rounded-lg active:opacity-70 hover:bg-rose-500/10"
             >
               <Trash2 size={14} color="#EF4444" />
             </Pressable>
@@ -445,7 +445,7 @@ export const DiagramBlock: React.FC<DiagramBlockProps> = ({
 
                 <Pressable
                   onPress={handleAddNode}
-                  className="px-2 py-0.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20 flex-row items-center gap-1"
+                  className="px-2 py-0.5 rounded-lg bg-cyan-500/10 active:opacity-70 hover:bg-cyan-500/20 border border-cyan-500/20 flex-row items-center gap-1"
                 >
                   <Plus size={10} color="#06B6D4" />
                   <Text className="text-[10px] font-bold text-cyan-400">Add Node</Text>

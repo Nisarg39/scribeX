@@ -106,6 +106,7 @@ export const ExpenseBlock: React.FC<ExpenseBlockProps> = ({
         <View className="flex-row items-center gap-2.5 flex-1">
           {/* Currency Pill */}
           <Pressable
+ hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             onPress={handleCycleCurrency}
             className="w-8 h-8 rounded-full bg-emerald-500/15 dark:bg-emerald-400/20 border border-emerald-500/30 items-center justify-center shadow-xs"
             style={({ pressed }) => (pressed ? { transform: [{ scale: 0.95 }] } : undefined)}
@@ -152,7 +153,7 @@ export const ExpenseBlock: React.FC<ExpenseBlockProps> = ({
         {onDelete && (
           <Pressable
             onPress={onDelete}
-            className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 ml-1"
+            className="p-1 rounded-full opacity-40 hover:opacity-100 hover:bg-red-500/10 active:bg-red-500/20 ml-1"
             style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
             accessibilityLabel="Delete expense block"
           >

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import { View, Text, Pressable, ScrollView } from 'react-native';
 import {
   Plus,
   Undo2,
@@ -63,8 +63,14 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
       nativeID="scribex-editor-command-bar"
       dataSet={{ scribexToolbar: 'true' }}
       {...({ 'data-scribex-toolbar': 'true' } as any)}
-      className="flex-row items-center justify-between px-6 py-2.5 border-b border-light-border/70 dark:border-white/10 bg-light-appBg/95 dark:bg-[#18181A]/95 backdrop-blur-md z-20"
+      className="border-b border-light-border/70 dark:border-white/10 bg-light-appBg/95 dark:bg-[#18181A]/95 backdrop-blur-md z-20"
     >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="always"
+        contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, gap: 12 }}
+      >
       {/* Left: Primary Insert Element & Undo / Redo Controls */}
       <View className="flex-row items-center gap-2">
         <Pressable
@@ -84,7 +90,8 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
           <Pressable
             disabled={!canUndo}
             onPress={onUndo}
-            className={`p-1.5 rounded-full ${canUndo ? 'hover:bg-black/5 dark:hover:bg-white/10' : 'opacity-30'}`}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            className={`p-1.5 rounded-full ${canUndo ? 'hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15' : 'opacity-30'}`}
             accessibilityLabel="Undo (Ctrl+Z / Cmd+Z)"
             style={({ pressed }) => (pressed && canUndo ? { transform: [{ scale: 0.9 }] } : undefined)}
           >
@@ -94,7 +101,8 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
           <Pressable
             disabled={!canRedo}
             onPress={onRedo}
-            className={`p-1.5 rounded-full ${canRedo ? 'hover:bg-black/5 dark:hover:bg-white/10' : 'opacity-30'}`}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            className={`p-1.5 rounded-full ${canRedo ? 'hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15' : 'opacity-30'}`}
             accessibilityLabel="Redo (Ctrl+Y / Cmd+Shift+Z)"
             style={({ pressed }) => (pressed && canRedo ? { transform: [{ scale: 0.9 }] } : undefined)}
           >
@@ -116,7 +124,7 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
             currentActiveStyle === 'paragraph'
               ? 'bg-light-appBg dark:bg-white/15'
               : isTextFormatApplicable
-              ? 'hover:bg-black/5 dark:hover:bg-white/10'
+              ? 'hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15'
               : ''
           }`}
           style={({ pressed }) =>
@@ -142,7 +150,7 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
             currentActiveStyle === 'h1'
               ? 'bg-light-appBg dark:bg-white/15'
               : isTextFormatApplicable
-              ? 'hover:bg-black/5 dark:hover:bg-white/10'
+              ? 'hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15'
               : ''
           }`}
           style={({ pressed }) =>
@@ -168,7 +176,7 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
             currentActiveStyle === 'h2'
               ? 'bg-light-appBg dark:bg-white/15'
               : isTextFormatApplicable
-              ? 'hover:bg-black/5 dark:hover:bg-white/10'
+              ? 'hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15'
               : ''
           }`}
           style={({ pressed }) =>
@@ -194,7 +202,7 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
             currentActiveStyle === 'quote'
               ? 'bg-light-appBg dark:bg-white/15'
               : isTextFormatApplicable
-              ? 'hover:bg-black/5 dark:hover:bg-white/10'
+              ? 'hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15'
               : ''
           }`}
           style={({ pressed }) =>
@@ -272,7 +280,8 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
             <Pressable
               disabled={!canMoveUp}
               onPress={onMoveUp}
-              className={`p-1 rounded-full ${canMoveUp ? 'hover:bg-black/5 dark:hover:bg-white/10' : 'opacity-30'}`}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+              className={`p-1 rounded-full ${canMoveUp ? 'hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15' : 'opacity-30'}`}
               style={({ pressed }) => (pressed && canMoveUp ? { transform: [{ scale: 0.9 }] } : undefined)}
               accessibilityLabel="Move Up"
             >
@@ -281,7 +290,8 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
             <Pressable
               disabled={!canMoveDown}
               onPress={onMoveDown}
-              className={`p-1 rounded-full ${canMoveDown ? 'hover:bg-black/5 dark:hover:bg-white/10' : 'opacity-30'}`}
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+              className={`p-1 rounded-full ${canMoveDown ? 'hover:bg-black/5 dark:hover:bg-white/10 active:bg-black/10 dark:active:bg-white/15' : 'opacity-30'}`}
               style={({ pressed }) => (pressed && canMoveDown ? { transform: [{ scale: 0.9 }] } : undefined)}
               accessibilityLabel="Move Down"
             >
@@ -289,7 +299,8 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
             </Pressable>
             <Pressable
               onPress={onDeleteActiveBlock}
-              className="p-1 rounded-full hover:bg-red-500/20"
+              hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+              className="p-1 rounded-full hover:bg-red-500/20 active:bg-red-500/30"
               style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
               accessibilityLabel="Delete Block"
             >
@@ -298,6 +309,7 @@ export const EditorCommandBar: React.FC<EditorCommandBarProps> = ({
           </>
         )}
       </View>
+      </ScrollView>
     </View>
   );
 };

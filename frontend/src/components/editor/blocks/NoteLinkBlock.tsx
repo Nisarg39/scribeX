@@ -112,7 +112,7 @@ export const NoteLinkBlock: React.FC<NoteLinkBlockProps> = ({
                 <Pressable
                   key={n.id}
                   onPress={() => handleSelectNote(n)}
-                  className="flex-row items-center justify-between p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5"
+                  className="flex-row items-center justify-between p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
                 >
                   <View className="flex-row items-center gap-2 flex-1 mr-2">
                     <View style={{ backgroundColor: noteColor }} className="w-2.5 h-2.5 rounded-full" />

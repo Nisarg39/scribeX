@@ -98,7 +98,7 @@ export const ToggleBlock: React.FC<ToggleBlockProps> = ({
         <Pressable
           onPress={toggleOpen}
           style={({ pressed }) => pressed ? { transform: [{ scale: 0.9 }] } : undefined}
-          className="w-6 h-7 items-center justify-center mr-1 rounded hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 flex-shrink-0"
+          className="w-6 h-7 items-center justify-center mr-1 rounded hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10 active:bg-black/10 flex-shrink-0"
           accessibilityLabel={open ? 'Collapse toggle section' : 'Expand toggle section'}
         >
           {open ? (

@@ -329,7 +329,7 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
           {Boolean(onDelete) && (
             <Pressable
               onPress={onDelete}
-              className="p-1.5 rounded-lg hover:bg-rose-500/10"
+              className="p-1.5 rounded-lg active:opacity-70 hover:bg-rose-500/10"
             >
               <Trash2 size={14} color="#EF4444" />
             </Pressable>
@@ -445,7 +445,7 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
 
                 <Pressable
                   onPress={handleClear}
-                  className="px-2 py-1 rounded-lg hover:bg-rose-500/10"
+                  className="px-2 py-1 rounded-lg active:opacity-70 hover:bg-rose-500/10"
                 >
                   <Text className="text-[10px] text-rose-500">Clear</Text>
                 </Pressable>
