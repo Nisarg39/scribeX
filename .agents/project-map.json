@@ -1,0 +1,62 @@
+{
+  "project": "scribeX",
+  "scope": "workspace-only",
+  "stack": {
+    "framework": "Expo SDK 57 + React Native 0.86 + Expo Router",
+    "styling": "NativeWind v4 (Tailwind CSS) + inline React Native style objects for flex safety",
+    "storage": "Local-first SQLite (expo-sqlite on iOS/Android, sql.js WASM + IndexedDB on Web)"
+  },
+  "paths": {
+    "screens": {
+      "rootLayout": "frontend/app/_layout.tsx",
+      "entry": "frontend/app/index.tsx",
+      "onboarding": "frontend/app/onboarding.tsx",
+      "signin": "frontend/app/signin.tsx",
+      "home": "frontend/app/home.tsx",
+      "noteEditor": "frontend/app/note/[id].tsx"
+    },
+    "views": {
+      "notesList": "frontend/src/components/NotesView.tsx",
+      "tasksList": "frontend/src/components/TasksView.tsx",
+      "bottomDock": "frontend/src/components/BottomDock.tsx"
+    },
+    "editorCore": {
+      "blockEditor": "frontend/src/components/editor/BlockEditor.tsx",
+      "blockRenderer": "frontend/src/components/editor/BlockRenderer.tsx",
+      "universalWrapper": "frontend/src/components/editor/UniversalBlockWrapper.tsx",
+      "header": "frontend/src/components/editor/components/EditorHeader.tsx",
+      "commandBar": "frontend/src/components/editor/components/EditorCommandBar.tsx",
+      "insertPalette": "frontend/src/components/editor/components/InsertPaletteModal.tsx",
+      "slashPalette": "frontend/src/components/editor/components/SlashCommandPalette.tsx",
+      "templatePicker": "frontend/src/components/editor/components/TemplatePicker.tsx",
+      "backlinksStrip": "frontend/src/components/editor/components/BacklinksStrip.tsx",
+      "blocksDir": "frontend/src/components/editor/blocks/",
+      "hooksDir": "frontend/src/components/editor/hooks/"
+    },
+    "stateAndData": {
+      "notesStore": "frontend/src/state/useNotesStore.tsx",
+      "astSerializer": "frontend/src/core/astSerializer.ts",
+      "actionHistory": "frontend/src/core/actionTracker/ActionHistoryManager.ts",
+      "noteTemplates": "frontend/src/core/templates/noteTemplates.ts",
+      "notesRepo": "frontend/src/db/notesRepo.ts",
+      "tasksRepo": "frontend/src/db/tasksRepo.ts",
+      "types": "frontend/src/types/note.ts",
+      "theme": "frontend/src/theme/index.ts"
+    },
+    "docsAndReports": {
+      "architectureSpec": "docs/Universal_Note_Input_Structure_and_Relations.md",
+      "blocksAuditReport": "docs/Cross_Platform_Input_Blocks_Audit_Report.md",
+      "uiUxAuditReport": "docs/UI_UX_Cross_Platform_Inconsistencies_Report.md",
+      "futureIdeas": "docs/future_ideas.md"
+    }
+  },
+  "validationCommands": {
+    "typecheck": "cd frontend && npx tsc --noEmit",
+    "uiUxAudit": "node scripts/test_cross_platform_ui_ux.mjs",
+    "blocksAndAstAudit": "npm --prefix frontend run audit:all",
+    "interactionsAndUndoAudit": "npm --prefix frontend run test:interactions",
+    "maestroFlowsValidate": "npm --prefix frontend run test:e2e:validate",
+    "allSuites": "npm --prefix frontend run test:all"
+  }
+}
+

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, Platform } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../../../theme';
 import { Copy, Check, Terminal, ChevronDown } from 'lucide-react-native';
 
@@ -52,7 +53,13 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
   const [copied, setCopied] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
+    if (Platform.OS !== 'web') {
+      await Clipboard.setStringAsync(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      return;
+    }
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(code);
       setCopied(true);

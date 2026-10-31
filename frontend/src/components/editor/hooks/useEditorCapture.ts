@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { NoteItem, ComposableBlock, BlockType } from '../../../types/note';
 import { NoteColorToken } from '../../../theme';
 import { serializeBlocksToMarkdown, parseMarkdownToBlocks } from '../../../core/astSerializer';
@@ -428,10 +431,11 @@ export const useEditorCapture = ({
   }, []);
 
   // Export note to Markdown (.md)
-  const handleExportMarkdown = () => {
+  const handleExportMarkdown = async () => {
     const currentBlocks = blocksRef.current;
     const bodyMarkdown = serializeBlocksToMarkdown(currentBlocks);
     const cleanTitle = titleRef.current.trim() || 'Untitled Note';
+    const safeFilename = cleanTitle.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase() || 'note';
 
     const frontmatter = [
       '---',
@@ -444,13 +448,25 @@ export const useEditorCapture = ({
       bodyMarkdown,
     ].join('\n');
 
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+    if (Platform.OS !== 'web') {
+      try {
+        const targetUri = `${FileSystem.cacheDirectory || ''}${safeFilename}.md`;
+        await FileSystem.writeAsStringAsync(targetUri, frontmatter);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(targetUri, { mimeType: 'text/markdown' });
+        }
+      } catch (err) {
+        console.warn('Mobile Markdown export error:', err);
+      }
+      return;
+    }
+
+    if (typeof document !== 'undefined') {
       const blob = new Blob([frontmatter], { type: 'text/markdown;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const safeFilename = cleanTitle.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
       link.href = url;
-      link.download = `${safeFilename || 'note'}.md`;
+      link.download = `${safeFilename}.md`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -459,9 +475,10 @@ export const useEditorCapture = ({
   };
 
   // Export note to JSON (.json)
-  const handleExportJSON = () => {
+  const handleExportJSON = async () => {
     const currentBlocks = blocksRef.current;
     const cleanTitle = titleRef.current.trim() || 'Untitled Note';
+    const safeFilename = cleanTitle.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase() || 'note';
 
     const exportData = {
       id: noteRef.current.id,
@@ -475,15 +492,29 @@ export const useEditorCapture = ({
       schemaVersion: 1,
     };
 
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+    const jsonStr = JSON.stringify(exportData, null, 2);
+
+    if (Platform.OS !== 'web') {
+      try {
+        const targetUri = `${FileSystem.cacheDirectory || ''}${safeFilename}.json`;
+        await FileSystem.writeAsStringAsync(targetUri, jsonStr);
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(targetUri, { mimeType: 'application/json' });
+        }
+      } catch (err) {
+        console.warn('Mobile JSON export error:', err);
+      }
+      return;
+    }
+
+    if (typeof document !== 'undefined') {
+      const blob = new Blob([jsonStr], {
         type: 'application/json;charset=utf-8',
       });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const safeFilename = cleanTitle.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
       link.href = url;
-      link.download = `${safeFilename || 'note'}.json`;
+      link.download = `${safeFilename}.json`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -492,8 +523,59 @@ export const useEditorCapture = ({
   };
 
   // Trigger file import dialog
-  const handleTriggerImport = () => {
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+  const handleTriggerImport = async () => {
+    if (Platform.OS !== 'web') {
+      try {
+        const res = await DocumentPicker.getDocumentAsync({
+          type: ['text/*', 'application/json', '*/*'],
+          copyToCacheDirectory: true,
+        });
+        if (res.canceled || !res.assets?.[0]) return;
+        const asset = res.assets[0];
+        const lowerName = asset.name.toLowerCase();
+        const rawText = await FileSystem.readAsStringAsync(asset.uri);
+
+        if (lowerName.endsWith('.json')) {
+          const parsed = JSON.parse(rawText);
+          if (Array.isArray(parsed.blocks)) {
+            handleImportBlocksRef.current(
+              parsed.blocks,
+              parsed.title || asset.name.replace(/\.json$/i, ''),
+              parsed.colorToken || colorTokenRef.current
+            );
+          }
+          return;
+        }
+        if (lowerName.endsWith('.csv')) {
+          const { columns, rows } = parseCSVToRows(rawText);
+          const sheetBlock: ComposableBlock = {
+            id: `b-${Date.now()}-1`,
+            type: 'sheet',
+            content: asset.name.replace(/\.csv$/i, ''),
+            metadata: {
+              title: asset.name.replace(/\.csv$/i, ''),
+              activeTabId: 'tab-1',
+              tabs: [{ id: 'tab-1', name: 'Sheet 1', columns, rows, summaryFunction: 'none' }],
+            },
+          };
+          handleImportBlocksRef.current([sheetBlock], asset.name.replace(/\.csv$/i, ''));
+          return;
+        }
+
+        const parsedBlocks = parseMarkdownToBlocks(rawText);
+        if (parsedBlocks.length > 0) {
+          handleImportBlocksRef.current(
+            parsedBlocks,
+            asset.name.replace(/\.(md|markdown|txt)$/i, '')
+          );
+        }
+      } catch (err) {
+        console.warn('Mobile file import error:', err);
+      }
+      return;
+    }
+
+    if (typeof document !== 'undefined') {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.md,.markdown,.txt,.json,.csv';

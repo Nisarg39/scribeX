@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Pressable, Platform } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
+import * as Sharing from 'expo-sharing';
 import { useTheme, NoteColors } from '../../../theme';
 import { 
   FileText, 
@@ -72,9 +74,31 @@ export const FileBlock: React.FC<FileBlockProps> = ({
     onUpdateFile(name.trim() || 'Document.pdf', sizeBytes, url);
   };
 
-  const handleDownload = () => {
+  const handlePickNativeFile = async () => {
+    if (Platform.OS === 'web') return;
+    try {
+      const res = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+      if (!res.canceled && res.assets?.[0]) {
+        const asset = res.assets[0];
+        setName(asset.name);
+        onUpdateFile(asset.name, asset.size || sizeBytes, asset.uri);
+      }
+    } catch (err) {
+      console.warn('Mobile file picker error:', err);
+    }
+  };
+
+  const handleDownload = async () => {
     if (Platform.OS === 'web' && url && url !== '#') {
       window.open(url, '_blank');
+      return;
+    }
+    if (Platform.OS !== 'web') {
+      if (url && url !== '#' && (await Sharing.isAvailableAsync())) {
+        await Sharing.shareAsync(url).catch(() => {});
+      } else {
+        await handlePickNativeFile();
+      }
     }
   };
 

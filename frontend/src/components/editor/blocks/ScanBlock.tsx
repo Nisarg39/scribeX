@@ -1,5 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, Image, ScrollView, Platform, Modal } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../../../theme';
 import { UniversalBlockWrapper } from '../UniversalBlockWrapper';
 import {
@@ -143,7 +146,25 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
 
   // Handle native / web camera stream
   const handleStartCamera = async () => {
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+    if (Platform.OS !== 'web') {
+      try {
+        const perm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!perm.granted) return;
+        const result = await ImagePicker.launchCameraAsync({
+          mediaTypes: ['images'],
+          quality: 0.85,
+        });
+        if (!result.canceled && result.assets?.[0]) {
+          const asset = result.assets[0];
+          simulateOcrExtraction(asset.uri, asset.fileName || `Camera_Scan_${Date.now()}.jpg`);
+        }
+      } catch (err) {
+        console.warn('Mobile camera launch error:', err);
+      }
+      return;
+    }
+
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
       try {
         setIsCameraActive(true);
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -163,6 +184,25 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
     } else {
       fileInputRef.current?.click();
     }
+  };
+
+  const handleTriggerUpload = async () => {
+    if (Platform.OS !== 'web') {
+      try {
+        const docResult = await DocumentPicker.getDocumentAsync({
+          type: ['image/*', 'application/pdf'],
+          copyToCacheDirectory: true,
+        });
+        if (!docResult.canceled && docResult.assets?.[0]) {
+          const asset = docResult.assets[0];
+          simulateOcrExtraction(asset.uri, asset.name || `Scanned_Doc_${Date.now()}.jpg`);
+        }
+      } catch (err) {
+        console.warn('Mobile document picker error:', err);
+      }
+      return;
+    }
+    fileInputRef.current?.click();
   };
 
   const handleStopCamera = () => {
@@ -246,7 +286,13 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
     });
   };
 
-  const handleCopyText = () => {
+  const handleCopyText = async () => {
+    if (Platform.OS !== 'web') {
+      await Clipboard.setStringAsync(ocrText);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+      return;
+    }
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(ocrText);
       setIsCopied(true);
@@ -341,7 +387,7 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
             </Pressable>
 
             <Pressable
-              onPress={() => fileInputRef.current?.click()}
+              onPress={handleTriggerUpload}
               className="flex-row items-center gap-2 px-4 py-2 rounded-xl bg-light-surface dark:bg-white/10 border border-light-border dark:border-white/10 active:scale-95"
             >
               <Upload size={14} color={isDark ? '#F4F4F5' : '#18181B'} />

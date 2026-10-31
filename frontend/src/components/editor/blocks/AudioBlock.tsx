@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, TextInput, Platform } from 'react-native';
+import { Audio as ExpoAudio } from 'expo-av';
+import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
 import { useTheme, NoteColors } from '../../../theme';
 import { 
   Play, 
@@ -85,6 +88,8 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
 
   // Refs for audio hardware and playback
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const nativeSoundRef = useRef<ExpoAudio.Sound | null>(null);
+  const nativeRecordingRef = useRef<ExpoAudio.Recording | null>(null);
   const mediaRecorderRef = useRef<any>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
@@ -179,6 +184,12 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
       if (audioContextRef.current) {
         try { audioContextRef.current.close(); } catch (_) {}
       }
+      if (nativeSoundRef.current) {
+        nativeSoundRef.current.unloadAsync().catch(() => {});
+      }
+      if (nativeRecordingRef.current) {
+        nativeRecordingRef.current.stopAndUnloadAsync().catch(() => {});
+      }
     };
   }, []);
 
@@ -213,8 +224,47 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
       audioElementRef.current.pause();
       setIsPlaying(false);
     }
+    if (nativeSoundRef.current) {
+      await nativeSoundRef.current.stopAsync().catch(() => {});
+      setIsPlaying(false);
+    }
 
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    // Native iOS & Android recording via expo-av
+    if (Platform.OS !== 'web') {
+      try {
+        const perm = await ExpoAudio.requestPermissionsAsync();
+        if (!perm.granted) {
+          setErrorMessage('Microphone permission denied on mobile device.');
+          return;
+        }
+        await ExpoAudio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+        const { recording } = await ExpoAudio.Recording.createAsync(
+          ExpoAudio.RecordingOptionsPresets.HIGH_QUALITY,
+          (status) => {
+            if (status.isRecording && status.metering !== undefined) {
+              const normalized = Math.max(0, Math.min(100, Math.round(((status.metering + 60) / 60) * 100)));
+              setLiveAudioLevel(normalized);
+            }
+          },
+          150
+        );
+        nativeRecordingRef.current = recording;
+        recordStartRef.current = Date.now();
+        setRecordTimer(0);
+        setIsRecording(true);
+        recordIntervalRef.current = setInterval(() => {
+          setRecordTimer(Math.max(1, Math.round((Date.now() - recordStartRef.current) / 1000)));
+        }, 200);
+      } catch (nativeErr: any) {
+        setErrorMessage(`Mobile microphone error: ${nativeErr?.message || 'Unable to start recording.'}`);
+      }
+      return;
+    }
+
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setErrorMessage('Audio recording is not supported in this environment.');
       return;
     }
@@ -389,10 +439,40 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   };
 
   // Stop recording
-  const handleStopRecording = () => {
+  const handleStopRecording = async () => {
     if (recordIntervalRef.current) {
       clearInterval(recordIntervalRef.current);
       recordIntervalRef.current = null;
+    }
+    if (Platform.OS !== 'web' && nativeRecordingRef.current) {
+      try {
+        const rec = nativeRecordingRef.current;
+        nativeRecordingRef.current = null;
+        await rec.stopAndUnloadAsync();
+        const uri = rec.getURI() || '';
+        const totalSecs = Math.max(1, Math.round((Date.now() - recordStartRef.current) / 1000));
+        setCurrentAudioUrl(uri);
+        setCurrentDuration(totalSecs);
+        setPlaybackPos(0);
+        const mobileTranscriptNote =
+          textTranscript.trim() ||
+          'Native voice note captured via expo-av. (Cloud Whisper STT transcription will be fixed later when backend is setup)';
+        setTextTranscript(mobileTranscriptNote);
+        setShowTranscriptDrawer(true);
+        onUpdateContent?.(uri);
+        onUpdateMetadata({
+          durationSec: totalSecs,
+          transcription: mobileTranscriptNote,
+          waveform: DEFAULT_WAVEFORM,
+          mimeType: 'audio/m4a',
+          url: uri,
+        });
+      } catch (err) {
+        console.warn('Error stopping native recording:', err);
+      }
+      setIsRecording(false);
+      setLiveAudioLevel(0);
+      return;
     }
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
@@ -402,11 +482,45 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   };
 
   // Play / Pause toggle
-  const handleTogglePlay = () => {
+  const handleTogglePlay = async () => {
     onFocus?.();
     if (!currentAudioUrl) {
       // If no audio recorded yet, trigger recording directly
       handleStartRecording();
+      return;
+    }
+
+    if (Platform.OS !== 'web') {
+      try {
+        if (nativeSoundRef.current) {
+          if (isPlaying) {
+            await nativeSoundRef.current.pauseAsync();
+            setIsPlaying(false);
+          } else {
+            await nativeSoundRef.current.setRateAsync(speed, true);
+            await nativeSoundRef.current.playAsync();
+            setIsPlaying(true);
+          }
+          return;
+        }
+        const { sound } = await ExpoAudio.Sound.createAsync(
+          { uri: currentAudioUrl },
+          { shouldPlay: true, rate: speed, shouldCorrectPitch: true },
+          (status) => {
+            if (!status.isLoaded) return;
+            setPlaybackPos((status.positionMillis || 0) / 1000);
+            if (status.didJustFinish) {
+              setIsPlaying(false);
+              setPlaybackPos(0);
+            }
+          }
+        );
+        nativeSoundRef.current = sound;
+        setIsPlaying(true);
+      } catch (err) {
+        console.warn('Native audio playback error:', err);
+        setErrorMessage('Playback error on mobile device.');
+      }
       return;
     }
 
@@ -432,9 +546,15 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
 
   // Seek on waveform bar click
   const handleSeek = (index: number) => {
-    if (!currentAudioUrl || !audioElementRef.current || currentDuration <= 0) return;
+    if (!currentAudioUrl || currentDuration <= 0) return;
     const seekPct = index / (waveform.length - 1);
     const seekTime = seekPct * currentDuration;
+    if (Platform.OS !== 'web' && nativeSoundRef.current) {
+      nativeSoundRef.current.setPositionAsync(seekTime * 1000).catch(() => {});
+      setPlaybackPos(seekTime);
+      return;
+    }
+    if (!audioElementRef.current) return;
     audioElementRef.current.currentTime = seekTime;
     setPlaybackPos(seekTime);
   };
@@ -445,14 +565,24 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
     const nextIdx = (speeds.indexOf(speed) + 1) % speeds.length;
     const nextSpeed = speeds[nextIdx];
     setSpeed(nextSpeed);
+    if (Platform.OS !== 'web' && nativeSoundRef.current) {
+      nativeSoundRef.current.setRateAsync(nextSpeed, true).catch(() => {});
+    }
     if (audioElementRef.current) {
       audioElementRef.current.playbackRate = nextSpeed;
     }
   };
 
   // Download recorded audio clip
-  const handleDownload = () => {
-    if (!currentAudioUrl || Platform.OS !== 'web' || typeof document === 'undefined') return;
+  const handleDownload = async () => {
+    if (!currentAudioUrl) return;
+    if (Platform.OS !== 'web') {
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(currentAudioUrl).catch(() => {});
+      }
+      return;
+    }
+    if (typeof document === 'undefined') return;
     const a = document.createElement('a');
     a.href = currentAudioUrl;
     a.download = `voice-note-${Date.now()}.webm`;
@@ -462,9 +592,15 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   };
 
   // Copy transcript to clipboard
-  const handleCopyTranscript = () => {
+  const handleCopyTranscript = async () => {
     const textToCopy = textTranscript.trim();
     if (!textToCopy) return;
+    if (Platform.OS !== 'web') {
+      await Clipboard.setStringAsync(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      return;
+    }
     if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(textToCopy);
       setCopied(true);

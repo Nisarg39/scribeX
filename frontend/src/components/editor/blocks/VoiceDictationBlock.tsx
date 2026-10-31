@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, Platform } from 'react-native';
+import { Audio as ExpoAudio } from 'expo-av';
+import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../../../theme';
 import { 
   Mic, 
@@ -58,6 +60,7 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
   const [audioLevel, setAudioLevel] = useState<number>(0);
 
   const recognitionRef = useRef<any>(null);
+  const nativeRecordingRef = useRef<ExpoAudio.Recording | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const timerRef = useRef<any>(null);
@@ -209,7 +212,38 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
       }
     }
 
-    // Graceful fallback for non-web environments
+    // Native iOS & Android microphone capture via expo-av (Cloud STT transcription deferred to backend setup)
+    if (Platform.OS !== 'web') {
+      try {
+        const perm = await ExpoAudio.requestPermissionsAsync();
+        if (!perm.granted) {
+          setErrorMessage('Microphone permission denied on mobile device.');
+          return;
+        }
+        await ExpoAudio.setAudioModeAsync({
+          allowsRecordingIOS: true,
+          playsInSilentModeIOS: true,
+        });
+        const { recording } = await ExpoAudio.Recording.createAsync(
+          ExpoAudio.RecordingOptionsPresets.HIGH_QUALITY,
+          (status) => {
+            if (status.isRecording && status.metering !== undefined) {
+              const normalized = Math.max(0, Math.min(100, Math.round(((status.metering + 60) / 60) * 100)));
+              setAudioLevel(normalized);
+            }
+          },
+          150
+        );
+        nativeRecordingRef.current = recording;
+        setIsListening(true);
+        setInterimText('Listening via native mobile microphone...');
+      } catch (err: any) {
+        setErrorMessage(`Mobile microphone error: ${err?.message || 'Could not start recording.'}`);
+      }
+      return;
+    }
+
+    // Graceful fallback if Web SpeechRecognition is unavailable in browser
     setIsListening(true);
     setTimeout(() => {
       const sample = 'Real-time voice dictation active. Speech transcribed directly into editable markdown.';
@@ -222,7 +256,25 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
     }, 2000);
   };
 
-  const stopListening = () => {
+  const stopListening = async () => {
+    if (Platform.OS !== 'web' && nativeRecordingRef.current) {
+      try {
+        const rec = nativeRecordingRef.current;
+        nativeRecordingRef.current = null;
+        await rec.stopAndUnloadAsync();
+        const noteMsg =
+          '[Native mobile audio captured via expo-av — Cloud Whisper STT transcription will be fixed later when backend is setup]';
+        setTranscript((prev) => {
+          const next = prev ? `${prev} ${noteMsg}` : noteMsg;
+          commitUpdates({ transcript: next, isCompleted: true, durationSec: seconds });
+          return next;
+        });
+      } catch (_) {}
+      setAudioLevel(0);
+      setIsListening(false);
+      setInterimText('');
+      return;
+    }
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -251,9 +303,15 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
     commitUpdates({ transcript: '', durationSec: 0 });
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!transcript) return;
-    if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
+    if (Platform.OS !== 'web') {
+      await Clipboard.setStringAsync(transcript);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      return;
+    }
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(transcript);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
