@@ -1,0 +1,107 @@
+appId: com.scribex.app
+---
+# ==============================================================================
+# ScribeX — Pillar 5 Master Native E2E Automation Flow
+# Zero-Touch Autonomous Mobile Device Validation Suite
+# ==============================================================================
+
+- launchApp:
+    clearState: false
+
+# ------------------------------------------------------------------------------
+# JOURNEY 1: Home Dashboard & Level-0 Quick Thought Ingestion
+# ------------------------------------------------------------------------------
+- assertVisible: "Notes"
+- tapOn: "Capture a thought, task, or paste markdown..."
+- inputText: "Autonomous Maestro E2E Ingestion Test Note"
+- tapOn:
+    accessibilityLabel: "Capture Note"
+
+# ------------------------------------------------------------------------------
+# JOURNEY 2: Open Editor & Set Metadata (Folder & Tags)
+# ------------------------------------------------------------------------------
+- tapOn: "Create New Note in Block Editor"
+- assertVisible: "Done"
+
+# Note Title
+- tapOn:
+    id: "scribex-note-title-input"
+- inputText: "Pillar 5 Master Validation Note\n"
+
+# Assign Folder & Tags
+- tapOn:
+    accessibilityLabel: "Change note folder"
+- tapOn: "General"
+- tapOn:
+    accessibilityLabel: "Add Tag"
+- inputText: "e2e-verified\n"
+
+# ------------------------------------------------------------------------------
+# JOURNEY 3: Ingest Core Manual Input Blocks via Insert Palette
+# ------------------------------------------------------------------------------
+# 1. Checklist Block Ingest & Toggle
+- tapOn: "Insert"
+- tapOn: "Checklist Task"
+- inputText: "Execute zero-touch automated tests"
+- tapOn: "Execute zero-touch automated tests" # toggles checkmark
+
+# 2. Code Block Ingest
+- tapOn: "Insert"
+- tapOn: "Code Block"
+- inputText: "const isAutonomous = true;"
+
+# 3. Math Equation Ingest
+- tapOn: "Insert"
+- tapOn: "LaTeX Formula"
+- inputText: "\\int_{0}^{\\infty} e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}"
+
+# 4. Kanban Workflow Ingest
+- tapOn: "Insert"
+- tapOn: "Kanban Board"
+- assertVisible: "To Do"
+- assertVisible: "In Progress"
+- assertVisible: "Done"
+
+# 5. Document Scan & OCR Ingest
+- tapOn: "Insert"
+- tapOn: "Document Scan & OCR"
+- tapOn: "⚡ Invoice / Receipt"
+- assertVisible: "ACME CLOUD SERVICES INC."
+
+# ------------------------------------------------------------------------------
+# JOURNEY 4: Pin Note & Save
+# ------------------------------------------------------------------------------
+- tapOn:
+    accessibilityLabel: "Toggle Pin"
+- tapOn:
+    accessibilityLabel: "Done"
+
+# ------------------------------------------------------------------------------
+# JOURNEY 5: Pinned Shelf & Filter Verification
+# ------------------------------------------------------------------------------
+- assertVisible: "PINNED NOTES"
+- assertVisible: "Pillar 5 Master Validation Note"
+
+# Tag Filter Verification
+- tapOn: "#e2e-verified"
+- assertVisible: "Pillar 5 Master Validation Note"
+
+# ------------------------------------------------------------------------------
+# JOURNEY 6: Soft Delete to Trash & Recovery Lifecycle
+# ------------------------------------------------------------------------------
+- tapOn: "Pillar 5 Master Validation Note"
+- tapOn:
+    accessibilityLabel: "Delete Note"
+
+# Verify in Trash
+- tapOn: "Trash"
+- assertVisible: "Trash Bin"
+- assertVisible: "Pillar 5 Master Validation Note"
+- tapOn: "Restore"
+
+# Verify Restored to All Notes
+- tapOn: "All Notes"
+- assertVisible: "Pillar 5 Master Validation Note"
+
+- stopApp
+

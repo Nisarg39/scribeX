@@ -27,3 +27,4 @@ export { SpreadsheetBlock } from './SpreadsheetBlock';
 export { DiagramBlock } from './DiagramBlock';
 export { WebClipBlock } from './WebClipBlock';
 export { VoiceDictationBlock } from './VoiceDictationBlock';
+export { ScanBlock } from './ScanBlock';

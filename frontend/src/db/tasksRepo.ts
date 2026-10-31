@@ -151,6 +151,14 @@ export class TasksRepository {
     return updated!;
   }
 
+  public async updateTaskPriority(id: string, priority: any): Promise<TaskItem> {
+    return this.updateTask(id, { priority });
+  }
+
+  public async updateTaskDueDate(id: string, dueDate: string): Promise<TaskItem> {
+    return this.updateTask(id, { dueDate });
+  }
+
   public async deleteTask(id: string): Promise<void> {
     const task = await this.getTaskById(id);
     if (!task) return;

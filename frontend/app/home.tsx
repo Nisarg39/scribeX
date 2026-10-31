@@ -27,17 +27,15 @@ export default function HomeContainerScreen() {
 
   return (
     <View 
-      className="flex-1 bg-light-appBg dark:bg-dark-appBg relative"
+      className="flex-1 bg-light-surface dark:bg-dark-surface relative"
       style={{
-        paddingTop: Math.max(insets.top, 16),
-        paddingBottom: Math.max(insets.bottom, 16),
+        paddingTop: Math.max(insets.top, 8),
+        paddingBottom: 0,
       }}
     >
-      {/* Outer Shell Wrapper (56-72px desktop padding, 24-32px tablet/mobile) */}
-      <View className="flex-1 px-4 sm:px-8 md:px-14">
-        
-        {/* Soft Minimalist Workspace Shell (24px radius, calm border) */}
-        <View className="flex-1 rounded-3xl bg-light-surface dark:bg-dark-surface p-6 sm:p-8 border border-light-border dark:border-dark-border relative overflow-hidden">
+      {/* Full-bleed workspace: no outer card, fills entire width and height */}
+      <View className="flex-1 px-4 md:px-8">
+        <View className="flex-1 relative">
           
           {/* Top Quiet App Bar */}
           <View className="flex-row items-center justify-between mb-6 pb-2 border-b border-light-border/40 dark:border-dark-border/40">

@@ -6,7 +6,11 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "audit:all": "npx tsx ../scripts/run_cross_platform_audit.mjs",
+    "test:interactions": "npx tsx ../scripts/test_headless_interactions_and_history.mjs",
+    "test:e2e:validate": "node ../scripts/validate_maestro_flows.mjs",
+    "test:all": "npm run audit:all && npm run test:interactions && npm run test:e2e:validate"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.17",

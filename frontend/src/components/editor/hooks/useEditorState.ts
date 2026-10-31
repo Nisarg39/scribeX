@@ -44,6 +44,14 @@ export const useEditorState = ({
   const isPinnedRef = useRef(isPinned);
   isPinnedRef.current = isPinned;
 
+  const [folderPath, setFolderPath] = useState<string>(note.folderPath || 'General');
+  const folderPathRef = useRef(folderPath);
+  folderPathRef.current = folderPath;
+
+  const [tags, setTags] = useState<string[]>(note.tags || []);
+  const tagsRef = useRef(tags);
+  tagsRef.current = tags;
+
   // Dual-Stack Action History Manager for Undo / Redo & Activity Tracking
   const actionHistory = useRef(new ActionHistoryManager()).current;
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
@@ -114,7 +122,9 @@ export const useEditorState = ({
     newColor: NoteColorToken = colorTokenRef.current,
     newBlocks: ComposableBlock[] = blocksRef.current,
     newFav: boolean = isFavoriteRef.current,
-    newPin: boolean = isPinnedRef.current
+    newPin: boolean = isPinnedRef.current,
+    newFolderPath: string = folderPathRef.current,
+    newTags: string[] = tagsRef.current
   ) => {
     // If it's a draft and still completely pristine, do NOT write to DB yet!
     const isPristine =
@@ -143,7 +153,8 @@ export const useEditorState = ({
           colorToken: newColor,
           blocks: newBlocks,
           contentMarkdown,
-          folderPath: note.folderPath || 'General',
+          folderPath: newFolderPath,
+          tags: newTags,
         });
       } else {
         // Existing note: update note in SQLite
@@ -154,6 +165,8 @@ export const useEditorState = ({
           contentMarkdown,
           isFavorite: newFav,
           isPinned: newPin,
+          folderPath: newFolderPath,
+          tags: newTags,
         });
       }
 
@@ -1108,6 +1121,54 @@ export const useEditorState = ({
     onNoteDeleted(noteIdRef.current);
   };
 
+  const handleFolderPathChange = (newFolder: string) => {
+    const cleanFolder = newFolder.trim() || 'General';
+    setFolderPath(cleanFolder);
+    folderPathRef.current = cleanFolder;
+    persistChanges(
+      titleRef.current,
+      colorTokenRef.current,
+      blocksRef.current,
+      isFavoriteRef.current,
+      isPinnedRef.current,
+      cleanFolder,
+      tagsRef.current
+    );
+  };
+
+  const handleAddTag = (rawTag: string) => {
+    const clean = rawTag.trim().replace(/^#/, '');
+    if (!clean) return;
+    if (tagsRef.current.includes(clean)) return;
+    const nextTags = [...tagsRef.current, clean];
+    setTags(nextTags);
+    tagsRef.current = nextTags;
+    persistChanges(
+      titleRef.current,
+      colorTokenRef.current,
+      blocksRef.current,
+      isFavoriteRef.current,
+      isPinnedRef.current,
+      folderPathRef.current,
+      nextTags
+    );
+  };
+
+  const handleRemoveTag = (tagToRemove: string) => {
+    const nextTags = tagsRef.current.filter((t) => t !== tagToRemove);
+    setTags(nextTags);
+    tagsRef.current = nextTags;
+    persistChanges(
+      titleRef.current,
+      colorTokenRef.current,
+      blocksRef.current,
+      isFavoriteRef.current,
+      isPinnedRef.current,
+      folderPathRef.current,
+      nextTags
+    );
+  };
+
   const currentActiveBlock = blocks.find((b) => b.id === activeBlockId);
   const isTextFormatApplicable = !currentActiveBlock || isTextTransformableBlock(currentActiveBlock.type);
   const currentActiveStyle: ChecklistPointStyle | null = (() => {
@@ -1136,6 +1197,8 @@ export const useEditorState = ({
     colorToken,
     isFavorite,
     isPinned,
+    folderPath,
+    tags,
     blocks,
     blocksRef,
     activeBlockId,
@@ -1154,6 +1217,9 @@ export const useEditorState = ({
     handleColorChange,
     handleTogglePin,
     handleToggleFavorite,
+    handleFolderPathChange,
+    handleAddTag,
+    handleRemoveTag,
     handleReorderBlock,
     handleMoveUp,
     handleMoveDown,

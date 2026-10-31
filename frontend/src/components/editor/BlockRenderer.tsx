@@ -32,6 +32,7 @@ import {
   DiagramBlock,
   WebClipBlock,
   VoiceDictationBlock,
+  ScanBlock,
 } from './blocks';
 import {
   DividerBlock,
@@ -856,6 +857,36 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
             } else {
               onUpdateMetadata(nextMeta);
               if (dictationData.transcript) onUpdateContent(dictationData.transcript);
+            }
+          }}
+          onConvertToText={(text) => {
+            if (onConvertBlock) {
+              onConvertBlock('paragraph', text);
+            }
+          }}
+        />
+      )}
+
+      {/* Document Scan & OCR Block */}
+      {block.type === 'scan' && (
+        <ScanBlock
+          metadata={block.metadata}
+          content={block.content}
+          isSelected={isActive}
+          isDragging={isDragging}
+          onFocus={onFocus}
+          onDelete={onDelete}
+          onStartDrag={handleStartDragFromChild}
+          onUpdateScan={(scanData) => {
+            const nextMeta = { ...block.metadata, ...scanData };
+            if (onUpdateBlock) {
+              onUpdateBlock({
+                metadata: nextMeta,
+                content: scanData.ocrText || block.content,
+              });
+            } else {
+              onUpdateMetadata(nextMeta);
+              if (scanData.ocrText) onUpdateContent(scanData.ocrText);
             }
           }}
           onConvertToText={(text) => {

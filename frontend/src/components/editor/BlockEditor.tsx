@@ -2,7 +2,8 @@ import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Platform } from 'react-native';
 import { NoteItem } from '../../types/note';
 import { useTheme, NoteColors } from '../../theme';
-import { Folder, Upload } from 'lucide-react-native';
+import { Folder, Upload, Tag, Plus, X, ChevronDown } from 'lucide-react-native';
+import { useNotesStore } from '../../state/useNotesStore';
 import { BlockRenderer } from './BlockRenderer';
 import {
   EditorHeader,
@@ -32,7 +33,25 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   onNoteDeleted,
 }) => {
   const { isDark } = useTheme();
+  const { folders, createFolder, archiveNote, unarchiveNote } = useNotesStore();
   const [isInsertPaletteOpen, setIsInsertPaletteOpen] = useState(false);
+  const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
+  const [newFolderInput, setNewFolderInput] = useState('');
+  const [isAddingTag, setIsAddingTag] = useState(false);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [isArchived, setIsArchived] = useState(note.status === 'archived');
+
+  const handleToggleArchive = async () => {
+    if (isArchived) {
+      await unarchiveNote(note.id);
+      setIsArchived(false);
+      onNoteUpdated({ ...note, status: 'active' });
+    } else {
+      await archiveNote(note.id);
+      setIsArchived(true);
+      onNoteUpdated({ ...note, status: 'archived' });
+    }
+  };
 
   // 1. Note Container & Block Mutations Hook (with 3-tier action history & pristine draft protection)
   const {
@@ -40,6 +59,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     colorToken,
     isFavorite,
     isPinned,
+    folderPath,
+    tags,
     blocks,
     blocksRef,
     activeBlockId,
@@ -58,6 +79,9 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
     handleColorChange,
     handleTogglePin,
     handleToggleFavorite,
+    handleFolderPathChange,
+    handleAddTag,
+    handleRemoveTag,
     handleReorderBlock,
     handleMoveUp,
     handleMoveDown,
@@ -225,10 +249,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         colorToken={colorToken}
         isPinned={isPinned}
         isFavorite={isFavorite}
+        isArchived={isArchived}
         onClose={onClose}
         onColorChange={handleColorChange}
         onTogglePin={handleTogglePin}
         onToggleFavorite={handleToggleFavorite}
+        onToggleArchive={handleToggleArchive}
         onDeleteNote={handleDeleteNote}
         onExportMarkdown={handleExportMarkdown}
         onExportJSON={handleExportJSON}
@@ -304,19 +330,171 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         contentContainerStyle={{ paddingBottom: 120, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Folder Badge & Metadata */}
-        <Pressable onPress={handleDeselectAll} className="flex-row items-center gap-2 mb-4 self-start">
-          <View
-            style={{ backgroundColor: NoteColors[colorToken] }}
-            className="flex-row items-center gap-1.5 px-3 py-1 rounded-full shadow-sm"
-          >
-            <Folder size={11} color="#191919" />
-            <Text className="text-xs font-bold text-[#191919]">{note.folderPath || 'General'}</Text>
+        {/* Interactive Folder Selector & Tag Strip */}
+        <View className="mb-4 z-20">
+          <View className="flex-row flex-wrap items-center gap-2">
+            {/* Folder Selector Pill */}
+            <Pressable
+              onPress={() => setIsFolderPickerOpen(!isFolderPickerOpen)}
+              accessibilityLabel="Change note folder"
+              style={{ backgroundColor: NoteColors[colorToken] }}
+              className="flex-row items-center gap-1.5 px-3 py-1 rounded-full shadow-sm active:scale-95 transition-transform"
+            >
+              <Folder size={11} color="#191919" />
+              <Text className="text-xs font-bold text-[#191919]">{folderPath || 'General'}</Text>
+              <ChevronDown size={11} color="#191919" />
+            </Pressable>
+
+            {/* Tags Strip */}
+            {tags.map((tag) => (
+              <View
+                key={tag}
+                className="flex-row items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-light-surface dark:bg-[#18181B] border border-light-border dark:border-white/10 shadow-sm"
+              >
+                <Tag size={10} color="#06B6D4" />
+                <Text className="text-xs font-medium text-light-textPrimary dark:text-dark-textPrimary">
+                  #{tag}
+                </Text>
+                <Pressable
+                  onPress={() => handleRemoveTag(tag)}
+                  accessibilityLabel={`Remove tag ${tag}`}
+                  className="w-3.5 h-3.5 items-center justify-center rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+                >
+                  <X size={9} color={isDark ? '#A1A1AA' : '#71717A'} />
+                </Pressable>
+              </View>
+            ))}
+
+            {/* Add Tag Pill / Input */}
+            {isAddingTag ? (
+              <View className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full bg-light-surface dark:bg-[#18181B] border border-cyan-500/50">
+                <Text className="text-xs text-cyan-400 font-bold">#</Text>
+                <TextInput
+                  placeholder="tag..."
+                  placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
+                  value={newTagInput}
+                  onChangeText={setNewTagInput}
+                  autoFocus
+                  onSubmitEditing={() => {
+                    if (newTagInput.trim()) {
+                      handleAddTag(newTagInput.trim());
+                    }
+                    setIsAddingTag(false);
+                    setNewTagInput('');
+                  }}
+                  onBlur={() => {
+                    if (newTagInput.trim()) {
+                      handleAddTag(newTagInput.trim());
+                    }
+                    setIsAddingTag(false);
+                    setNewTagInput('');
+                  }}
+                  className="text-xs font-medium text-light-textPrimary dark:text-dark-textPrimary p-0 min-w-[50px] outline-none"
+                />
+              </View>
+            ) : (
+              <Pressable
+                onPress={() => setIsAddingTag(true)}
+                accessibilityLabel="Add Tag"
+                className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full bg-light-surface/60 dark:bg-white/5 border border-dashed border-light-border dark:border-white/15 hover:border-cyan-500/50"
+              >
+                <Plus size={10} color={isDark ? '#A1A1AA' : '#71717A'} />
+                <Text className="text-xs text-light-textMuted dark:text-dark-textMuted font-medium">Tag</Text>
+              </Pressable>
+            )}
+
+            <Text className="text-xs text-light-textMuted dark:text-dark-textMuted ml-1">
+              • Last updated {note.updatedAt || 'Just now'}
+            </Text>
           </View>
-          <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
-            • Last updated {note.updatedAt || 'Just now'}
-          </Text>
-        </Pressable>
+
+          {/* Interactive Folder Selector Popover */}
+          {isFolderPickerOpen && (
+            <View
+              style={{
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)',
+              }}
+              className="mt-2.5 p-3 rounded-2xl border shadow-2xl max-w-sm"
+            >
+              <Text className="text-[11px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-2 px-1">
+                Select Folder
+              </Text>
+
+              {/* Folders List */}
+              <View className="gap-1 mb-2.5 max-h-48">
+                {Array.from(new Set(['General', ...folders.map((f) => f.name || f.path)])).map((folderName) => {
+                  const isCurrent = folderPath === folderName;
+                  return (
+                    <Pressable
+                      key={folderName}
+                      onPress={() => {
+                        handleFolderPathChange(folderName);
+                        setIsFolderPickerOpen(false);
+                      }}
+                      className={`flex-row items-center justify-between px-3 py-2 rounded-xl transition-colors ${
+                        isCurrent
+                          ? 'bg-cyan-500/15 border border-cyan-500/30'
+                          : 'hover:bg-black/5 dark:hover:bg-white/5'
+                      }`}
+                    >
+                      <View className="flex-row items-center gap-2">
+                        <Folder size={13} color={isCurrent ? '#06B6D4' : isDark ? '#A1A1AA' : '#71717A'} />
+                        <Text
+                          className={`text-xs font-semibold ${
+                            isCurrent
+                              ? 'text-cyan-400'
+                              : 'text-light-textPrimary dark:text-dark-textPrimary'
+                          }`}
+                        >
+                          {folderName}
+                        </Text>
+                      </View>
+                      {isCurrent && <Text className="text-[10px] text-cyan-400 font-bold">Active</Text>}
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Create New Folder Inline Input */}
+              <View className="pt-2 border-t border-light-border dark:border-white/10 flex-row items-center gap-2">
+                <TextInput
+                  placeholder="New folder (e.g. Work/AI)..."
+                  placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
+                  value={newFolderInput}
+                  onChangeText={setNewFolderInput}
+                  onSubmitEditing={async () => {
+                    const clean = newFolderInput.trim();
+                    if (clean) {
+                      await createFolder(clean);
+                      handleFolderPathChange(clean);
+                      setNewFolderInput('');
+                      setIsFolderPickerOpen(false);
+                    }
+                  }}
+                  className="flex-1 text-xs font-medium text-light-textPrimary dark:text-dark-textPrimary px-2 py-1.5 rounded-lg bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10"
+                />
+                <Pressable
+                  onPress={async () => {
+                    const clean = newFolderInput.trim();
+                    if (clean) {
+                      await createFolder(clean);
+                      handleFolderPathChange(clean);
+                      setNewFolderInput('');
+                      setIsFolderPickerOpen(false);
+                    }
+                  }}
+                  disabled={!newFolderInput.trim()}
+                  className={`px-3 py-1.5 rounded-lg ${
+                    newFolderInput.trim() ? 'bg-cyan-500 active:scale-95' : 'bg-white/10 opacity-40'
+                  }`}
+                >
+                  <Text className="text-xs font-bold text-white">Add</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+        </View>
 
         {/* Large Bold Editorial Title */}
         <TextInput

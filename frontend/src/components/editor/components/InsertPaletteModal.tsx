@@ -33,6 +33,7 @@ import {
   Workflow,
   BookmarkCheck,
   Mic,
+  Camera,
 } from 'lucide-react-native';
 import { BlockType } from '../../../types/note';
 import { useTheme } from '../../../theme';
@@ -328,6 +329,29 @@ export const InsertPaletteModal: React.FC<InsertPaletteModalProps> = ({
                 </Text>
                 <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
                   Live speech-to-text engine
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() =>
+                  onInsertBlock('scan', {
+                    documentName: 'Scanned Document',
+                    imageUrl: '',
+                    ocrText: '',
+                    filter: 'contrast',
+                  })
+                }
+                style={({ pressed }) => (pressed ? { transform: [{ scale: 0.97 }] } : undefined)}
+                className="flex-1 min-w-[150px] p-3 rounded-2xl bg-light-appBg dark:bg-[#252528] border border-light-border dark:border-white/5"
+              >
+                <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center mb-2">
+                  <Camera size={16} color="#06B6D4" />
+                </View>
+                <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                  Document Scan & OCR
+                </Text>
+                <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                  Camera capture & text extraction
                 </Text>
               </Pressable>
             </View>

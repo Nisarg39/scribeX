@@ -75,7 +75,8 @@ export type BlockType =
   | 'file'
   | 'note_link'
   | 'location'
-  | 'relation';
+  | 'relation'
+  | 'scan';
 
 export interface ComposableBlock {
   id: string;

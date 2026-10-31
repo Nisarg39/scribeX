@@ -598,6 +598,32 @@ export function parseMarkdownToBlocks(markdown: string): ComposableBlock[] {
       continue;
     }
 
+    // Document Scan & OCR Block: <!-- scribex:block type=scan data='...' -->
+    const scanMatch = line.trim().match(/^<!--\s*scribex:block\s+type=scan\s+data=(['"])(.*?)\1\s*-->/);
+    if (scanMatch) {
+      flushParagraph();
+      let scanData: any = null;
+      try {
+        scanData = JSON.parse(scanMatch[2]);
+      } catch (_) {}
+      const ocrText = scanData?.ocrText || scanData?.extractedText || 'Document Scan';
+      blocks.push({
+        id: `b-${Date.now()}-${blocks.length + 1}`,
+        type: 'scan',
+        content: ocrText,
+        metadata: scanData || { ocrText },
+      });
+      while (i + 1 < lines.length && (
+        lines[i + 1].trim().startsWith('📄 **Document Scan') ||
+        lines[i + 1].trim().startsWith('**Document Scan') ||
+        lines[i + 1].trim().startsWith('![Scan') ||
+        lines[i + 1].trim().startsWith('>')
+      )) {
+        i++;
+      }
+      continue;
+    }
+
     // Annotated Video: ![Caption](url) <!-- scribex:media type=video width=100% align=center -->
     const videoMatch = line.trim().match(/^!\[(.*?)\]\((.*?)\)\s*<!--\s*scribex:media\s+type=video\s*([^>]*)-->/);
     if (videoMatch) {
@@ -1256,6 +1282,20 @@ export function serializeBlocksToMarkdown(blocks: ComposableBlock[]): string {
         const transcript = data.transcript || block.content || '';
         const dur = data.durationSec ? ` (${data.durationSec}s)` : '';
         chunks.push(`<!-- scribex:block type=voice_dictation data='${dataJson}' -->\n🎙️ **Dictation${dur}:**\n> ${transcript}`);
+        break;
+      }
+
+      case 'scan': {
+        const data = block.metadata || { ocrText: block.content || '' };
+        const dataJson = JSON.stringify(data).replace(/'/g, "\\'");
+        const docName = data.documentName || 'Scanned Document';
+        const ocrText = data.ocrText || block.content || '';
+        const imgUrl = data.imageUrl ? `\n![Scan](${data.imageUrl})` : '';
+        const lines = [
+          `📄 **Document Scan: ${docName}**${imgUrl}`,
+          ocrText ? `> **Extracted OCR Text:**\n> ${ocrText.split('\n').join('\n> ')}` : '',
+        ].filter(Boolean);
+        chunks.push(`<!-- scribex:block type=scan data='${dataJson}' -->\n${lines.join('\n')}`);
         break;
       }
 

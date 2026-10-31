@@ -33,6 +33,7 @@ import {
   Workflow,
   BookmarkCheck,
   Mic,
+  Camera,
 } from 'lucide-react-native';
 import { BlockType } from '../../../types/note';
 import { useTheme } from '../../../theme';
@@ -530,6 +531,24 @@ export const SLASH_COMMANDS: SlashCommandDefinition[] = [
     icon: Mic,
     accentColor: '#F43F5E',
     accentBg: 'rgba(244, 63, 94, 0.12)',
+  },
+  {
+    id: 'scan',
+    title: 'Document Scan & OCR',
+    description: 'Camera capture of receipts, whiteboards, paper notes with text extraction',
+    category: 'Media & Embeds',
+    shortcut: '/scan',
+    blockType: 'scan',
+    defaultMetadata: {
+      documentName: 'Scanned Document',
+      imageUrl: '',
+      ocrText: '',
+      filter: 'contrast',
+    },
+    keywords: ['scan', 'camera', 'ocr', 'document', 'receipt', 'whiteboard', 'text extraction', 'photo', 'snap'],
+    icon: Camera,
+    accentColor: '#06B6D4',
+    accentBg: 'rgba(6, 182, 212, 0.12)',
   },
   {
     id: 'file',

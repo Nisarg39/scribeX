@@ -7,6 +7,7 @@ import { dbClient } from './client';
 import { DBNote, CreateNoteDTO, UpdateNoteDTO, NoteFilter } from './types';
 import { NoteItem, ComposableBlock } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
+import { tagsRepo } from './tagsRepo';
 
 const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -143,7 +144,23 @@ export class NotesRepository {
     sql += ` ORDER BY is_pinned DESC, updated_at DESC;`;
 
     const rows = await dbClient.query<DBNote>(sql, params);
-    return rows.map((r) => this.mapToNoteItem(r));
+
+    // Batch query tags for all notes
+    const tagMap = new Map<string, string[]>();
+    try {
+      const tagRows = await dbClient.query<{ note_id: string; name: string }>(
+        `SELECT nt.note_id, t.name 
+         FROM note_tags nt 
+         INNER JOIN tags t ON t.id = nt.tag_id;`
+      );
+      for (const row of tagRows) {
+        const list = tagMap.get(row.note_id) || [];
+        list.push(row.name);
+        tagMap.set(row.note_id, list);
+      }
+    } catch (_) {}
+
+    return rows.map((r) => this.mapToNoteItem(r, tagMap.get(r.id) || []));
   }
 
   public async updateNote(id: string, dto: UpdateNoteDTO): Promise<NoteItem> {
@@ -195,6 +212,11 @@ export class NotesRepository {
 
     const updateSql = `UPDATE notes SET ${updates.join(', ')} WHERE id = ?;`;
     await dbClient.run(updateSql, params);
+
+    // Update tags if provided
+    if (dto.tags !== undefined) {
+      await tagsRepo.setNoteTags(id, dto.tags);
+    }
 
     // Append changelog
     await dbClient.run(
@@ -264,6 +286,24 @@ export class NotesRepository {
       `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, 1, 'note', ?, 'delete', ?);`,
       [createLogId(), note.userId, id, JSON.stringify({ status: 'trashed' })]
+    );
+  }
+
+  public async archiveNote(id: string): Promise<void> {
+    await dbClient.run(
+      `UPDATE notes 
+       SET status = 'archived', updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?;`,
+      [id]
+    );
+  }
+
+  public async unarchiveNote(id: string): Promise<void> {
+    await dbClient.run(
+      `UPDATE notes 
+       SET status = 'active', updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ?;`,
+      [id]
     );
   }
 

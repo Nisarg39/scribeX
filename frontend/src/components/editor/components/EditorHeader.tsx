@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable } from 'react-native';
-import { ArrowLeft, Check, Pin, Star, Trash2, Download, Upload, FileText } from 'lucide-react-native';
+import { ArrowLeft, Check, Pin, Star, Trash2, Download, Upload, FileText, Archive } from 'lucide-react-native';
 import { useTheme, NoteColors, NoteColorToken } from '../../../theme';
 
 export const PASTEL_PALETTE: NoteColorToken[] = [
@@ -27,10 +27,12 @@ interface EditorHeaderProps {
   colorToken: NoteColorToken;
   isPinned: boolean;
   isFavorite: boolean;
+  isArchived?: boolean;
   onClose: () => void;
   onColorChange: (color: NoteColorToken) => void;
   onTogglePin: () => void;
   onToggleFavorite: () => void;
+  onToggleArchive?: () => void;
   onDeleteNote: () => void;
   onExportMarkdown?: () => void;
   onExportJSON?: () => void;
@@ -41,10 +43,12 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   colorToken,
   isPinned,
   isFavorite,
+  isArchived = false,
   onClose,
   onColorChange,
   onTogglePin,
   onToggleFavorite,
+  onToggleArchive,
   onDeleteNote,
   onExportMarkdown,
   onExportJSON,
@@ -191,6 +195,20 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
             fill={isFavorite ? '#FFD43B' : 'transparent'}
           />
         </Pressable>
+
+        {onToggleArchive && (
+          <Pressable
+            onPress={onToggleArchive}
+            accessibilityLabel={isArchived ? 'Unarchive Note' : 'Archive Note'}
+            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5"
+            style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
+          >
+            <Archive
+              size={17}
+              color={isArchived ? NoteColors.cyan : isDark ? '#B5B5B5' : '#626262'}
+            />
+          </Pressable>
+        )}
 
         <Pressable
           onPress={onDeleteNote}

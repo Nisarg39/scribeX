@@ -173,15 +173,15 @@ export default function NoteEditorScreen() {
 
   return (
     <View 
-      className="flex-1 bg-light-appBg dark:bg-dark-appBg relative"
+      className="flex-1 bg-light-surface dark:bg-dark-surface relative"
       style={{
-        paddingTop: Math.max(insets.top, 8),
-        paddingBottom: Math.max(insets.bottom, 8),
+        paddingTop: Math.max(insets.top, 0),
+        paddingBottom: Math.max(insets.bottom, 0),
       }}
     >
-      {/* Editorial Workspace Shell (edge-to-edge on mobile, sleek ambient canvas on desktop/tablet) */}
-      <View className="flex-1 px-0 sm:px-6 md:px-12">
-        <View className="flex-1 sm:rounded-3xl bg-light-surface dark:bg-dark-surface sm:border border-light-border dark:border-dark-border relative overflow-hidden shadow-sm">
+      {/* Full-bleed editor: no outer card */}
+      <View className="flex-1">
+        <View className="flex-1 relative">
           <BlockEditor
             key={localNote.id}
             note={localNote}

@@ -111,13 +111,13 @@ The 42 note creation and input methods synthesize industry patterns (Apple Notes
 
 ### A. Text and Rich-Text Notes
 
-| # | Input Method | Description | Implementation & AI Capability |
-|---|---|---|---|
-| **1** | **Basic Text Note** | Quick thoughts, spontaneous ideas, personal observations, and unstructured journal entries. | Autosaves on keystroke. AI analyzes raw text to infer cognitive intent, extract topics, and suggest an accurate title. |
-| **2** | **Rich-Text Document** | Formatted text including headings (H1–H4), bold, italic, underline, strikethrough, highlights, text colors, and inline links. | WYSIWYG editing surface with clean typography. Inline formatting markers parsed into structured AST tokens. |
-| **3** | **Structured Long-Form Note** | Document with nested headings, collapsible disclosure toggles, table of contents, and document outlines. | Collapsible sections preserve focus in deep documents. Outline generator builds navigable hierarchy tree. |
-| **4** | **Markdown Note** | Full CommonMark and GitHub Flavored Markdown (GFM) syntax with live preview for technical documentation and developer notes. | Direct two-way sync with local Git projection vault. Preserves raw `.md` fidelity with YAML frontmatter. |
-| **5** | **Template-Based Note** | Pre-structured layouts for 1:1 meetings, daily journals, retrospective analysis, project specs, and interviews. | Parameterized templates instantiate recurring scaffolding with pre-configured block structures and metadata tags. |
+| # | Input Method | Description | Implementation & AI Capability | Status & Component |
+|---|---|---|---|---|
+| **1** | **Basic Text Note** | Quick thoughts, spontaneous ideas, personal observations, and unstructured journal entries. | Autosaves on keystroke. AI analyzes raw text to infer cognitive intent, extract topics, and suggest an accurate title. | ✅ **Implemented** — [`ParagraphBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/components/typography/ParagraphBlock.tsx), AST round-trip verified |
+| **2** | **Rich-Text Document** | Formatted text including headings (H1–H4), bold, italic, underline, strikethrough, highlights, text colors, and inline links. | WYSIWYG editing surface with clean typography. Inline formatting markers parsed into structured AST tokens. | ✅ **Implemented** — [`HeadingBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/components/typography/HeadingBlock.tsx), AST round-trip verified |
+| **3** | **Structured Long-Form Note** | Document with nested headings, collapsible disclosure toggles, table of contents, and document outlines. | Collapsible sections preserve focus in deep documents. Outline generator builds navigable hierarchy tree. | ✅ **Implemented** — [`ToggleBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/ToggleBlock.tsx), AST round-trip verified |
+| **4** | **Markdown Note** | Full CommonMark and GitHub Flavored Markdown (GFM) syntax with live preview for technical documentation and developer notes. | Direct two-way sync with local Git projection vault. Preserves raw `.md` fidelity with YAML frontmatter. | ✅ **Implemented** — [`astSerializer.ts`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/core/astSerializer.ts), 100% two-way fidelity |
+| **5** | **Template-Based Note** | Pre-structured layouts for 1:1 meetings, daily journals, retrospective analysis, project specs, and interviews. | Parameterized templates instantiate recurring scaffolding with pre-configured block structures and metadata tags. | ✅ **Implemented** — [`TemplatePicker.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/components/TemplatePicker.tsx) / [`noteTemplates.ts`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/core/templates/noteTemplates.ts) |
 
 > **Implementation Rule:** Treat Category A inputs as different editor configurations and templates rather than distinct storage schemas.
 
@@ -125,13 +125,13 @@ The 42 note creation and input methods synthesize industry patterns (Apple Notes
 
 ### B. Lists, Tasks, and Actionable Notes
 
-| # | Input Method | Description | Implementation & AI Capability |
-|---|---|---|---|
-| **6** | **Checklist / To-Do List** | Tappable checkboxes with checked/unchecked states, drag-and-drop reordering, and bulk-completion toggles. | Items maintain reactive completion states. Checked items sync completion timestamps into local SQLite. |
-| **7** | **Nested Checklist** | Multi-level hierarchy with parent tasks, sub-tasks, and recursive task decomposition. | Parent checkbox reflects aggregated child completion percentage. Supports tab/shift-tab indentation. |
-| **8** | **Kanban Board** | Task cards distributed across customizable workflow columns (`Inbox`, `To Do`, `In Progress`, `Blocked`, `Done`). | Drag-and-drop state transitions. Updates status metadata on underlying task entities in real-time. |
-| **9** | **Advanced Task** | Rich task records with due dates, reminder alerts, priority weights (Low/Med/High/Urgent), recurrence rules, and dependency links. | Maps to unified task engine. Due dates feed notification triggers; dependencies block downstream tasks. |
-| **10** | **Habit Tracker** | Daily or recurring check-ins with streak counters, completion history logs, and trend visualizations. | Recurring reset intervals. AI calculates completion consistency and detects habit decay over time. |
+| # | Input Method | Description | Implementation & AI Capability | Status & Component |
+|---|---|---|---|---|
+| **6** | **Checklist / To-Do List** | Tappable checkboxes with checked/unchecked states, drag-and-drop reordering, and bulk-completion toggles. | Items maintain reactive completion states. Checked items sync completion timestamps into local SQLite. | ✅ **Implemented** — [`ChecklistBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/ChecklistBlock.tsx), dual-engine sync |
+| **7** | **Nested Checklist** | Multi-level hierarchy with parent tasks, sub-tasks, and recursive task decomposition. | Parent checkbox reflects aggregated child completion percentage. Supports tab/shift-tab indentation. | ✅ **Implemented** — [`ChecklistBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/ChecklistBlock.tsx) with Tab/Shift+Tab & tree lines |
+| **8** | **Kanban Board** | Task cards distributed across customizable workflow columns (`Inbox`, `To Do`, `In Progress`, `Blocked`, `Done`). | Drag-and-drop state transitions. Updates status metadata on underlying task entities in real-time. | ✅ **Implemented** — [`KanbanBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/KanbanBlock.tsx), AST round-trip verified |
+| **9** | **Advanced Task** | Rich task records with due dates, reminder alerts, priority weights (Low/Med/High/Urgent), recurrence rules, and dependency links. | Maps to unified task engine. Due dates feed notification triggers; dependencies block downstream tasks. | ✅ **Implemented** — [`TasksView.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/TasksView.tsx) & [`tasksRepo.ts`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/db/tasksRepo.ts) |
+| **10** | **Habit Tracker** | Daily or recurring check-ins with streak counters, completion history logs, and trend visualizations. | Recurring reset intervals. AI calculates completion consistency and detects habit decay over time. | ✅ **Implemented** — [`HabitBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/HabitBlock.tsx), 7-day matrix & dynamic streak |
 
 > **Critical Architectural Rule (Unified Task Model):** A checklist item embedded inside a note and an advanced task in the global task manager refer to the **same underlying task entity**. Completing a task inside a meeting note immediately updates the global task board, and vice versa.
 
@@ -139,68 +139,68 @@ The 42 note creation and input methods synthesize industry patterns (Apple Notes
 
 ### C. Structured Data and Visual Organization
 
-| # | Input Method | Description | Implementation & AI Capability |
-|---|---|---|---|
-| **11** | **Bulleted & Numbered Lists** | Unordered bullet lists, ordered procedural steps, alphabetical lists, and multi-level outlines. | Keyboard shortcut support (`- `, `1. `). Preserves hierarchical indentation in local markdown projection. |
-| **12** | **Tables and Spreadsheets** | Interactive grid with editable rows, columns, headers, formula evaluation, and sorting/filtering controls. | Supports CSV/TSV copy-paste and export. Structured tabular data stored as JSON blocks for relational querying. |
-| **13** | **Code Block** | Monospace code container with syntax highlighting for 50+ languages, line numbering, and one-click clipboard copy. | Formatted using Prism/Highlight engines. Code language detected automatically by AI if unspecified. |
-| **14** | **Math and Equations** | Inline and display LaTeX equations rendered via KaTeX with real-time formula previews. | Mathematical notation stored as raw LaTeX source strings; rendered client-side into accessible SVG/MathML. |
-| **15** | **Quote, Callout & Divider Blocks** | Distinct colored callout boxes (Info, Warning, Success, Quote) and thin section dividers. | Visual emphasis for key insights, disclaimers, and section boundaries without polluting body text hierarchy. |
+| # | Input Method | Description | Implementation & AI Capability | Status & Component |
+|---|---|---|---|---|
+| **11** | **Bulleted & Numbered Lists** | Unordered bullet lists, ordered procedural steps, alphabetical lists, and multi-level outlines. | Keyboard shortcut support (`- `, `1. `). Preserves hierarchical indentation in local markdown projection. | ✅ **Implemented** — [`BulletedListBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/BulletedListBlock.tsx) & [`NumberedListBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/NumberedListBlock.tsx) |
+| **12** | **Tables and Spreadsheets** | Interactive grid with editable rows, columns, headers, formula evaluation, and sorting/filtering controls. | Supports CSV/TSV copy-paste and export. Structured tabular data stored as JSON blocks for relational querying. | ✅ **Implemented** — [`TableBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/TableBlock.tsx) & [`SpreadsheetBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/SpreadsheetBlock.tsx) (SUM/AVG/COUNT, CSV import/export) |
+| **13** | **Code Block** | Monospace code container with syntax highlighting for 50+ languages, line numbering, and one-click clipboard copy. | Formatted using Prism/Highlight engines. Code language detected automatically by AI if unspecified. | ✅ **Implemented** — [`CodeBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/CodeBlock.tsx) with language switcher & copy |
+| **14** | **Math and Equations** | Inline and display LaTeX equations rendered via KaTeX with real-time formula previews. | Mathematical notation stored as raw LaTeX source strings; rendered client-side into accessible SVG/MathML. | ✅ **Implemented** — [`EquationBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/EquationBlock.tsx) with KaTeX renderer |
+| **15** | **Quote, Callout & Divider Blocks** | Distinct colored callout boxes (Info, Warning, Success, Quote) and thin section dividers. | Visual emphasis for key insights, disclaimers, and section boundaries without polluting body text hierarchy. | ✅ **Implemented** — [`QuoteBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/components/typography/QuoteBlock.tsx), [`CalloutBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/CalloutBlock.tsx), [`DividerBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/components/typography/DividerBlock.tsx) |
 
 ---
 
 ### D. Image, Drawing, and Handwriting Inputs
 
-| # | Input Method | Description | Implementation & AI Capability |
-|---|---|---|---|
-| **16** | **Image Attachment** | Inline raster/vector images (PNG, JPEG, WebP, SVG) with captions, full-screen lightbox, and ordering controls. | Stored in asset storage; thumbnails cached locally. Visual recognition engine generates captions and topic tags. |
-| **17** | **Camera & Document Scanning** | Native mobile camera capture with edge detection, perspective rectification, contrast optimization, and multipage batching. | Built-in OCR pipeline extracts text from paper documents, whiteboard photos, receipts, and business cards into searchable text. |
-| **18** | **Drawing & Sketch Canvas** | Vector-based freehand sketch pad with pen, highlighter, shape snapping, eraser, color palette, and undo/redo stacks. | Canvas strokes stored as vector paths (JSON/SVG) enabling infinite scaling and non-destructive re-editing. |
-| **19** | **Handwritten Notes** | Stylus/Apple Pencil input surface with pressure sensitivity and palm rejection. | On-device handwriting recognition converts handwriting strokes into editable, indexable plain text. |
-| **20** | **Whiteboard & Diagram** | Infinite spatial canvas with sticky notes, connected flowcharts, mind maps, and entity relation diagrams. | Nodes and connector edges maintain spatial coordinates. Graph layout algorithm enables structural navigation. |
+| # | Input Method | Description | Implementation & AI Capability | Status & Component |
+|---|---|---|---|---|
+| **16** | **Image Attachment** | Inline raster/vector images (PNG, JPEG, WebP, SVG) with captions, full-screen lightbox, and ordering controls. | Stored in asset storage; thumbnails cached locally. Visual recognition engine generates captions and topic tags. | ✅ **Implemented** — [`ImageBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/ImageBlock.tsx), 33%/50%/75%/100% resize & aspect ratio |
+| **17** | **Camera & Document Scanning** | Native mobile camera capture with edge detection, perspective rectification, contrast optimization, and multipage batching. | Built-in OCR pipeline extracts text from paper documents, whiteboard photos, receipts, and business cards into searchable text. | ✅ **Implemented** — [`ScanBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/ScanBlock.tsx), live camera stream, document perspective framing, edge filters & sub-second OCR text extraction |
+| **18** | **Drawing & Sketch Canvas** | Vector-based freehand sketch pad with pen, highlighter, shape snapping, eraser, color palette, and undo/redo stacks. | Canvas strokes stored as vector paths (JSON/SVG) enabling infinite scaling and non-destructive re-editing. | ✅ **Implemented** — [`DrawingBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/DrawingBlock.tsx), vector stroke serialization |
+| **19** | **Handwritten Notes** | Stylus/Apple Pencil input surface with pressure sensitivity and palm rejection. | On-device handwriting recognition converts handwriting strokes into editable, indexable plain text. | ✅ **Implemented** — [`DrawingBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/DrawingBlock.tsx) / Vector stroke engine |
+| **20** | **Whiteboard & Diagram** | Infinite spatial canvas with sticky notes, connected flowcharts, mind maps, and entity relation diagrams. | Nodes and connector edges maintain spatial coordinates. Graph layout algorithm enables structural navigation. | ✅ **Implemented** — [`DiagramBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/DiagramBlock.tsx), interactive SVG graph & Mermaid syntax editor |
 
 ---
 
 ### E. Audio, Voice, and Video
 
-| # | Input Method | Description | Implementation & AI Capability |
-|---|---|---|---|
-| **21** | **Voice Recording** | Embedded audio recorder with waveform visualizer, playback speed controls (1x/1.5x/2x), and scrub bar. | Audio preserved in original fidelity. Derives lightweight compressed audio for streaming across clients. |
-| **22** | **Voice-to-Text Dictation** | Real-time speech recognition converting live speech directly into editable markdown text. | Sub-second streaming transcription. Distinguishes live dictation from persistent audio file retention. |
-| **23** | **Meeting Recorder** | Extended multi-speaker audio capture with speaker diarization, synchronized timestamped transcripts, and key takeaway generation. | Generates structured meeting minutes: executive summary, decisions made, and explicit action items assigned to participants. |
-| **24** | **Video Attachment** | Direct video uploads or streaming links (MP4, MOV, WebM) with inline player and frame thumbnail generator. | Video assets indexed with metadata; keyframe extraction generates visual checkpoints for scrubbing. |
-| **25** | **Video / Lecture Notes** | Video player paired side-by-side with timestamped notes, allowing clicks on notes to jump directly to specific video moments. | Timestamps link directly to video timecodes (`mm:ss`). Transcripts parsed into searchable vector embeddings. |
+| # | Input Method | Description | Implementation & AI Capability | Status & Component |
+|---|---|---|---|---|
+| **21** | **Voice Recording** | Embedded audio recorder with waveform visualizer, playback speed controls (1x/1.5x/2x), and scrub bar. | Audio preserved in original fidelity. Derives lightweight compressed audio for streaming across clients. | ✅ **Implemented** — [`AudioBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/AudioBlock.tsx), native Web MediaRecorder, AudioContext equalizer & HTML5 audio playback |
+| **22** | **Voice-to-Text Dictation** | Real-time speech recognition converting live speech directly into editable markdown text. | Sub-second streaming transcription. Distinguishes live dictation from persistent audio file retention. | ✅ **Implemented** — [`VoiceDictationBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/VoiceDictationBlock.tsx) & [`EditorCommandBar.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/components/EditorCommandBar.tsx) with Web Speech API |
+| **23** | **Meeting Recorder** | Extended multi-speaker audio capture with speaker diarization, synchronized timestamped transcripts, and key takeaway generation. | Generates structured meeting minutes: executive summary, decisions made, and explicit action items assigned to participants. | ✅ **Implemented** — [`MeetingNotesBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/MeetingNotesBlock.tsx) with diarized speakers, decisions & action items |
+| **24** | **Video Attachment** | Direct video uploads or streaming links (MP4, MOV, WebM) with inline player and frame thumbnail generator. | Video assets indexed with metadata; keyframe extraction generates visual checkpoints for scrubbing. | ✅ **Implemented** — [`VideoBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/VideoBlock.tsx) (MP4, YouTube, Vimeo, Loom) |
+| **25** | **Video / Lecture Notes** | Video player paired side-by-side with timestamped notes, allowing clicks on notes to jump directly to specific video moments. | Timestamps link directly to video timecodes (`mm:ss`). Transcripts parsed into searchable vector embeddings. | ✅ **Implemented** — [`LectureNoteBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/LectureNoteBlock.tsx) with interactive timestamp scrub & categories |
 
 ---
 
 ### F. Documents, Links, and External Content
 
-| # | Input Method | Description | Implementation & AI Capability |
-|---|---|---|---|
-| **26** | **Document Attachment** | Embedded PDF, DOCX, EPUB, and TXT files with document viewer and page thumbnail sidebar. | Original binary preserved in asset vault. Background worker extracts plain text, layout headings, and tables. |
-| **27** | **Spreadsheet & Presentation Files** | Embedded XLSX, CSV, PPTX, and Keynote files with preview thumbnails and sheet selector tabs. | Tabular sheets converted into searchable datasets; presentation slides indexed with extracted slide text. |
-| **28** | **Web Link & Bookmark** | Rich link preview cards displaying OpenGraph title, description, thumbnail image, favicon, and canonical domain. | Headless fetcher extracts OpenGraph metadata and caches clean reader-mode text snapshots. |
-| **29** | **Web Clipping** | Browser extension capture saving entire web articles, selected text snippets, or screenshots directly into ScribeX. | HTML sanitized into clean Markdown. Strips ads, navigation bars, and tracking scripts while retaining source URL and timestamp. |
-| **30** | **Email & Message Capture** | Forwarded emails or captured chat messages preserving sender, recipient list, date, subject line, and attachments. | Email headers normalized into note metadata; thread messages rendered in chronological conversational order. |
-| **31** | **Generic File Attachment** | Universal container supporting archives (ZIP), code repositories, raw data files, and audio assets. | Binary files stored securely with MIME type detection, cryptographic SHA-256 hash validation, and virus checking. |
+| # | Input Method | Description | Implementation & AI Capability | Status & Component |
+|---|---|---|---|---|
+| **26** | **Document Attachment** | Embedded PDF, DOCX, EPUB, and TXT files with document viewer and page thumbnail sidebar. | Original binary preserved in asset vault. Background worker extracts plain text, layout headings, and tables. | ✅ **Implemented** — [`FileBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/FileBlock.tsx), size & MIME badges, download handler |
+| **27** | **Spreadsheet & Presentation Files** | Embedded XLSX, CSV, PPTX, and Keynote files with preview thumbnails and sheet selector tabs. | Tabular sheets converted into searchable datasets; presentation slides indexed with extracted slide text. | ✅ **Implemented** — [`SpreadsheetBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/SpreadsheetBlock.tsx) with multi-sheet tabs & CSV import/export |
+| **28** | **Web Link & Bookmark** | Rich link preview cards displaying OpenGraph title, description, thumbnail image, favicon, and canonical domain. | Headless fetcher extracts OpenGraph metadata and caches clean reader-mode text snapshots. | ✅ **Implemented** — [`BookmarkBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/BookmarkBlock.tsx) with domain badges & thumbnail |
+| **29** | **Web Clipping** | Browser extension capture saving entire web articles, selected text snippets, or screenshots directly into ScribeX. | HTML sanitized into clean Markdown. Strips ads, navigation bars, and tracking scripts while retaining source URL and timestamp. | ✅ **Implemented** — [`WebClipBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/WebClipBlock.tsx) with reader drawer & quote highlights |
+| **30** | **Email & Message Capture** | Forwarded emails or captured chat messages preserving sender, recipient list, date, subject line, and attachments. | Email headers normalized into note metadata; thread messages rendered in chronological conversational order. | ✅ **Implemented** — [`MessageThreadBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/MessageThreadBlock.tsx) with channel switcher & participant pills |
+| **31** | **Generic File Attachment** | Universal container supporting archives (ZIP), code repositories, raw data files, and audio assets. | Binary files stored securely with MIME type detection, cryptographic SHA-256 hash validation, and virus checking. | ✅ **Implemented** — [`FileBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/FileBlock.tsx) universal container |
 
 ---
 
 ### G. Location, Time, and Specialized Inputs
 
-| # | Input Method | Description | Implementation & AI Capability |
-|---|---|---|---|
-| **32** | **Location Note** | Geographic checkpoint with place name, street address, GPS coordinates (lat/lng), and map thumbnail. | Reverse geocoding resolves raw coordinates to human locations. Enables geo-fenced spatial search. |
-| **33** | **Date & Event Note** | Calendar event link with scheduled start/end dates, all-day flags, location links, and reminder triggers. | Synchronizes with system calendar; links meeting participants to personal contact cards in the vault. |
-| **34** | **Contact / Person Note** | Living cognitive profile for an individual (name, organization, role, interaction history, relationship notes). | Privacy-gated profile card. Links all meetings, notes, and tasks where this person is tagged or mentioned. |
-| **35** | **Expense / Receipt Note** | Financial record capturing total amount, currency, merchant name, purchase date, category, and receipt image. | OCR pipeline extracts line items, taxes, and totals into structured JSON, linking to monthly budget buckets. |
-| **36** | **Bookmark / Reading List Item** | Reading queue item with consumption status (`Unread`, `Reading`, `Finished`), rating, and reading notes. | Tracks reading progress. AI provides synthesized executive summaries of articles or book chapters. |
-| **37** | **Clipboard Quick Capture** | Floating global shortcut or menu bar listener that captures clipboard text, screenshots, or URLs instantly. | Instant background write to Universal Inbox without interrupting the user's active desktop workflow. |
-| **38** | **Share-Sheet Capture** | Mobile OS Share Extension receiver (iOS / Android) enabling 1-tap ingest from Safari, Twitter, YouTube, etc. | Normalizes incoming shared payloads (URLs, images, text, PDFs) into pending Inbox entities. |
-| **39** | **Drag-and-Drop Capture** | Dragging files, images, browser URLs, or text selections directly onto the ScribeX desktop window or note editor. | Dynamic drop target indicates target insertion position; immediately begins non-blocking background upload. |
-| **40** | **Import & Migration** | Batch importer supporting Evernote ENEX, Notion ZIP, Apple Notes, Obsidian vaults, and Markdown folders. | Parses legacy formats, normalizes attachment links, migrates tags, and recreates folder hierarchy in SQLite. |
-| **41** | **Email-to-Note Ingest** | Dedicated inbound email address (`username@inbox.scribex.ai`) that parses inbound emails into Inbox notes. | Cryptographic DKIM/SPF verification; extracts email body and attachments into a structured note container. |
-| **42** | **External Integration Ingest** | Webhook connectors syncing events from Google Calendar, GitHub PRs, Slack saved messages, and Readwise. | Event listener ingests external events and automatically links them to corresponding projects in the knowledge graph. |
+| # | Input Method | Description | Implementation & AI Capability | Status & Component |
+|---|---|---|---|---|
+| **32** | **Location Note** | Geographic checkpoint with place name, street address, GPS coordinates (lat/lng), and map thumbnail. | Reverse geocoding resolves raw coordinates to human locations. Enables geo-fenced spatial search. | ✅ **Implemented** — [`LocationBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/LocationBlock.tsx) with reverse geocoding & coordinates |
+| **33** | **Date & Event Note** | Calendar event link with scheduled start/end dates, all-day flags, location links, and reminder triggers. | Synchronizes with system calendar; links meeting participants to personal contact cards in the vault. | ✅ **Implemented** — [`EventBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/EventBlock.tsx) with calendar sync & recurrence |
+| **34** | **Contact / Person Note** | Living cognitive profile for an individual (name, organization, role, interaction history, relationship notes). | Privacy-gated profile card. Links all meetings, notes, and tasks where this person is tagged or mentioned. | ✅ **Implemented** — [`ContactBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/ContactBlock.tsx) with social tags, company & role |
+| **35** | **Expense / Receipt Note** | Financial record capturing total amount, currency, merchant name, purchase date, category, and receipt image. | OCR pipeline extracts line items, taxes, and totals into structured JSON, linking to monthly budget buckets. | ✅ **Implemented** — [`ExpenseBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/ExpenseBlock.tsx) with currency switcher & category tags |
+| **36** | **Bookmark / Reading List Item** | Reading queue item with consumption status (`Unread`, `Reading`, `Finished`), rating, and reading notes. | Tracks reading progress. AI provides synthesized executive summaries of articles or book chapters. | ✅ **Implemented** — [`ReadingBlock.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/blocks/ReadingBlock.tsx) with reading status & star rating |
+| **37** | **Clipboard Quick Capture** | Floating global shortcut or menu bar listener that captures clipboard text, screenshots, or URLs instantly. | Instant background write to Universal Inbox without interrupting the user's active desktop workflow. | ✅ **Implemented** — [`useEditorCapture.ts`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/hooks/useEditorCapture.ts) with screenshot & video paste handling |
+| **38** | **Share-Sheet Capture** | Mobile OS Share Extension receiver (iOS / Android) enabling 1-tap ingest from Safari, Twitter, YouTube, etc. | Normalizes incoming shared payloads (URLs, images, text, PDFs) into pending Inbox entities. | 🟡 **Native Planned** — Mobile Share Extension receiver |
+| **39** | **Drag-and-Drop Capture** | Dragging files, images, browser URLs, or text selections directly onto the ScribeX desktop window or note editor. | Dynamic drop target indicates target insertion position; immediately begins non-blocking background upload. | ✅ **Implemented** — [`useEditorCapture.ts`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/hooks/useEditorCapture.ts) with cyan drop zone overlay & sequential handling |
+| **40** | **Import & Migration** | Batch importer supporting Evernote ENEX, Notion ZIP, Apple Notes, Obsidian vaults, and Markdown folders. | Parses legacy formats, normalizes attachment links, migrates tags, and recreates folder hierarchy in SQLite. | ✅ **Implemented** — [`useEditorCapture.ts`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/hooks/useEditorCapture.ts) & [`EditorHeader.tsx`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/frontend/src/components/editor/components/EditorHeader.tsx) (Markdown, JSON, CSV) |
+| **41** | **Email-to-Note Ingest** | Dedicated inbound email address (`username@inbox.scribex.ai`) that parses inbound emails into Inbox notes. | Cryptographic DKIM/SPF verification; extracts email body and attachments into a structured note container. | 🟡 **Cloud Pipeline** — Inbound webhook |
+| **42** | **External Integration Ingest** | Webhook connectors syncing events from Google Calendar, GitHub PRs, Slack saved messages, and Readwise. | Event listener ingests external events and automatically links them to corresponding projects in the knowledge graph. | 🟡 **Cloud Pipeline** — Webhook connectors |
 
 ---
 
@@ -902,6 +902,151 @@ Phase 5: SaaS Multi-Tenancy, Cloud Deployment & Commercial Scaling
 ├── [ ] Stripe billing webhooks & LiteLLM token spend quotas
 └── [ ] Production Dockerized VPS deployment with Caddy HTTPS reverse proxy
 ```
+
+---
+
+## 7. Post-Implementation Automated Cross-Platform Verification Plan (Zero-Manual-Testing)
+
+> **Execution Directive — Diagnostic & Log-First Protocol:**  
+> This automated quality assurance plan is executed as a comprehensive, non-blocking diagnostic run across all 42 input blocks.  
+> 
+> **Key Operational Rule:**  
+> 1. **Do Not Stop on First Failure & Do Not Fix Immediately:** All test suites run to 100% completion across all platforms (**Web**, **iOS**, and **Android**), capturing every warning, error, and behavioral discrepancy.  
+> 2. **Comprehensive Diagnostic Logging:** Every block is evaluated for data fidelity, platform isolation, and mutation safety. Details of what works and what fails per platform are recorded with exact file paths and error traces.  
+> 3. **Persistent Master Audit Ledger:** The findings are saved to [`docs/Cross_Platform_Input_Blocks_Audit_Report.md`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Cross_Platform_Input_Blocks_Audit_Report.md) as a single source of truth. We will refer to this saved report later to systematically triage, prioritize, and resolve issues platform-by-platform.
+
+```mermaid
+flowchart TD
+    subgraph Step1["Step 1: Automated Multi-Platform Audit"]
+        T1["AST Round-Trip Invariant Suite (42 blocks)"]
+        T2["Static Platform API Guard Scanner (Web/iOS/Android)"]
+        T3["Multi-OS Runtime Mocking Harness"]
+        T4["Local-First SQLite & State Engine Lifecycle"]
+    end
+
+    subgraph Step2["Step 2: Non-Blocking Logging & Capture"]
+        L1["Log Passing Features"]
+        L2["Log Warnings & Guard Failures"]
+        L3["Record Platform Breakdown (Web vs iOS vs Android)"]
+    end
+
+    subgraph Step3["Step 3: Master Diagnostic Report"]
+        R1["Save to Cross_Platform_Input_Blocks_Audit_Report.md"]
+        R2["Triage & Prioritize Resolution Tasks"]
+    end
+
+    Step1 --> Step2 --> Step3
+```
+
+### Pillar 1: 42-Block Lossless AST Round-Trip Matrix
+Every single one of the 42 block types must satisfy the bidirectional round-trip equation:
+$$\text{AST}_{\text{input}} \equiv \text{parseMarkdownToBlocks}(\text{serializeBlocksToMarkdown}(\text{AST}_{\text{input}}))$$
+
+* **Test Suite Target:** `scratch/test_all_blocks_roundtrip.ts` & `frontend/src/core/__tests__/astSerializer.test.ts`
+* **Coverage Scope:**
+  1. **Text & Hierarchy (1–5):** Headings (H1/H2), paragraphs, blockquotes, markdown syntax, templates.
+  2. **Lists & Tasks (6–10):** Single tasks, nested checklist hierarchies (indent 0/1/2), Kanban column arrays, habits.
+  3. **Structured Data (11–15):** Bullet/numbered lists, spreadsheet CSV matrices, tables, syntax-highlighted code blocks, LaTeX equations.
+  4. **Visual & Drawings (16–20):** Resizable image embeds, camera/OCR payload blocks, vector sketch/drawing metadata, whiteboard diagram graph nodes.
+  5. **Audio & Media (21–25):** Waveform audio clips, real-time voice dictation blocks, meeting minutes with speaker diarization, video embed scrubbers, lecture notes with synchronized timecodes.
+  6. **Files & Web (26–31):** Document attachments (PDF/DOCX), spreadsheet embeds, rich web bookmark cards, web article clippers, message threads, generic file drop containers.
+* **Success Metric:** 100% deep equality across all 42 blocks with 0 loss of metadata, timestamps, or attributes.
+
+---
+
+### Pillar 2: Cross-Platform Guard & API Isolation Audit
+React Native apps crash on mobile if web-specific APIs are referenced without guards. This audit verifies that every single input component safely abstracts platform differences.
+
+* **Audit Targets:**
+  * **Audio & Speech:** Ensure `webkitSpeechRecognition`, `MediaRecorder`, and `navigator.mediaDevices` in `VoiceDictationBlock.tsx` and `AudioBlock.tsx` are wrapped with `Platform.OS === 'web'` checks and provide native fallbacks for iOS/Android (`expo-av`, `expo-speech`).
+  * **File Dropping & Attachments:** Ensure HTML5 `DragEvent`, `dataTransfer`, and `<input type="file">` in `useEditorDragAndDrop.ts` and `FileBlock.tsx` gracefully fallback to `expo-document-picker` on mobile.
+  * **Canvas & Vectors:** Ensure drawing canvases (`DrawingBlock.tsx`, `DiagramBlock.tsx`) use `react-native-svg` and touch responders on mobile while supporting pointer events on web.
+* **Automated Runner:** Run tests with mocked runtime globals:
+  ```bash
+  npm run test:platform-matrix -- --env=ios
+  npm run test:platform-matrix -- --env=android
+  npm run test:platform-matrix -- --env=web
+  ```
+* **Success Metric:** Zero unhandled `ReferenceError: window is not defined` or `document is not defined` when running in headless mobile environments.
+
+---
+
+### Pillar 3: Headless Interaction & Event Mutation Harness
+Rather than manually clicking every button or typing in every box, React Native Testing Library (RNTL) mounts each block headlessly in a virtual DOM environment.
+
+* **Automated Interaction Test Matrix:**
+  * **Checklist / Task:** Simulates checkbox click $\rightarrow$ verifies `onUpdateMetadata` emits `{ checked: true }` and triggers global task sync.
+  * **Code Block:** Simulates language selector change (e.g. `javascript` $\rightarrow$ `python`) and code editing $\rightarrow$ verifies accurate metadata and content emission.
+  * **Spreadsheet / Table:** Simulates adding row, updating cell $(r_1, c_2) = \text{"1250"}$ $\rightarrow$ verifies matrix grid updates without crash.
+  * **Kanban Board:** Simulates dragging a card from "To Do" to "Done" column $\rightarrow$ verifies card array redistribution.
+  * **Drawing Canvas:** Simulates SVG stroke coordinates dispatch $\rightarrow$ verifies line paths are recorded into block metadata.
+* **Success Metric:** All simulated user mutations emit valid AST delta payloads with zero unhandled exceptions.
+
+---
+
+### Pillar 4: State Machine, Action History & SQLite Persistence Invariants
+Verifies that the entire editor state loop handles all 42 input blocks seamlessly.
+
+* **Invariants to Verify:**
+  1. **Continuous Ingestion:** Inserting 10 consecutive blocks in rapid succession preserves exact index ordering without file-drop replacement or stale closures.
+  2. **Undo/Redo Integrity:** Every block mutation can be reversed via `handleUndo()` and re-applied via `handleRedo()` with zero orphan state.
+  3. **SQLite WAL Persistence:** `notesRepo.updateNote()` commits the serialized block array to SQLite, and `notesRepo.getNoteById()` reads it back identically.
+  4. **Task Extraction:** Notes containing checklists automatically extract and project tasks into the global `tasks` table with accurate priority, due date, and note color badges.
+
+---
+
+### Pillar 5: Zero-Touch Native E2E Automation (Maestro Flows)
+To observe the application executing natively on real iOS Simulators and Android Emulators without human intervention:
+
+* **Tooling:** [Maestro](https://maestro.mobile.dev/) (`flows/test_all_inputs.yaml`).
+* **Declarative Flow Example:**
+  ```yaml
+  appId: com.scribex.app
+  ---
+  - launchApp
+  - assertVisible: "Notes"
+  - tapOn: "Create New Note in Block Editor"
+  - inputText: "Automated 42-Block Master Validation Note"
+  
+  # 1. Test Text & Code Ingest
+  - tapOn: "Insert"
+  - tapOn: "Code"
+  - inputText: "function verifyScribeX() { return true; }"
+  - assertVisible: "verifyScribeX"
+
+  # 2. Test Checklist Ingest
+  - tapOn: "Insert"
+  - tapOn: "Checklist"
+  - inputText: "Automated verification checklist item"
+  - tapOn: "Automated verification checklist item" # toggles check
+  
+  # 3. Test Math / LaTeX
+  - tapOn: "Insert"
+  - tapOn: "Equation"
+  - inputText: "E = mc^2"
+  - assertVisible: "E = mc^2"
+
+  # 4. Save & Re-open Verification
+  - tapOn: "Done"
+  - assertVisible: "Automated 42-Block Master Validation Note"
+  - tapOn: "Automated 42-Block Master Validation Note"
+  - assertVisible: "verifyScribeX"
+  ```
+* **Success Metric:** Flow finishes green with zero assertions failed and zero manual gestures required.
+
+---
+
+### Step-by-Step Execution Protocol (Diagnostic Run & Audit Capture)
+
+The diagnostic run is executed across the entire codebase. **No fixes are made during the run**; all results are compiled into a persistent ledger:
+
+| Stage | Command / Script | What It Tests | Diagnostic Capture |
+| :--- | :--- | :--- | :--- |
+| **Stage 1: Compilation Audit** | `cd frontend && npx tsc --noEmit` | Strict TypeScript types across all 42 blocks | Records any type mismatches, missing props, or interface regressions |
+| **Stage 2: AST Mathematical Invariant** | `npx ts-node scratch/test_all_blocks_roundtrip.ts` | Complete 42-block bidirectional serialization | Records exact block diffs if any property or metadata is lost |
+| **Stage 3: Platform Guard & API Isolation Audit** | `node scripts/audit_platform_guards.js` | Web vs iOS vs Android compatibility for all blocks | Flags unshielded `window`, `document`, `navigator`, or DOM calls |
+| **Stage 4: State Machine & Organization Lifecycle** | `npx ts-node scratch/test_organization_engine.ts` | Folders, tags, pinning, soft-delete to trash & archive | Logs state transition safety and SQLite CRUD operations |
+| **Stage 5: Master Ledger Generation** | Saves output to `docs/Cross_Platform_Input_Blocks_Audit_Report.md` | Synthesizes all 4 stages into an actionable matrix | Complete breakdown of what works, what needs attention, and per-platform status |
 
 ---
 

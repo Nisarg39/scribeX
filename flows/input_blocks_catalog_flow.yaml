@@ -1,0 +1,44 @@
+appId: com.scribex.app
+---
+# ==============================================================================
+# ScribeX — Pillar 5 Full Input Blocks Catalog Flow
+# Automated Slash Command & Ingest Verification
+# ==============================================================================
+
+- launchApp:
+    clearState: false
+
+- tapOn: "Create New Note in Block Editor"
+- tapOn:
+    id: "scribex-note-title-input"
+- inputText: "Complete 42-Block Catalog E2E Run\n"
+
+# 1. Spreadsheet Block via /sheet
+- inputText: "/sheet\n"
+- assertVisible: "Financial & Operational Sheet"
+
+# 2. Meeting Minutes Block via /meeting
+- inputText: "/meeting\n"
+- assertVisible: "Sprint Review & Sync"
+
+# 3. Lecture Notes Block via /lecture
+- inputText: "/lecture\n"
+- assertVisible: "Distributed Systems & Consensus"
+
+# 4. Expense Record Block via /expense
+- inputText: "/expense\n"
+- assertVisible: "Expense Record"
+
+# 5. Reading Queue Block via /reading
+- inputText: "/reading\n"
+- assertVisible: "Reading Queue"
+
+# 6. Location Pin Block via /location
+- inputText: "/location\n"
+- assertVisible: "Location Checkpoint"
+
+- tapOn:
+    accessibilityLabel: "Done"
+- assertVisible: "Complete 42-Block Catalog E2E Run"
+- stopApp
+

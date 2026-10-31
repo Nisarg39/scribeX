@@ -29,6 +29,7 @@ export const UNIVERSAL_BLOCK_REGISTRY: Record<string, UniversalBlockMeta> = {
   diagram: { label: 'Diagram & Whiteboard', category: 'interactive' },
   web_clip: { label: 'Web Article Clip', category: 'embed' },
   voice_dictation: { label: 'Voice Dictation', category: 'media' },
+  scan: { label: 'Document Scan & OCR', category: 'media' },
   code: { label: 'Code Snippet', category: 'data' },
   table: { label: 'Table Grid', category: 'data' },
   callout: { label: 'Callout Box', category: 'interactive' },
