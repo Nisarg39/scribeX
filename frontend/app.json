@@ -15,7 +15,8 @@
       "expo-router",
       "expo-font",
       "expo-sqlite",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-audio"
     ]
   }
 }

@@ -1,6 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, Platform } from 'react-native';
-import { Audio as ExpoAudio } from 'expo-av';
+import {
+  AudioModule,
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  type AudioRecorder,
+} from 'expo-audio';
 import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../../../theme';
 import { 
@@ -60,7 +66,8 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
   const [audioLevel, setAudioLevel] = useState<number>(0);
 
   const recognitionRef = useRef<any>(null);
-  const nativeRecordingRef = useRef<ExpoAudio.Recording | null>(null);
+  const nativeRecordingRef = useRef<AudioRecorder | null>(null);
+  const meterIntervalRef = useRef<any>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const timerRef = useRef<any>(null);
@@ -212,31 +219,36 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
       }
     }
 
-    // Native iOS & Android microphone capture via expo-av (Cloud STT transcription deferred to backend setup)
+    // Native iOS & Android microphone capture via expo-audio (Cloud STT transcription deferred to backend setup)
     if (Platform.OS !== 'web') {
       try {
-        const perm = await ExpoAudio.requestPermissionsAsync();
+        const perm = await requestRecordingPermissionsAsync();
         if (!perm.granted) {
           setErrorMessage('Microphone permission denied on mobile device.');
           return;
         }
-        await ExpoAudio.setAudioModeAsync({
-          allowsRecordingIOS: true,
-          playsInSilentModeIOS: true,
+        await setAudioModeAsync({
+          allowsRecording: true,
+          playsInSilentMode: true,
         });
-        const { recording } = await ExpoAudio.Recording.createAsync(
-          ExpoAudio.RecordingOptionsPresets.HIGH_QUALITY,
-          (status) => {
-            if (status.isRecording && status.metering !== undefined) {
-              const normalized = Math.max(0, Math.min(100, Math.round(((status.metering + 60) / 60) * 100)));
-              setAudioLevel(normalized);
-            }
-          },
-          150
-        );
-        nativeRecordingRef.current = recording;
+        const recorder = new AudioModule.AudioRecorder({
+          ...RecordingPresets.HIGH_QUALITY,
+          isMeteringEnabled: true,
+        });
+        await recorder.prepareToRecordAsync();
+        recorder.record();
+        nativeRecordingRef.current = recorder;
         setIsListening(true);
         setInterimText('Listening via native mobile microphone...');
+        meterIntervalRef.current = setInterval(() => {
+          try {
+            const st = recorder.getStatus();
+            if (st.isRecording && st.metering !== undefined) {
+              const normalized = Math.max(0, Math.min(100, Math.round(((st.metering + 60) / 60) * 100)));
+              setAudioLevel(normalized);
+            }
+          } catch (_) {}
+        }, 150);
       } catch (err: any) {
         setErrorMessage(`Mobile microphone error: ${err?.message || 'Could not start recording.'}`);
       }
@@ -257,13 +269,17 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
   };
 
   const stopListening = async () => {
+    if (meterIntervalRef.current) {
+      clearInterval(meterIntervalRef.current);
+      meterIntervalRef.current = null;
+    }
     if (Platform.OS !== 'web' && nativeRecordingRef.current) {
       try {
         const rec = nativeRecordingRef.current;
         nativeRecordingRef.current = null;
-        await rec.stopAndUnloadAsync();
+        await rec.stop();
         const noteMsg =
-          '[Native mobile audio captured via expo-av — Cloud Whisper STT transcription will be fixed later when backend is setup]';
+          '[Native mobile audio captured via expo-audio — Cloud Whisper STT transcription will be fixed later when backend is setup]';
         setTranscript((prev) => {
           const next = prev ? `${prev} ${noteMsg}` : noteMsg;
           commitUpdates({ transcript: next, isCompleted: true, durationSec: seconds });

@@ -19,7 +19,10 @@ import {
   Tag,
   X,
   Check,
-  FilePlus
+  FilePlus,
+  ChevronRight,
+  CornerDownRight,
+  FolderPlus
 } from 'lucide-react-native';
 
 export const NotesView: React.FC = () => {
@@ -46,6 +49,13 @@ export const NotesView: React.FC = () => {
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
+  const [selectedParentPath, setSelectedParentPath] = useState<string>('');
+
+  const handleOpenFolderModal = () => {
+    setSelectedParentPath('');
+    setNewFolderName('');
+    setIsFolderModalOpen(true);
+  };
 
   const handleOpenNote = (note: NoteItem) => {
     router.push(`/note/${note.id}`);
@@ -68,12 +78,23 @@ export const NotesView: React.FC = () => {
   };
 
   const handleCreateFolder = async () => {
-    const clean = newFolderName.trim();
+    const clean = newFolderName.trim().replace(/^\/+|\/+$/g, '');
     if (!clean) return;
-    await createFolder(clean);
+    const created = await createFolder(clean, selectedParentPath || undefined);
+    const targetPath = created?.path || (selectedParentPath ? `${selectedParentPath}/${clean}` : clean);
+    setNewFolderName('');
+    setSelectedParentPath(targetPath);
+    setActiveFilter(`folder:${targetPath}`);
+  };
+
+  const handleCreateAndCloseFolderModal = async () => {
+    const clean = newFolderName.trim().replace(/^\/+|\/+$/g, '');
+    if (!clean) return;
+    const created = await createFolder(clean, selectedParentPath || undefined);
+    const targetPath = created?.path || (selectedParentPath ? `${selectedParentPath}/${clean}` : clean);
     setNewFolderName('');
     setIsFolderModalOpen(false);
-    setActiveFilter(`folder:${clean}`);
+    setActiveFilter(`folder:${targetPath}`);
   };
 
   // Status partitions
@@ -82,14 +103,49 @@ export const NotesView: React.FC = () => {
   const trashedNotes = notes.filter((n) => n.status === 'trashed');
   const pinnedNotes = activeNotes.filter((n) => n.isPinned);
 
-  // Derive all active folders from repository and notes
-  const allFolderNames = Array.from(
+  // Derive all active folders from repository and notes (including intermediate parent paths)
+  const rawFolderPaths = Array.from(
     new Set([
       'General',
-      ...folders.map((f) => f.name || f.path),
+      ...folders.map((f) => f.path || f.name),
       ...activeNotes.map((n) => n.folderPath).filter(Boolean) as string[],
     ])
   );
+
+  const allFolderNames = React.useMemo(() => {
+    const expanded = new Set<string>();
+    rawFolderPaths.forEach((p) => {
+      if (!p) return;
+      const parts = p.split('/').map((s) => s.trim()).filter(Boolean);
+      let acc = '';
+      parts.forEach((seg) => {
+        acc = acc ? `${acc}/${seg}` : seg;
+        expanded.add(acc);
+      });
+    });
+    return Array.from(expanded);
+  }, [folders, notes]);
+
+  // Direct child folders of the currently selected parent directory in the modal
+  const currentLevelSubfolders = React.useMemo(() => {
+    return allFolderNames.filter((folderPath) => {
+      if (!selectedParentPath) {
+        return !folderPath.includes('/');
+      }
+      if (!folderPath.startsWith(`${selectedParentPath}/`)) return false;
+      const remainder = folderPath.slice(selectedParentPath.length + 1);
+      return remainder.length > 0 && !remainder.includes('/');
+    });
+  }, [allFolderNames, selectedParentPath]);
+
+  const parentBreadcrumbSegments = React.useMemo(() => {
+    if (!selectedParentPath) return [];
+    const parts = selectedParentPath.split('/').filter(Boolean);
+    return parts.map((name, idx) => ({
+      name,
+      path: parts.slice(0, idx + 1).join('/'),
+    }));
+  }, [selectedParentPath]);
 
   // Filter notes based on activeFilter
   const getDisplayedNotes = (): NoteItem[] => {
@@ -170,7 +226,7 @@ export const NotesView: React.FC = () => {
               <Pressable
                 onPress={() => {
                   setIsAddMenuOpen(false);
-                  setIsFolderModalOpen(true);
+                  handleOpenFolderModal();
                 }}
                 accessibilityLabel="New Folder"
                 className="flex-row items-center gap-3 px-3.5 py-3 rounded-xl active:bg-black/10 dark:active:bg-white/10"
@@ -394,9 +450,9 @@ export const NotesView: React.FC = () => {
 
         {/* + New Folder Button */}
         <Pressable
-          onPress={() => setIsFolderModalOpen(true)}
+          onPress={handleOpenFolderModal}
           accessibilityLabel="Create New Folder"
-          className="flex-row items-center gap-1 px-3 py-1.5 rounded-full bg-light-surface/60 dark:bg-white/5 border border-dashed border-light-border dark:border-white/20 hover:border-cyan-500/50"
+          className="flex-row items-center gap-1 px-3 py-1.5 rounded-full bg-light-surface/60 dark:bg-white/5 border border-dashed border-light-border dark:border-white/20 hover:border-cyan-500/50 active:scale-95"
         >
           <Plus size={11} color={isDark ? '#A1A1AA' : '#71717A'} />
           <Text className="text-xs text-light-textMuted dark:text-dark-textMuted font-medium">Folder</Text>
@@ -772,7 +828,7 @@ export const NotesView: React.FC = () => {
         </View>
       )}
 
-      {/* Create New Folder Modal */}
+      {/* Create New Folder Modal (Recursive Directory Explorer) */}
       {isFolderModalOpen && (
         <Modal
           transparent
@@ -790,49 +846,216 @@ export const NotesView: React.FC = () => {
                 backgroundColor: isDark ? '#18181B' : '#FFFFFF',
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)',
               }}
-              className="w-full max-w-sm rounded-3xl border p-6 shadow-2xl"
+              className="w-full max-w-md rounded-3xl border p-6 shadow-2xl"
             >
-              <View className="flex-row items-center justify-between mb-4">
+              {/* Header */}
+              <View className="flex-row items-center justify-between mb-3">
                 <View className="flex-row items-center gap-2">
-                  <Folder size={18} color="#06B6D4" />
+                  <FolderPlus size={18} color="#06B6D4" />
                   <Text className="text-base font-bold text-light-textPrimary dark:text-dark-textPrimary">
                     New Folder
                   </Text>
                 </View>
                 <Pressable
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={() => setIsFolderModalOpen(false)}
-                  className="w-7 h-7 rounded-full items-center justify-center hover:bg-black/10 dark:hover:bg-white/10"
+                  className="w-7 h-7 rounded-full items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 active:bg-black/15 dark:active:bg-white/15"
                 >
                   <X size={16} color={isDark ? '#A1A1AA' : '#71717A'} />
                 </Pressable>
               </View>
 
               <Text className="text-xs text-light-textMuted dark:text-dark-textMuted mb-3">
-                Organize your thoughts into custom workspaces or nested paths (e.g. Work/Design or Personal).
+                Select an existing directory below to traverse into it, or keep Root Directory (/) selected to create a top-level folder.
               </Text>
 
+              {/* Interactive Breadcrumb Path Bar */}
+              <View className="mb-3 p-2.5 rounded-xl bg-light-appBg dark:bg-white/[0.04] border border-light-border dark:border-white/10">
+                <Text className="text-[10px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-1.5">
+                  Parent Location
+                </Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ flexGrow: 0, flexShrink: 0 }}
+                  contentContainerStyle={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                >
+                  <Pressable
+                    onPress={() => setSelectedParentPath('')}
+                    className={`flex-row items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                      selectedParentPath === ''
+                        ? 'bg-cyan-500/20 border-cyan-500/50'
+                        : 'bg-light-surface dark:bg-white/5 border-light-border dark:border-white/10 active:scale-95'
+                    }`}
+                  >
+                    <Folder size={11} color="#06B6D4" />
+                    <Text
+                      className={`text-xs font-bold ${
+                        selectedParentPath === ''
+                          ? 'text-cyan-400'
+                          : 'text-light-textSecondary dark:text-dark-textSecondary'
+                      }`}
+                    >
+                      Root (/)
+                    </Text>
+                  </Pressable>
+
+                  {parentBreadcrumbSegments.map((seg) => {
+                    const isCurrent = seg.path === selectedParentPath;
+                    return (
+                      <React.Fragment key={seg.path}>
+                        <ChevronRight size={12} color={isDark ? '#71717A' : '#A1A1AA'} />
+                        <Pressable
+                          onPress={() => setSelectedParentPath(seg.path)}
+                          className={`flex-row items-center gap-1 px-2.5 py-1 rounded-lg border ${
+                            isCurrent
+                              ? 'bg-cyan-500/20 border-cyan-500/50'
+                              : 'bg-light-surface dark:bg-white/5 border-light-border dark:border-white/10 active:scale-95'
+                          }`}
+                        >
+                          <Folder size={11} color="#06B6D4" />
+                          <Text
+                            className={`text-xs font-bold ${
+                              isCurrent
+                                ? 'text-cyan-400'
+                                : 'text-light-textSecondary dark:text-dark-textSecondary'
+                            }`}
+                          >
+                            {seg.name}
+                          </Text>
+                        </Pressable>
+                      </React.Fragment>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+
+              {/* Subfolders inside the currently selected directory (Infinite Depth Traversal) */}
+              <View className="mb-4">
+                <View className="flex-row items-center justify-between mb-1.5">
+                  <Text className="text-[10px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted">
+                    {selectedParentPath
+                      ? `Subfolders inside /${selectedParentPath} (Tap to enter)`
+                      : 'Existing Root Folders (Tap to enter)'}
+                  </Text>
+                  {selectedParentPath !== '' && (
+                    <Pressable
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => {
+                        const parts = selectedParentPath.split('/').filter(Boolean);
+                        parts.pop();
+                        setSelectedParentPath(parts.join('/'));
+                      }}
+                      className="px-2 py-0.5 rounded bg-light-surface dark:bg-white/10 active:scale-95"
+                    >
+                      <Text className="text-[10px] font-bold text-cyan-400">↑ Up One Level</Text>
+                    </Pressable>
+                  )}
+                </View>
+
+                {currentLevelSubfolders.length > 0 ? (
+                  <ScrollView
+                    style={{ maxHeight: 150 }}
+                    contentContainerStyle={{ gap: 6 }}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {currentLevelSubfolders.map((subPath) => {
+                      const leafName = subPath.split('/').pop() || subPath;
+                      const childCount = allFolderNames.filter(
+                        (f) => f.startsWith(`${subPath}/`) && !f.slice(subPath.length + 1).includes('/')
+                      ).length;
+
+                      return (
+                        <Pressable
+                          key={subPath}
+                          onPress={() => setSelectedParentPath(subPath)}
+                          className="flex-row items-center justify-between px-3 py-2 rounded-xl bg-light-surface dark:bg-white/[0.04] border border-light-border dark:border-white/10 hover:border-cyan-500/40 active:bg-cyan-500/10"
+                        >
+                          <View className="flex-row items-center gap-2 flex-1">
+                            <Folder size={14} color="#06B6D4" />
+                            <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                              {leafName}
+                            </Text>
+                          </View>
+                          <View className="flex-row items-center gap-1.5">
+                            {childCount > 0 && (
+                              <Text className="text-[10px] font-medium text-light-textMuted dark:text-dark-textMuted">
+                                {childCount} {childCount === 1 ? 'subfolder' : 'subfolders'}
+                              </Text>
+                            )}
+                            <ChevronRight size={13} color={isDark ? '#A1A1AA' : '#71717A'} />
+                          </View>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                ) : (
+                  <View className="py-3 px-3 rounded-xl bg-light-surface/50 dark:bg-white/[0.02] border border-dashed border-light-border dark:border-white/10 flex-row items-center gap-2">
+                    <CornerDownRight size={13} color={isDark ? '#71717A' : '#A1A1AA'} />
+                    <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
+                      Innermost directory reached — no deeper subfolders inside /{selectedParentPath}.
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* New Folder Name Input */}
+              <Text className="text-[10px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-1.5">
+                New Folder Name
+              </Text>
               <TextInput
-                placeholder="Folder name or path..."
+                placeholder={
+                  selectedParentPath
+                    ? `New folder inside /${selectedParentPath}...`
+                    : 'New folder name in Root (/)...'
+                }
                 placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
                 value={newFolderName}
                 onChangeText={setNewFolderName}
                 autoFocus
-                onSubmitEditing={handleCreateFolder}
-                className="text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-2.5 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10 mb-4"
+                onSubmitEditing={handleCreateAndCloseFolderModal}
+                className="text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-2.5 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10 mb-2"
               />
 
-              <View className="flex-row items-center justify-end gap-2">
+              {/* Live Target Path Preview */}
+              <View className="flex-row items-center gap-1.5 mb-4 px-1">
+                <Text className="text-[11px] text-light-textMuted dark:text-dark-textMuted">
+                  Target path:
+                </Text>
+                <Text className="text-[11px] font-mono font-bold text-cyan-400" numberOfLines={1}>
+                  /{selectedParentPath ? `${selectedParentPath}/` : ''}
+                  {newFolderName.trim().replace(/^\/+|\/+$/g, '') || '<new-folder>'}
+                </Text>
+              </View>
+
+              {/* Modal Actions */}
+              <View className="flex-row flex-wrap items-center justify-end gap-2">
                 <Pressable
                   onPress={() => setIsFolderModalOpen(false)}
-                  className="px-4 py-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
+                  className="px-3.5 py-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
                 >
                   <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
                     Cancel
                   </Text>
                 </Pressable>
 
+                {/* Create & Enter (lets user immediately create another subfolder inside the new one!) */}
                 <Pressable
                   onPress={handleCreateFolder}
+                  disabled={!newFolderName.trim()}
+                  className={`flex-row items-center gap-1 px-3.5 py-2 rounded-full border ${
+                    newFolderName.trim()
+                      ? 'border-cyan-500/50 bg-cyan-500/15 active:scale-95'
+                      : 'border-white/10 bg-white/5 opacity-40'
+                  }`}
+                >
+                  <FolderPlus size={13} color="#06B6D4" />
+                  <Text className="text-xs font-bold text-cyan-400">Create & Open</Text>
+                </Pressable>
+
+                {/* Create & Done */}
+                <Pressable
+                  onPress={handleCreateAndCloseFolderModal}
                   disabled={!newFolderName.trim()}
                   className={`flex-row items-center gap-1.5 px-4 py-2 rounded-full ${
                     newFolderName.trim() ? 'bg-cyan-500 active:scale-95' : 'bg-white/10 opacity-40'

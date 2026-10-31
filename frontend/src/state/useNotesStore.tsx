@@ -292,15 +292,39 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const createFolder = async (name: string, parentPath?: string): Promise<DBFolder> => {
-    const cleanName = name.trim();
-    const path = parentPath ? `${parentPath}/${cleanName}` : cleanName;
-    const created = await foldersRepo.createFolder({
-      name: cleanName,
-      path,
-      colorToken: 'cyan',
-    });
-    setFolders((prev) => [...prev, created]);
-    return created;
+    const cleanName = name.trim().replace(/^\/+|\/+$/g, '');
+    const cleanParent = (parentPath || '').trim().replace(/^\/+|\/+$/g, '');
+    const fullPath = cleanParent ? `${cleanParent}/${cleanName}` : cleanName;
+    const segments = fullPath.split('/').map((s) => s.trim()).filter(Boolean);
+
+    let currentPath = '';
+    let parentId: string | undefined = undefined;
+    let lastCreated: DBFolder | null = null;
+    const newlyCreated: DBFolder[] = [];
+
+    for (const seg of segments) {
+      currentPath = currentPath ? `${currentPath}/${seg}` : seg;
+      const existing = [...folders, ...newlyCreated].find((f) => (f.path || f.name) === currentPath);
+      if (existing) {
+        parentId = existing.id;
+        lastCreated = existing;
+      } else {
+        const created = await foldersRepo.createFolder({
+          name: seg,
+          path: currentPath,
+          parentId,
+          colorToken: 'cyan',
+        });
+        newlyCreated.push(created);
+        parentId = created.id;
+        lastCreated = created;
+      }
+    }
+
+    if (newlyCreated.length > 0) {
+      setFolders((prev) => [...prev, ...newlyCreated]);
+    }
+    return lastCreated!;
   };
 
   const renameFolder = async (id: string, newName: string) => {

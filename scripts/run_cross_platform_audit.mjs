@@ -381,7 +381,7 @@ blockFiles.forEach((file) => {
   const hasPlatformImport = /Platform(\s*,\s*|\s+from\s+['"]react-native['"])/.test(code);
   const hasPlatformCheck = /Platform\.OS\s*[!=]==?\s*['"]web['"]/.test(code);
   const hasTypeofCheck = /typeof\s+(window|navigator|document)\s*!==?\s*['"]undefined['"]/.test(code);
-  const hasExpoAvAdapter = /from\s+['"]expo-av['"]/.test(code);
+  const hasExpoAvAdapter = /from\s+['"](expo-audio|expo-av)['"]/.test(code);
   const hasExpoFileAdapter = /from\s+['"](expo-image-picker|expo-document-picker|expo-sharing)['"]/.test(code);
 
   if (fileAudit.detectedGlobals.length > 0) {
