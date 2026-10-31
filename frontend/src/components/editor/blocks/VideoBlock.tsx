@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, Pressable, Platform, DimensionValue } from 'react-native';
+import { View, Text, TextInput, Pressable, Platform, DimensionValue, Image, Linking } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { useTheme } from '../../../theme';
 import { 
   Play, 
@@ -34,16 +35,25 @@ interface VideoBlockProps {
 
 const DEFAULT_VIDEO = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 
-function getEmbedUrl(rawUrl: string): { embedUrl: string; isEmbeddable: boolean; type: 'youtube' | 'vimeo' | 'loom' | 'direct' } {
+function getEmbedUrl(rawUrl: string): {
+  embedUrl: string;
+  isEmbeddable: boolean;
+  type: 'youtube' | 'vimeo' | 'loom' | 'direct';
+  videoId?: string;
+  thumbnailUrl?: string;
+} {
   if (!rawUrl) return { embedUrl: '', isEmbeddable: false, type: 'direct' };
 
   // 1. YouTube
   const ytMatch = rawUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
   if (ytMatch && ytMatch[1]) {
+    const id = ytMatch[1];
     return {
-      embedUrl: `https://www.youtube-nocookie.com/embed/${ytMatch[1]}`,
+      embedUrl: `https://www.youtube-nocookie.com/embed/${id}?playsinline=1&rel=0`,
       isEmbeddable: true,
       type: 'youtube',
+      videoId: id,
+      thumbnailUrl: `https://img.youtube.com/vi/${id}/hqdefault.jpg`,
     };
   }
 
@@ -54,6 +64,7 @@ function getEmbedUrl(rawUrl: string): { embedUrl: string; isEmbeddable: boolean;
       embedUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}`,
       isEmbeddable: true,
       type: 'vimeo',
+      videoId: vimeoMatch[1],
     };
   }
 
@@ -64,6 +75,7 @@ function getEmbedUrl(rawUrl: string): { embedUrl: string; isEmbeddable: boolean;
       embedUrl: `https://www.loom.com/embed/${loomMatch[1]}`,
       isEmbeddable: true,
       type: 'loom',
+      videoId: loomMatch[1],
     };
   }
 
@@ -96,8 +108,14 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({
   const [currentAlign, setCurrentAlign] = useState<VideoAlign>(align);
   const [isEditingUrl, setIsEditingUrl] = useState(!url || url === '');
   const [urlInput, setUrlInput] = useState(videoUrl);
+  const [isPlayingMobile, setIsPlayingMobile] = useState(false);
 
   const embedInfo = useMemo(() => getEmbedUrl(videoUrl), [videoUrl]);
+
+  // Reset isPlayingMobile when videoUrl changes
+  React.useEffect(() => {
+    setIsPlayingMobile(false);
+  }, [videoUrl]);
 
   const handleSaveUrl = () => {
     const next = urlInput.trim() || DEFAULT_VIDEO;
@@ -214,8 +232,80 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({
                 style={{ width: '100%', height: '100%', border: 'none' }}
               />
             )
+          ) : Platform.OS !== 'web' && embedInfo.isEmbeddable ? (
+            !isPlayingMobile && embedInfo.thumbnailUrl ? (
+              <View className="w-full h-full relative bg-black items-center justify-center">
+                <Image
+                  source={{ uri: embedInfo.thumbnailUrl }}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+                  resizeMode="cover"
+                />
+                <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)' }} />
+                <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() => setIsPlayingMobile(true)}
+                  className="w-14 h-14 rounded-full bg-cyan-500/90 items-center justify-center shadow-xl active:scale-95 z-10"
+                >
+                  <Play size={24} color="#FFFFFF" fill="#FFFFFF" />
+                </Pressable>
+                {/* Quick External Open Pill in bottom-right */}
+                <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() => {
+                    if (videoUrl) Linking.openURL(videoUrl).catch(() => {});
+                  }}
+                  className="absolute bottom-2.5 right-2.5 flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-black/75 border border-white/15 active:scale-95 z-10"
+                >
+                  <ExternalLink size={10} color="#06B6D4" />
+                  <Text className="text-[10px] font-bold text-white">Open App</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View className="w-full h-full relative bg-black">
+                <WebView
+                  source={{
+                    html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><style>*{margin:0;padding:0;background:#000;overflow:hidden;}iframe{width:100vw;height:100vh;border:0;}</style></head><body><iframe src="${embedInfo.embedUrl}&autoplay=1" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe></body></html>`,
+                    baseUrl: 'https://www.youtube-nocookie.com',
+                  }}
+                  originWhitelist={['*']}
+                  style={{ flex: 1, backgroundColor: '#000000' }}
+                  allowsFullscreenVideo
+                  allowsInlineMediaPlayback
+                  mediaPlaybackRequiresUserAction={false}
+                  javaScriptEnabled
+                  domStorageEnabled
+                />
+                {/* Quick External Open Pill in bottom-right */}
+                <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() => {
+                    if (videoUrl) Linking.openURL(videoUrl).catch(() => {});
+                  }}
+                  className="absolute bottom-2.5 right-2.5 flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-black/75 border border-white/15 active:scale-95"
+                >
+                  <ExternalLink size={10} color="#06B6D4" />
+                  <Text className="text-[10px] font-bold text-white">Open App</Text>
+                </Pressable>
+              </View>
+            )
           ) : (
-            <View className="w-full h-full items-center justify-center p-6">
+            <Pressable
+              onPress={() => {
+                if (Platform.OS === 'web' && typeof window !== 'undefined') {
+                  window.open(videoUrl, '_blank');
+                } else if (videoUrl) {
+                  Linking.openURL(videoUrl).catch(() => {});
+                }
+              }}
+              className="w-full h-full items-center justify-center p-6 relative"
+            >
+              {embedInfo.thumbnailUrl && (
+                <Image
+                  source={{ uri: embedInfo.thumbnailUrl }}
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.35 }}
+                  resizeMode="cover"
+                />
+              )}
               <View className="w-12 h-12 rounded-full bg-note-cyan/20 items-center justify-center mb-2">
                 <Play size={22} color="#06B6D4" fill="#06B6D4" />
               </View>
@@ -223,9 +313,9 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({
                 {videoUrl}
               </Text>
               <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted mt-1">
-                Tap to preview in browser or player
+                Tap to open video in player
               </Text>
-            </View>
+            </Pressable>
           )}
         </View>
 

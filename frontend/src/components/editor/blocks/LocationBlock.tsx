@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, Platform } from 'react-native';
+import { View, Text, TextInput, Pressable, Platform, Linking } from 'react-native';
 import { useTheme, NoteColors } from '../../../theme';
 import { MapPin, Navigation, ExternalLink, Edit3, Check, X } from 'lucide-react-native';
 
@@ -50,6 +50,8 @@ export const LocationBlock: React.FC<LocationBlockProps> = ({
     
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       window.open(mapUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      Linking.openURL(mapUrl).catch(() => {});
     }
   };
 

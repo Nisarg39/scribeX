@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Pressable, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, Platform, ScrollView, Linking } from 'react-native';
 import { useTheme } from '../../../theme';
 import { 
   Globe, 
@@ -189,9 +189,13 @@ export const WebClipBlock: React.FC<WebClipBlockProps> = ({
           {/* Source Link & Delete */}
           <View className="flex-row items-center gap-1">
             <Pressable
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               onPress={() => {
-                if (Platform.OS === 'web' && url) {
+                if (!url) return;
+                if (Platform.OS === 'web') {
                   window.open(url, '_blank');
+                } else {
+                  Linking.openURL(url).catch(() => {});
                 }
               }}
               className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"

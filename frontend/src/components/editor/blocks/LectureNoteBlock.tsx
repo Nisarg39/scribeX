@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TextInput, Pressable, Platform, ScrollView } from 'react-native';
+import { View, Text, TextInput, Pressable, Platform, ScrollView, Linking } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { useTheme } from '../../../theme';
 import { 
   Play, 
@@ -333,8 +334,29 @@ export const LectureNoteBlock: React.FC<LectureNoteBlockProps> = ({
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                 allowFullScreen
               />
+            ) : Platform.OS !== 'web' && embedInfo.embedUrl ? (
+              <View className="w-full h-full relative bg-black">
+                <WebView
+                  source={{
+                    html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><style>*{margin:0;padding:0;background:#000;overflow:hidden;}iframe{width:100vw;height:100vh;border:0;}</style></head><body><iframe src="${embedInfo.embedUrl}" referrerpolicy="strict-origin-when-cross-origin" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe></body></html>`,
+                    baseUrl: 'https://www.youtube-nocookie.com',
+                  }}
+                  originWhitelist={['*']}
+                  style={{ flex: 1, backgroundColor: '#000000' }}
+                  allowsFullscreenVideo
+                  allowsInlineMediaPlayback
+                  mediaPlaybackRequiresUserAction={false}
+                  javaScriptEnabled
+                  domStorageEnabled
+                />
+              </View>
             ) : (
-              <View className="items-center justify-center p-6 text-center">
+              <Pressable
+                onPress={() => {
+                  if (videoUrl) Linking.openURL(videoUrl).catch(() => {});
+                }}
+                className="items-center justify-center p-6 text-center"
+              >
                 <View className="w-12 h-12 rounded-full bg-cyan-500/20 items-center justify-center mb-2">
                   <Play size={20} color="#06B6D4" />
                 </View>
@@ -344,7 +366,7 @@ export const LectureNoteBlock: React.FC<LectureNoteBlockProps> = ({
                 <Text className="text-[10px] text-white/50 text-center mt-1">
                   Click any checkpoint below to seek to timestamp
                 </Text>
-              </View>
+              </Pressable>
             )}
           </View>
 
@@ -470,11 +492,14 @@ export const LectureNoteBlock: React.FC<LectureNoteBlockProps> = ({
               </Text>
               <Pressable
                 onPress={() => {
-                  if (Platform.OS === 'web' && videoUrl) {
+                  if (!videoUrl) return;
+                  if (Platform.OS === 'web') {
                     window.open(videoUrl, '_blank');
+                  } else {
+                    Linking.openURL(videoUrl).catch(() => {});
                   }
                 }}
-                className="flex-row items-center gap-1 opacity-70 hover:opacity-100"
+                className="flex-row items-center gap-1 opacity-70 hover:opacity-100 active:opacity-100"
               >
                 <Text className="text-[10px] font-medium text-cyan-500">Source Stream</Text>
                 <ExternalLink size={10} color="#06B6D4" />

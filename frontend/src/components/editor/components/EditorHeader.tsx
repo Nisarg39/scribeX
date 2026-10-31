@@ -85,7 +85,8 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
         nativeID="scribex-editor-header"
         dataSet={{ scribexToolbar: 'true' }}
         {...({ 'data-scribex-toolbar': 'true' } as any)}
-        className="flex-row items-center justify-between px-3 py-2.5 border-b border-light-border dark:border-dark-border z-30 bg-light-surface dark:bg-dark-surface relative"
+        style={{ zIndex: 60 }}
+        className="flex-row items-center justify-between px-3 py-2.5 border-b border-light-border dark:border-dark-border z-50 bg-light-surface dark:bg-dark-surface relative"
       >
         <View className="flex-row items-center gap-2">
           <Pressable
@@ -187,7 +188,8 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
       nativeID="scribex-editor-header"
       dataSet={{ scribexToolbar: 'true' }}
       {...({ 'data-scribex-toolbar': 'true' } as any)}
-      className="flex-row items-center justify-between px-6 py-4 border-b border-light-border dark:border-dark-border z-10 bg-light-surface/90 dark:bg-dark-surface/90 backdrop-blur-md relative"
+      style={{ zIndex: 60 }}
+      className="flex-row items-center justify-between px-6 py-4 border-b border-light-border dark:border-dark-border z-50 bg-light-surface/90 dark:bg-dark-surface/90 backdrop-blur-md relative"
     >
       {/* Back Button */}
       <Pressable

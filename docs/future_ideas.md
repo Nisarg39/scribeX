@@ -30,8 +30,9 @@ Remaining Tasks to fix
 21 - [x]Check whether nested folder creation option is there when adding a new folder (COMPLETED)
 22 - check why is youtube video not showing for preview or playback in mobile platforms only when using video embedded block and also verify if this happens for other options as well
 23 - impliment on device search functionality using sql 
-24 - simplify the cards of the home screen
-
+24 - simplify the cards of the home screen and see what to do for the weired text showing up in the cards due to custom blocks detection not there in the home screen
+25 - impliment scroll based pagination to the notes cards list in the home screen
+26 - long press gesture to select multiple notes and then perform actions like delete, move to folder, share, etc in the home screen and make sure it works perfectly for all the platforms and when the multiple selection is active there should be a top action bar that should display the number of selected notes and the actions that can be performed on them and also there should be a back button to deselect all the notes and go back to the normal mode
 
 
 Long term Ideas

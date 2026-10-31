@@ -334,7 +334,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         showsVerticalScrollIndicator={false}
       >
         {/* Interactive Folder Selector & Tag Strip */}
-        <View className="mb-4 z-20">
+        <View style={{ zIndex: 40 }} className="mb-4 z-40">
           <View className="flex-row flex-wrap items-center gap-2">
             {/* Folder Selector Pill */}
             <Pressable
@@ -417,6 +417,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               style={{
                 backgroundColor: isDark ? '#18181B' : '#FFFFFF',
                 borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)',
+                zIndex: 80,
               }}
               className="mt-2.5 p-3 rounded-2xl border shadow-2xl max-w-sm"
             >

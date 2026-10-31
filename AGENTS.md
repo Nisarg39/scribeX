@@ -14,7 +14,7 @@ To preserve user model quotas and avoid re-sending long conversation histories, 
 | :--- | :--- | :--- | :--- |
 | **Trivial single-line / <20-line known-file edit** | Handle inline (No subagent) | — | Direct `read_file` (line range) + `edit_file` (avoids subagent spawn overhead) |
 | **Multi-file lookup / broad read / status check** | `flash_lite` | `research` | Exact question + paths from `.agents/project-map.json` |
-| **Bounded UI fix / single-block edit / test run** | `flash` | `self` | Exact target file path(s), acceptance criteria, and scoped test command |
+| **Bounded UI fix / single-block edit / test run** | `flash` (fallback: `flash_lite` if `flash` is unavailable) | `self` | Exact target file path(s), acceptance criteria, and scoped test command |
 | **Multi-file feature / complex state or DB change** | `inherit` or `pro` | `self` | Structured execution contract (files in scope, invariants, validation command) |
 | **Architecture / ambiguity resolution** | Handle in main agent | — | Ask clarifying question in plain text before coding |
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Image, Pressable, Platform } from 'react-native';
+import { View, Text, TextInput, Image, Pressable, Platform, Linking } from 'react-native';
 import { useTheme } from '../../../theme';
 import { 
   Globe, 
@@ -79,8 +79,11 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
   };
 
   const handleOpenLink = () => {
+    if (!currentUrl) return;
     if (Platform.OS === 'web') {
       window.open(currentUrl, '_blank', 'noopener,noreferrer');
+    } else {
+      Linking.openURL(currentUrl).catch(() => {});
     }
   };
 
