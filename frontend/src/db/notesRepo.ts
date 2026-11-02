@@ -319,6 +319,75 @@ export class NotesRepository {
   public async permanentlyDeleteNote(id: string): Promise<void> {
     await dbClient.run(`DELETE FROM notes WHERE id = ?;`, [id]);
   }
+
+  public async batchSoftDeleteNotes(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await dbClient.run(
+      `UPDATE notes 
+       SET status = 'trashed', trashed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+       WHERE id IN (${placeholders});`,
+      ids
+    );
+    for (const id of ids) {
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, 'user-default', 1, 'note', ?, 'delete', ?);`,
+        [createLogId(), id, JSON.stringify({ status: 'trashed' })]
+      );
+    }
+  }
+
+  public async batchPermanentlyDeleteNotes(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await dbClient.run(`DELETE FROM notes WHERE id IN (${placeholders});`, ids);
+  }
+
+  public async batchRestoreNotes(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await dbClient.run(
+      `UPDATE notes 
+       SET status = 'active', trashed_at = NULL, updated_at = CURRENT_TIMESTAMP 
+       WHERE id IN (${placeholders});`,
+      ids
+    );
+  }
+
+  public async batchArchiveNotes(ids: string[], archive: boolean): Promise<void> {
+    if (ids.length === 0) return;
+    const status = archive ? 'archived' : 'active';
+    const placeholders = ids.map(() => '?').join(',');
+    await dbClient.run(
+      `UPDATE notes 
+       SET status = ?, updated_at = CURRENT_TIMESTAMP 
+       WHERE id IN (${placeholders});`,
+      [status, ...ids]
+    );
+  }
+
+  public async batchTogglePinNotes(ids: string[], pin: boolean): Promise<void> {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await dbClient.run(
+      `UPDATE notes 
+       SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP 
+       WHERE id IN (${placeholders});`,
+      [pin ? 1 : 0, ...ids]
+    );
+  }
+
+  public async batchMoveNotesToFolder(ids: string[], folderPath: string, folderId?: string): Promise<void> {
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    await dbClient.run(
+      `UPDATE notes 
+       SET folder_path = ?, folder_id = ?, updated_at = CURRENT_TIMESTAMP 
+       WHERE id IN (${placeholders});`,
+      [folderPath, folderId || null, ...ids]
+    );
+  }
 }
 
 export const notesRepo = new NotesRepository();

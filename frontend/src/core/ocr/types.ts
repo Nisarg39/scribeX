@@ -46,5 +46,7 @@ export interface IOcrEngine {
     filter: OcrFilterMode,
     maxDimension?: number
   ): Promise<string>;
+
+  terminateWorker?: () => Promise<void>;
 }
 

@@ -72,6 +72,17 @@ export class ActionHistoryManager {
       this.undoStack.shift();
     }
 
+    // Media memory optimization: Cap high-memory media & sketch actions (Tier 3) to 10 max
+    if (action.tier === 3) {
+      const tier3Count = this.undoStack.filter((a) => a.tier === 3).length;
+      if (tier3Count > 10) {
+        const firstTier3Idx = this.undoStack.findIndex((a) => a.tier === 3);
+        if (firstTier3Idx !== -1) {
+          this.undoStack.splice(firstTier3Idx, 1);
+        }
+      }
+    }
+
     // New actions invalidate redo stack
     this.redoStack = [];
     this.notify();

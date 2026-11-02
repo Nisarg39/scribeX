@@ -115,6 +115,7 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   const recordStartRef = useRef<number>(0);
   const recognitionRef = useRef<any>(null);
   const liveTranscriptRef = useRef<string>(transcription);
+  const createdObjectUrlRef = useRef<string | null>(null);
 
   // Keep internal state aligned with props
   useEffect(() => {
@@ -204,6 +205,10 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
       }
       if (nativeRecordingRef.current) {
         nativeRecordingRef.current.stop().catch(() => {});
+      }
+      if (createdObjectUrlRef.current && typeof window !== 'undefined' && window.URL) {
+        try { window.URL.revokeObjectURL(createdObjectUrlRef.current); } catch (_) {}
+        createdObjectUrlRef.current = null;
       }
     };
   }, []);
@@ -408,8 +413,14 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
         const recordedMime = recorder.mimeType || mimeType || 'audio/webm';
         const audioBlob = new Blob(chunksRef.current, { type: recordedMime });
         
+        // Revoke any previous object URL before generating a new one
+        if (createdObjectUrlRef.current && typeof window !== 'undefined' && window.URL) {
+          try { window.URL.revokeObjectURL(createdObjectUrlRef.current); } catch (_) {}
+        }
+
         // Zero-latency object URL for instant local playback
         const objectUrl = URL.createObjectURL(audioBlob);
+        createdObjectUrlRef.current = objectUrl;
         setCurrentAudioUrl(objectUrl);
 
         const totalSecs = Math.max(1, Math.round((Date.now() - recordStartRef.current) / 1000));

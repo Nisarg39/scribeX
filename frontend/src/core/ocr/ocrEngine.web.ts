@@ -20,12 +20,48 @@ class WebOcrEngine implements IOcrEngine {
   private workerInitPromise: Promise<Worker> | null = null;
   private currentLanguage: string = 'eng';
   private activeProgressCallback: ((status: string, progress: number) => void) | null = null;
+  private idleTimer: any = null;
+
+  /**
+   * Automatically terminates the Tesseract WASM worker after 40 seconds of idle inactivity
+   * to release ~300MB of WebAssembly linear memory and CPU threads.
+   */
+  private scheduleIdleTermination() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.terminateWorker().catch(() => {});
+    }, 40000);
+  }
+
+  /**
+   * Explicitly terminates any running Tesseract Web Worker.
+   */
+  public async terminateWorker(): Promise<void> {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+    if (this.worker) {
+      try {
+        await this.worker.terminate();
+      } catch (_) {}
+      this.worker = null;
+    }
+    this.workerInitPromise = null;
+    this.activeProgressCallback = null;
+  }
 
   /**
    * Initializes or returns a cached singleton Tesseract Web Worker.
    */
   private async getWorker(language: string = 'eng'): Promise<Worker> {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+
     if (this.worker && this.currentLanguage === language) {
+      this.scheduleIdleTermination();
       return this.worker;
     }
 
@@ -54,6 +90,7 @@ class WebOcrEngine implements IOcrEngine {
       this.worker = worker;
       this.currentLanguage = language;
       this.workerInitPromise = null;
+      this.scheduleIdleTermination();
       return worker;
     })();
 
@@ -131,49 +168,53 @@ class WebOcrEngine implements IOcrEngine {
       // Draw original image scaled
       ctx.drawImage(img, 0, 0, width, height);
 
+      let resultDataUrl = uriOrDataUrl;
       if (filter === 'natural') {
-        return canvas.toDataURL('image/jpeg', 0.88);
+        resultDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+      } else {
+        const imgData = ctx.getImageData(0, 0, width, height);
+        const data = imgData.data;
+
+        if (filter === 'contrast') {
+          // High Contrast: Boost text contrast against background paper
+          const contrastFactor = 1.35;
+          const brightnessOffset = 10;
+          for (let i = 0; i < data.length; i += 4) {
+            data[i] = Math.min(255, Math.max(0, (data[i] - 128) * contrastFactor + 128 + brightnessOffset));
+            data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - 128) * contrastFactor + 128 + brightnessOffset));
+            data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - 128) * contrastFactor + 128 + brightnessOffset));
+          }
+          ctx.putImageData(imgData, 0, 0);
+          resultDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        } else if (filter === 'bw') {
+          // B&W Document Scan: Otsu-style adaptive luminance binarization
+          let totalLum = 0;
+          const totalPixels = data.length / 4;
+          for (let i = 0; i < data.length; i += 4) {
+            const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            totalLum += lum;
+          }
+          const avgLum = totalLum / totalPixels;
+          const threshold = Math.max(75, Math.min(190, avgLum * 0.90));
+
+          for (let i = 0; i < data.length; i += 4) {
+            const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+            const val = lum >= threshold ? 255 : 0;
+            data[i] = val;
+            data[i + 1] = val;
+            data[i + 2] = val;
+          }
+          ctx.putImageData(imgData, 0, 0);
+          resultDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        } else {
+          resultDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        }
       }
 
-      const imgData = ctx.getImageData(0, 0, width, height);
-      const data = imgData.data;
-
-      if (filter === 'contrast') {
-        // High Contrast: Boost text contrast against background paper
-        const contrastFactor = 1.35;
-        const brightnessOffset = 10;
-        for (let i = 0; i < data.length; i += 4) {
-          data[i] = Math.min(255, Math.max(0, (data[i] - 128) * contrastFactor + 128 + brightnessOffset));
-          data[i + 1] = Math.min(255, Math.max(0, (data[i + 1] - 128) * contrastFactor + 128 + brightnessOffset));
-          data[i + 2] = Math.min(255, Math.max(0, (data[i + 2] - 128) * contrastFactor + 128 + brightnessOffset));
-        }
-        ctx.putImageData(imgData, 0, 0);
-        return canvas.toDataURL('image/jpeg', 0.88);
-      }
-
-      if (filter === 'bw') {
-        // B&W Document Scan: Otsu-style adaptive luminance binarization
-        let totalLum = 0;
-        const totalPixels = data.length / 4;
-        for (let i = 0; i < data.length; i += 4) {
-          const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          totalLum += lum;
-        }
-        const avgLum = totalLum / totalPixels;
-        const threshold = Math.max(75, Math.min(190, avgLum * 0.90));
-
-        for (let i = 0; i < data.length; i += 4) {
-          const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          const val = lum >= threshold ? 255 : 0;
-          data[i] = val;
-          data[i + 1] = val;
-          data[i + 2] = val;
-        }
-        ctx.putImageData(imgData, 0, 0);
-        return canvas.toDataURL('image/jpeg', 0.88);
-      }
-
-      return canvas.toDataURL('image/jpeg', 0.88);
+      // Memory optimization: Purge offscreen canvas GPU texture immediately
+      canvas.width = 0;
+      canvas.height = 0;
+      return resultDataUrl;
     } catch (err) {
       console.warn('Preprocessing canvas error, falling back to original:', err);
       return uriOrDataUrl;
@@ -293,6 +334,13 @@ class WebOcrEngine implements IOcrEngine {
         firstPageThumbnail = pageThumbnail;
       }
 
+      // Free canvas GPU memory and PDF page font buffers immediately
+      canvas.width = 0;
+      canvas.height = 0;
+      try {
+        (page as any).cleanup?.();
+      } catch (_) {}
+
       // If page has rich digital text (> 30 characters), use digital text directly!
       if (digitalText.length >= 30) {
         // Format digital text nicely
@@ -337,6 +385,13 @@ class WebOcrEngine implements IOcrEngine {
         });
       }
     }
+
+    // Completely purge PDF.js document memory and font caches
+    try {
+      (pdf as any).cleanup?.();
+      (pdf as any).destroy?.();
+      (loadingTask as any).destroy?.();
+    } catch (_) {}
 
     // Combine page texts with clear markdown page headings
     const combinedText =

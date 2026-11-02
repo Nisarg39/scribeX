@@ -29,11 +29,11 @@ Remaining Tasks to fix
 20 - [x] Ingestion & Smart Capture Pipeline: Desktop Drag-and-Drop Ingestion (#39 with dashed cyan canvas overlay for images, audio, video, PDFs, CSV, and markdown), Smart Clipboard & Paste Handler (#37 with screenshot image pasting, video URL detection, and tabular CSV parsing), and File Import & Export Engine (#40 with YAML frontmatter .md download, structured JSON export, and universal file import) (COMPLETED)
 21 - [x]Check whether nested folder creation option is there when adding a new folder (COMPLETED)
 22 - [x]check why is youtube video not showing for preview or playback in mobile platforms only when using video embedded block and also verify if this happens for other options as well (COMPLETED)
-23 - [x]impliment on device search functionality using database
-23.1 - [x] impliment filter option for notes list in home
-23.2 - fix the document ocr block issue which is giving error and also check all the fucntionalities that it is working or not
-26 - long press gesture to select multiple notes and then perform actions like delete, move to folder, share, etc in the home screen and make sure it works perfectly for all the platforms and when the multiple selection is active there should be a top action bar that should display the number of selected notes and the actions that can be performed on them and also there should be a back button to deselect all the notes and go back to the normal mode
-27 - memory management for web platform currently i just saw 6.5 gb tab resource so we need to make this optimised
+23 - [x]impliment on device search functionality using database (COMPLETED)
+23.1 - [x] impliment filter option for notes list in home (COMPLETED)
+23.2 - [x] fix the document ocr block issue which is giving error and also check all the fucntionalities that it is working or not (COMPLETED)
+26 - [x] long press gesture to select multiple notes and then perform actions like delete, move to folder, share, etc in the home screen and make sure it works perfectly for all the platforms and when the multiple selection is active there should be a top action bar that should display the number of selected notes and the actions that can be performed on them and also there should be a back button to deselect all the notes and go back to the normal mode (COMPLETED)
+27 - [x] memory management for web platform currently i just saw 6.5 gb tab resource so we need to make this optimised (COMPLETED)
 
 
 Long term Ideas

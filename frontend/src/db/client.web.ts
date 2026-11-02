@@ -118,13 +118,15 @@ async function saveToStorage(binary: Uint8Array): Promise<void> {
         req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
       });
+      // IndexedDB saved successfully; avoid expensive base64 encoding and localStorage quota crashes
+      return;
     }
 
-    // Dual-write to AsyncStorage fallback
+    // Secondary fallback ONLY if IndexedDB is completely unavailable (e.g. strict sandbox)
     const base64 = uint8ArrayToBase64(binary);
     await AsyncStorage.setItem(ASYNC_STORAGE_KEY, base64);
   } catch (err) {
-    // Non-fatal fallback
+    // Non-fatal fallback for restricted environments
     try {
       const base64 = uint8ArrayToBase64(binary);
       await AsyncStorage.setItem(ASYNC_STORAGE_KEY, base64);
@@ -345,7 +347,7 @@ export class WebDatabaseClient {
     this.persistTimeout = setTimeout(async () => {
       this.persistTimeout = null;
       await this.persist();
-    }, 120);
+    }, 400);
   }
 
   public async flushPersist(): Promise<void> {

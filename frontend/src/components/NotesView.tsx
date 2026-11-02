@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform, Share, Alert, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../theme';
 import { useNotesStore } from '../state/useNotesStore';
@@ -21,7 +21,12 @@ import {
   ChevronRight,
   CornerDownRight,
   FolderPlus,
-  Clock
+  Clock,
+  ArrowLeft,
+  CheckSquare,
+  FolderInput,
+  Share2,
+  RotateCcw
 } from 'lucide-react-native';
 
 export const NotesView: React.FC = () => {
@@ -58,8 +63,19 @@ export const NotesView: React.FC = () => {
     restoreNote,
     permanentlyDeleteNote,
     emptyTrash,
-    createFolder
+    createFolder,
+    batchDeleteNotes,
+    batchMoveNotesToFolder,
+    batchTogglePin,
+    batchArchiveNotes,
+    batchRestoreNotes,
+    batchPermanentlyDeleteNotes,
   } = useNotesStore();
+
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set());
+  const [isMoveFolderModalOpen, setIsMoveFolderModalOpen] = useState(false);
+  const [quickNewFolderName, setQuickNewFolderName] = useState('');
+  const isSelectionMode = selectedNoteIds.size > 0;
 
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
@@ -237,74 +253,336 @@ export const NotesView: React.FC = () => {
     day: 'numeric',
   });
 
+  // Multi-Selection Logic & Batch Actions
+  const handleToggleSelectNote = (noteId: string) => {
+    setSelectedNoteIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(noteId)) {
+        next.delete(noteId);
+      } else {
+        next.add(noteId);
+      }
+      return next;
+    });
+  };
+
+  const handleLongPressNote = (noteId: string) => {
+    setSelectedNoteIds((prev) => {
+      const next = new Set(prev);
+      next.add(noteId);
+      return next;
+    });
+  };
+
+  const handleClearSelection = () => {
+    setSelectedNoteIds(new Set());
+  };
+
+  const visibleNotes = React.useMemo(() => {
+    const list: NoteItem[] = [];
+    const seen = new Set<string>();
+    pinnedCards.forEach((vm) => {
+      if (!seen.has(vm.note.id)) {
+        seen.add(vm.note.id);
+        list.push(vm.note);
+      }
+    });
+    feedCards.forEach((vm) => {
+      if (!seen.has(vm.note.id)) {
+        seen.add(vm.note.id);
+        list.push(vm.note);
+      }
+    });
+    return list;
+  }, [pinnedCards, feedCards]);
+
+  const isAllVisibleSelected =
+    visibleNotes.length > 0 && visibleNotes.every((n) => selectedNoteIds.has(n.id));
+
+  const handleToggleSelectAll = () => {
+    if (isAllVisibleSelected) {
+      setSelectedNoteIds(new Set());
+    } else {
+      setSelectedNoteIds(new Set(visibleNotes.map((n) => n.id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+    if (queryRequest.statusScope === 'trashed') {
+      await batchPermanentlyDeleteNotes(ids);
+    } else {
+      await batchDeleteNotes(ids);
+    }
+    handleClearSelection();
+  };
+
+  const handleBatchTogglePin = async () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const allPinned = selectedNotes.length > 0 && selectedNotes.every((n) => n.isPinned);
+    await batchTogglePin(ids, !allPinned);
+  };
+
+  const handleBatchArchive = async () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+    const isArchivedScope = queryRequest.statusScope === 'archived';
+    await batchArchiveNotes(ids, !isArchivedScope);
+    handleClearSelection();
+  };
+
+  const handleBatchRestore = async () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+    await batchRestoreNotes(ids);
+    handleClearSelection();
+  };
+
+  const handleBatchShare = async () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const combined = selectedNotes
+      .map((n) => `# ${n.title}\n\n${n.contentMarkdown || ''}`)
+      .join('\n\n---\n\n');
+
+    if (Platform.OS === 'web') {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        try {
+          await navigator.share({
+            title: `${selectedNotes.length} Notes from ScribeX`,
+            text: combined,
+          });
+          return;
+        } catch (_) {}
+      }
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(combined);
+      }
+    } else {
+      await Share.share({
+        title: `${selectedNotes.length} Notes from ScribeX`,
+        message: combined,
+      });
+    }
+  };
+
+  const handleExecuteBatchMove = async (targetFolder: string) => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+    const folderObj = folders.find((f) => (f.path || f.name) === targetFolder);
+    await batchMoveNotesToFolder(ids, targetFolder, folderObj?.id);
+    setIsMoveFolderModalOpen(false);
+    handleClearSelection();
+  };
+
+  const handleCreateAndMove = async () => {
+    const clean = quickNewFolderName.trim().replace(/^\/+|\/+$/g, '');
+    if (!clean) return;
+    const created = await createFolder(clean);
+    const targetPath = created?.path || clean;
+    setQuickNewFolderName('');
+    await handleExecuteBatchMove(targetPath);
+  };
+
   return (
-    <ScrollView 
-      className="flex-1"
-      contentContainerStyle={{ paddingBottom: 120 }}
-      showsVerticalScrollIndicator={false}
-      onScroll={handleScrollFeed}
-      scrollEventThrottle={16}
-    >
-      {/* Editorial Page Heading + Add Note Button */}
-      <View style={{ zIndex: 50 }} className="flex-row items-baseline justify-between mb-6">
-        <View>
-          <Text className="text-4xl md:text-5xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight">
-            Notes
-          </Text>
-          <Text className="text-xs md:text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary mt-1">
-            {formattedDate} • {partitionCounts.allActive} thoughts & captures
-          </Text>
-        </View>
-
-        {/* Add Menu: New Note / New Folder */}
-        <View style={{ position: 'relative', zIndex: 50 }}>
-          <Pressable
-            onPress={() => setIsAddMenuOpen((o) => !o)}
-            accessibilityLabel="Create New Note in Block Editor"
-            accessibilityHint="Opens menu with New Note and New Folder"
-            className="w-11 h-11 rounded-full bg-light-iconBg dark:bg-white items-center justify-center active:scale-95 shadow-md"
-          >
-            <Plus size={20} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
-          </Pressable>
-
-          {isAddMenuOpen && (
-            <View
-              style={{
-                position: 'absolute',
-                top: 52,
-                right: 0,
-                zIndex: 100,
-                backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
-                borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
-              }}
-              className="rounded-2xl border p-1.5 min-w-[170px] shadow-2xl"
+    <View className="flex-1 relative">
+      {/* Sticky Top Bar: Multi-Selection Action Bar (Fixed at top of screen regardless of scroll position) */}
+      {isSelectionMode && (
+        <View
+          style={{
+            zIndex: 100,
+            backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+            borderColor: isDark ? 'rgba(6, 182, 212, 0.4)' : 'rgba(6, 182, 212, 0.3)',
+          }}
+          className="mb-3 px-4 py-3 rounded-2xl border shadow-lg flex-row items-center justify-between"
+        >
+          {/* Left: Back / Cancel Button + Selection Count Badge */}
+          <View className="flex-row items-center gap-2.5">
+            <Pressable
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              onPress={handleClearSelection}
+              accessibilityLabel="Deselect all and go back to normal mode"
+              className="flex-row items-center gap-1 px-2.5 py-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
             >
-              <Pressable
-                onPress={() => {
-                  setIsAddMenuOpen(false);
-                  handleCreateNewBlankNote();
-                }}
-                accessibilityLabel="New Note"
-                className="flex-row items-center gap-3 px-3.5 py-3 rounded-xl active:bg-black/10 dark:active:bg-white/10"
-              >
-                <FilePlus size={16} color={isDark ? '#F7F7F7' : '#171717'} />
-                <Text className="text-sm font-semibold text-light-textPrimary dark:text-dark-textPrimary">New Note</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setIsAddMenuOpen(false);
-                  handleOpenFolderModal();
-                }}
-                accessibilityLabel="New Folder"
-                className="flex-row items-center gap-3 px-3.5 py-3 rounded-xl active:bg-black/10 dark:active:bg-white/10"
-              >
-                <Folder size={16} color={isDark ? '#F7F7F7' : '#171717'} />
-                <Text className="text-sm font-semibold text-light-textPrimary dark:text-dark-textPrimary">New Folder</Text>
-              </Pressable>
+              <ArrowLeft size={18} color={isDark ? '#F3F4F6' : '#111827'} strokeWidth={2.2} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Back
+              </Text>
+            </Pressable>
+
+            <View className="h-4 w-[1px] bg-light-border dark:bg-dark-border" />
+
+            <View className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/15">
+              <View className="w-2 h-2 rounded-full bg-cyan-400" />
+              <Text className="text-xs font-bold text-cyan-500 dark:text-cyan-400">
+                {selectedNoteIds.size} {selectedNoteIds.size === 1 ? 'selected' : 'selected'}
+              </Text>
             </View>
-          )}
+          </View>
+
+          {/* Right: Actions Cluster */}
+          <View className="flex-row items-center gap-1">
+            {/* Select All / Deselect All Toggle */}
+            <Pressable
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={handleToggleSelectAll}
+              accessibilityLabel={isAllVisibleSelected ? 'Deselect All' : 'Select All'}
+              className="px-2.5 py-1.5 rounded-xl flex-row items-center gap-1.5 hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            >
+              <CheckSquare size={16} color="#06B6D4" />
+              <Text className="text-xs font-semibold text-cyan-500 dark:text-cyan-400 hidden sm:flex">
+                {isAllVisibleSelected ? 'Deselect All' : 'Select All'}
+              </Text>
+            </Pressable>
+
+            {/* Move to Folder */}
+            <Pressable
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => setIsMoveFolderModalOpen(true)}
+              accessibilityLabel="Move Selected Notes to Folder"
+              className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            >
+              <FolderInput size={18} color={isDark ? '#E5E7EB' : '#1F2937'} />
+            </Pressable>
+
+            {/* Pin / Unpin */}
+            <Pressable
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={handleBatchTogglePin}
+              accessibilityLabel="Pin or Unpin Selected Notes"
+              className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            >
+              <Pin size={18} color={isDark ? '#E5E7EB' : '#1F2937'} />
+            </Pressable>
+
+            {/* Archive / Unarchive */}
+            <Pressable
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={handleBatchArchive}
+              accessibilityLabel={queryRequest.statusScope === 'archived' ? 'Unarchive Selected Notes' : 'Archive Selected Notes'}
+              className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            >
+              <Archive size={18} color={isDark ? '#E5E7EB' : '#1F2937'} />
+            </Pressable>
+
+            {/* Share */}
+            <Pressable
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={handleBatchShare}
+              accessibilityLabel="Share Selected Notes"
+              className="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+            >
+              <Share2 size={18} color={isDark ? '#E5E7EB' : '#1F2937'} />
+            </Pressable>
+
+            {/* Delete / Trash */}
+            {queryRequest.statusScope === 'trashed' ? (
+              <View className="flex-row items-center gap-1">
+                <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={handleBatchRestore}
+                  accessibilityLabel="Restore Selected Notes"
+                  className="px-2.5 py-1.5 rounded-xl flex-row items-center gap-1 bg-black/5 dark:bg-white/10 active:scale-95"
+                >
+                  <RotateCcw size={14} color={isDark ? '#F3F4F6' : '#111827'} />
+                  <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">Restore</Text>
+                </Pressable>
+                <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={handleBatchDelete}
+                  accessibilityLabel="Permanently Delete Selected Notes"
+                  className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 active:scale-95"
+                >
+                  <Trash2 size={18} color="#EF4444" />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={handleBatchDelete}
+                accessibilityLabel="Move Selected Notes to Trash"
+                className="p-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 active:scale-95"
+              >
+                <Trash2 size={18} color="#EF4444" />
+              </Pressable>
+            )}
+          </View>
         </View>
-      </View>
+      )}
+
+      <ScrollView 
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScrollFeed}
+        scrollEventThrottle={16}
+      >
+        {/* Editorial Page Heading + Add Note Button (Shown when not in selection mode) */}
+        {!isSelectionMode && (
+          <View style={{ zIndex: 50 }} className="flex-row items-baseline justify-between mb-6">
+            <View>
+              <Text className="text-4xl md:text-5xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight">
+                Notes
+              </Text>
+              <Text className="text-xs md:text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary mt-1">
+                {formattedDate} • {partitionCounts.allActive} thoughts & captures
+              </Text>
+            </View>
+
+            {/* Add Menu: New Note / New Folder */}
+            <View style={{ position: 'relative', zIndex: 50 }}>
+              <Pressable
+                onPress={() => setIsAddMenuOpen((o) => !o)}
+                accessibilityLabel="Create New Note in Block Editor"
+                accessibilityHint="Opens menu with New Note and New Folder"
+                className="w-11 h-11 rounded-full bg-light-iconBg dark:bg-white items-center justify-center active:scale-95 shadow-md"
+              >
+                <Plus size={20} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.5} />
+              </Pressable>
+
+              {isAddMenuOpen && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 52,
+                    right: 0,
+                    zIndex: 100,
+                    backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+                    borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)',
+                  }}
+                  className="rounded-2xl border p-1.5 min-w-[170px] shadow-2xl"
+                >
+                  <Pressable
+                    onPress={() => {
+                      setIsAddMenuOpen(false);
+                      handleCreateNewBlankNote();
+                    }}
+                    accessibilityLabel="New Note"
+                    className="flex-row items-center gap-3 px-3.5 py-3 rounded-xl active:bg-black/10 dark:active:bg-white/10"
+                  >
+                    <FilePlus size={16} color={isDark ? '#F7F7F7' : '#171717'} />
+                    <Text className="text-sm font-semibold text-light-textPrimary dark:text-dark-textPrimary">New Note</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setIsAddMenuOpen(false);
+                      handleOpenFolderModal();
+                    }}
+                    accessibilityLabel="New Folder"
+                    className="flex-row items-center gap-3 px-3.5 py-3 rounded-xl active:bg-black/10 dark:active:bg-white/10"
+                  >
+                    <Folder size={16} color={isDark ? '#F7F7F7' : '#171717'} />
+                    <Text className="text-sm font-semibold text-light-textPrimary dark:text-dark-textPrimary">New Folder</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
 
       {/* Universal Local Search Bar (Text + Voice-to-Text Search) */}
       <View className="mb-6">
@@ -666,12 +944,16 @@ export const NotesView: React.FC = () => {
                 key={vm.note.id}
                 viewModel={vm}
                 isPinnedShelfCard
+                isSelectionMode={isSelectionMode}
+                isSelected={selectedNoteIds.has(vm.note.id)}
                 onOpenNote={handleOpenNote}
                 onTogglePin={togglePin}
                 onToggleFavorite={toggleFavorite}
                 onRestoreNote={restoreNote}
                 onPermanentlyDeleteNote={permanentlyDeleteNote}
                 onUnarchiveNote={unarchiveNote}
+                onToggleSelect={handleToggleSelectNote}
+                onLongPressNote={handleLongPressNote}
               />
             ))}
           </View>
@@ -707,12 +989,16 @@ export const NotesView: React.FC = () => {
           <NoteCard
             key={vm.note.id}
             viewModel={vm}
+            isSelectionMode={isSelectionMode}
+            isSelected={selectedNoteIds.has(vm.note.id)}
             onOpenNote={handleOpenNote}
             onTogglePin={togglePin}
             onToggleFavorite={toggleFavorite}
             onRestoreNote={restoreNote}
             onPermanentlyDeleteNote={permanentlyDeleteNote}
             onUnarchiveNote={unarchiveNote}
+            onToggleSelect={handleToggleSelectNote}
+            onLongPressNote={handleLongPressNote}
           />
         ))}
       </View>
@@ -778,6 +1064,7 @@ export const NotesView: React.FC = () => {
           </Text>
         </View>
       )}
+      </ScrollView>
 
       {/* Create New Folder Modal (Recursive Directory Explorer) */}
       {isFolderModalOpen && (
@@ -1020,6 +1307,130 @@ export const NotesView: React.FC = () => {
           </Pressable>
         </Modal>
       )}
-    </ScrollView>
+
+      {/* Batch Move to Folder Modal */}
+      {isMoveFolderModalOpen && (
+        <Modal
+          transparent
+          animationType="fade"
+          visible={isMoveFolderModalOpen}
+          onRequestClose={() => setIsMoveFolderModalOpen(false)}
+        >
+          <Pressable
+            onPress={() => setIsMoveFolderModalOpen(false)}
+            className="flex-1 bg-black/60 items-center justify-center p-4 backdrop-blur-sm"
+          >
+            <Pressable
+              onPress={(e) => e.stopPropagation()}
+              style={{
+                backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.1)',
+              }}
+              className="w-full max-w-md rounded-3xl border p-6 shadow-2xl"
+            >
+              {/* Header */}
+              <View className="flex-row items-center justify-between mb-3">
+                <View className="flex-row items-center gap-2">
+                  <FolderInput size={18} color="#06B6D4" />
+                  <Text className="text-base font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                    Move {selectedNoteIds.size} {selectedNoteIds.size === 1 ? 'Note' : 'Notes'}
+                  </Text>
+                </View>
+                <Pressable
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  onPress={() => setIsMoveFolderModalOpen(false)}
+                  className="w-7 h-7 rounded-full items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 active:bg-black/15 dark:active:bg-white/15"
+                >
+                  <X size={16} color={isDark ? '#A1A1AA' : '#71717A'} />
+                </Pressable>
+              </View>
+
+              <Text className="text-xs text-light-textMuted dark:text-dark-textMuted mb-3">
+                Select a destination folder below to move all selected notes.
+              </Text>
+
+              {/* Folder Options List */}
+              <ScrollView
+                style={{ maxHeight: 220 }}
+                contentContainerStyle={{ gap: 6 }}
+                showsVerticalScrollIndicator={false}
+                className="mb-4"
+              >
+                {/* General / Root Directory */}
+                <Pressable
+                  onPress={() => handleExecuteBatchMove('General')}
+                  className="flex-row items-center justify-between px-3.5 py-2.5 rounded-xl bg-light-surface dark:bg-white/[0.04] border border-light-border dark:border-white/10 hover:border-cyan-500/40 active:bg-cyan-500/10"
+                >
+                  <View className="flex-row items-center gap-2.5">
+                    <Folder size={15} color="#06B6D4" />
+                    <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                      General (Root)
+                    </Text>
+                  </View>
+                  <ChevronRight size={13} color={isDark ? '#A1A1AA' : '#71717A'} />
+                </Pressable>
+
+                {/* Existing Folders */}
+                {allFolderNames
+                  .filter((f) => f !== 'General')
+                  .map((folderPath) => (
+                    <Pressable
+                      key={folderPath}
+                      onPress={() => handleExecuteBatchMove(folderPath)}
+                      className="flex-row items-center justify-between px-3.5 py-2.5 rounded-xl bg-light-surface dark:bg-white/[0.04] border border-light-border dark:border-white/10 hover:border-cyan-500/40 active:bg-cyan-500/10"
+                    >
+                      <View className="flex-row items-center gap-2.5">
+                        <Folder size={15} color="#06B6D4" />
+                        <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                          /{folderPath}
+                        </Text>
+                      </View>
+                      <ChevronRight size={13} color={isDark ? '#A1A1AA' : '#71717A'} />
+                    </Pressable>
+                  ))}
+              </ScrollView>
+
+              {/* Quick Create & Move */}
+              <Text className="text-[10px] font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-1.5">
+                Or Move To New Folder
+              </Text>
+              <View className="flex-row items-center gap-2 mb-4">
+                <TextInput
+                  placeholder="New folder name..."
+                  placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
+                  value={quickNewFolderName}
+                  onChangeText={setQuickNewFolderName}
+                  onSubmitEditing={handleCreateAndMove}
+                  className="flex-1 text-xs font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-2 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10"
+                />
+                <Pressable
+                  onPress={handleCreateAndMove}
+                  disabled={!quickNewFolderName.trim()}
+                  className={`px-3.5 py-2 rounded-xl border ${
+                    quickNewFolderName.trim()
+                      ? 'border-cyan-500/50 bg-cyan-500/20 active:scale-95'
+                      : 'border-white/10 bg-white/5 opacity-40'
+                  }`}
+                >
+                  <Text className="text-xs font-bold text-cyan-400">Create & Move</Text>
+                </Pressable>
+              </View>
+
+              {/* Close / Cancel Button */}
+              <View className="flex-row justify-end">
+                <Pressable
+                  onPress={() => setIsMoveFolderModalOpen(false)}
+                  className="px-4 py-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
+                >
+                  <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+                    Cancel
+                  </Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+    </View>
   );
 };

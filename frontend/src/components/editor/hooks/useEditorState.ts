@@ -57,12 +57,17 @@ export const useEditorState = ({
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
 
   useEffect(() => {
-    return actionHistory.subscribe(() => {
+    const unsubscribe = actionHistory.subscribe(() => {
       setHistoryState({
         canUndo: actionHistory.canUndo(),
         canRedo: actionHistory.canRedo(),
       });
     });
+    return () => {
+      unsubscribe();
+      // Memory optimization: Purge history snapshots when exiting or switching notes
+      actionHistory.clear();
+    };
   }, [actionHistory]);
 
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null);

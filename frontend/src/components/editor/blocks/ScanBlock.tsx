@@ -141,6 +141,18 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
   const videoRef = useRef<any>(null);
   const streamRef = useRef<any>(null);
 
+  // Cleanup camera streams and hardware on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        try {
+          streamRef.current.getTracks().forEach((track: any) => track.stop());
+        } catch (_) {}
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
   // Sync state if props change externally
   useEffect(() => {
     if (metadata.imageUrl !== undefined && metadata.imageUrl !== imageUrl) {
@@ -211,10 +223,14 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
         setIsProcessingOcr(false);
         setOcrProgressText('');
 
+        // Memory optimization: Avoid duplicating multi-megabyte uncompressed base64 data URIs
+        const boundedRawUrl =
+          source.startsWith('data:') && source.length > 500000 ? finalImage : source;
+
         onUpdateScan({
           documentName: finalDocName,
           imageUrl: finalImage,
-          rawImageUrl: source,
+          rawImageUrl: boundedRawUrl,
           ocrText: result.text,
           confidence: finalConfidence,
           filter: filterMode,
@@ -230,7 +246,7 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
         onUpdateScan({
           documentName: docName,
           imageUrl: source,
-          rawImageUrl: source,
+          rawImageUrl: source.startsWith('data:') && source.length > 500000 ? source.substring(0, 500) : source,
           ocrText: errorMsg,
           confidence: 80.0,
         });
@@ -318,6 +334,8 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
       if (ctx) {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const snappedUrl = canvas.toDataURL('image/jpeg', 0.85);
+        canvas.width = 0;
+        canvas.height = 0;
         handleStopCamera();
         runOcrPipeline(snappedUrl, `Camera_Scan_${Date.now()}.jpg`);
       }

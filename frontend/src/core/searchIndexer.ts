@@ -48,18 +48,19 @@ export interface NoteSearchDocument {
  */
 export function stripInternalMarkup(raw: string): string {
   if (!raw) return '';
+  if (isBinaryOrCoordinateNoise(raw)) return '';
   return raw
-    // Remove <!-- scribex:... --> or any HTML comments
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    // Remove base64 data URIs
-    .replace(/data:[a-zA-Z0-9/+.-]+;base64,[a-zA-Z0-9+/=]+/g, ' ')
-    // Replace markdown images ![caption](url) with just caption
+    // 1. Strip markdown images ![caption](url) FIRST so large base64/blob URLs are dropped immediately
     .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
-    // Replace markdown links [label](url) with just label
+    // 2. Remove <!-- scribex:... --> or any internal HTML comments
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    // 3. Replace markdown links [label](url) with just label
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    // Remove blockquote callout tags like > [!info]
+    // 4. Remove blockquote callout tags like > [!info]
     .replace(/^>\s*\[![a-zA-Z]+\]\s*/gm, '')
-    // Collapse multiple spaces
+    // 5. Strip any standalone data URIs
+    .replace(/data:[a-zA-Z0-9/+.-]+;base64,[a-zA-Z0-9+/=]{1,500}/g, ' ')
+    // 6. Collapse multiple spaces
     .replace(/[ \t]+/g, ' ')
     .trim();
 }

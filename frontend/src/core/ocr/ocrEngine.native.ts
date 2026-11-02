@@ -175,6 +175,10 @@ class NativeOcrEngine implements IOcrEngine {
       throw new Error(`Failed to extract text from PDF on native: ${pdfErr?.message || 'Unknown error'}`);
     }
   }
+
+  async terminateWorker(): Promise<void> {
+    // Native on-device OCR relies on OS MLKit/Vision frameworks (no long-lived web workers)
+  }
 }
 
 export const ocrEngine = new NativeOcrEngine();

@@ -84,6 +84,12 @@ interface NotesContextValue {
   restoreNote: (noteId: string) => Promise<void>;
   permanentlyDeleteNote: (noteId: string) => Promise<void>;
   emptyTrash: () => Promise<void>;
+  batchDeleteNotes: (ids: string[]) => Promise<void>;
+  batchMoveNotesToFolder: (ids: string[], folderPath: string, folderId?: string) => Promise<void>;
+  batchTogglePin: (ids: string[], pin: boolean) => Promise<void>;
+  batchArchiveNotes: (ids: string[], archive: boolean) => Promise<void>;
+  batchRestoreNotes: (ids: string[]) => Promise<void>;
+  batchPermanentlyDeleteNotes: (ids: string[]) => Promise<void>;
   createFolder: (name: string, parentPath?: string) => Promise<DBFolder>;
   renameFolder: (id: string, newName: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
@@ -168,6 +174,12 @@ const NotesContext = createContext<NotesContextValue>({
   restoreNote: async () => {},
   permanentlyDeleteNote: async () => {},
   emptyTrash: async () => {},
+  batchDeleteNotes: async () => {},
+  batchMoveNotesToFolder: async () => {},
+  batchTogglePin: async () => {},
+  batchArchiveNotes: async () => {},
+  batchRestoreNotes: async () => {},
+  batchPermanentlyDeleteNotes: async () => {},
   createFolder: async () => ({} as DBFolder),
   renameFolder: async () => {},
   deleteFolder: async () => {},
@@ -553,6 +565,92 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const batchDeleteNotes = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setNotes((prev) =>
+      prev.map((n) => (idSet.has(n.id) ? { ...n, status: 'trashed' } : n))
+    );
+    try {
+      await notesRepo.batchSoftDeleteNotes(ids);
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to batch soft-delete notes:', err);
+    }
+  };
+
+  const batchMoveNotesToFolder = async (ids: string[], folderPath: string, folderId?: string) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setNotes((prev) =>
+      prev.map((n) => (idSet.has(n.id) ? { ...n, folderPath, folderId } : n))
+    );
+    try {
+      await notesRepo.batchMoveNotesToFolder(ids, folderPath, folderId);
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to batch move notes to folder:', err);
+    }
+  };
+
+  const batchTogglePin = async (ids: string[], pin: boolean) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setNotes((prev) =>
+      prev.map((n) => (idSet.has(n.id) ? { ...n, isPinned: pin } : n))
+    );
+    try {
+      await notesRepo.batchTogglePinNotes(ids, pin);
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to batch toggle pin:', err);
+    }
+  };
+
+  const batchArchiveNotes = async (ids: string[], archive: boolean) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const newStatus = archive ? 'archived' : 'active';
+    setNotes((prev) =>
+      prev.map((n) => (idSet.has(n.id) ? { ...n, status: newStatus } : n))
+    );
+    try {
+      await notesRepo.batchArchiveNotes(ids, archive);
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to batch archive notes:', err);
+    }
+  };
+
+  const batchRestoreNotes = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setNotes((prev) =>
+      prev.map((n) => (idSet.has(n.id) ? { ...n, status: 'active' } : n))
+    );
+    try {
+      await notesRepo.batchRestoreNotes(ids);
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to batch restore notes:', err);
+    }
+  };
+
+  const batchPermanentlyDeleteNotes = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    setNotes((prev) => prev.filter((n) => !idSet.has(n.id)));
+    setTasks((prev) => prev.filter((t) => !t.noteId || !idSet.has(t.noteId)));
+    try {
+      await notesRepo.batchPermanentlyDeleteNotes(ids);
+      for (const id of ids) {
+        await tasksRepo.syncNoteChecklists(id, '', 'apricot', []);
+      }
+    } catch (err) {
+      console.warn('Failed to batch permanently delete notes:', err);
+    }
+  };
+
   const createFolder = async (name: string, parentPath?: string): Promise<DBFolder> => {
     const cleanName = name.trim().replace(/^\/+|\/+$/g, '');
     const cleanParent = (parentPath || '').trim().replace(/^\/+|\/+$/g, '');
@@ -798,6 +896,12 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         restoreNote,
         permanentlyDeleteNote,
         emptyTrash,
+        batchDeleteNotes,
+        batchMoveNotesToFolder,
+        batchTogglePin,
+        batchArchiveNotes,
+        batchRestoreNotes,
+        batchPermanentlyDeleteNotes,
         createFolder,
         renameFolder,
         deleteFolder,
