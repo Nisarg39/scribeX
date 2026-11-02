@@ -1,10 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TextInput, Pressable, Image, ScrollView, Platform, Modal } from 'react-native';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { View, Text, TextInput, Pressable, Image, ScrollView, Platform, Modal, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Clipboard from 'expo-clipboard';
 import { useTheme } from '../../../theme';
 import { UniversalBlockWrapper } from '../UniversalBlockWrapper';
+import { ocrEngine } from '../../../core/ocr';
+import type { OcrFilterMode, OcrExtractionResult } from '../../../core/ocr';
 import {
   Camera,
   Upload,
@@ -19,16 +21,19 @@ import {
   Eye,
   Columns,
   Trash2,
+  RefreshCw,
 } from 'lucide-react-native';
 
 export interface ScanBlockMetadata {
   documentName?: string;
   imageUrl?: string;
+  rawImageUrl?: string;
   ocrText?: string;
   confidence?: number;
   language?: string;
-  filter?: 'natural' | 'contrast' | 'bw';
+  filter?: OcrFilterMode;
   capturedAt?: string;
+  pageCount?: number;
 }
 
 export interface ScanBlockProps {
@@ -125,24 +130,114 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
   const [ocrText, setOcrText] = useState(metadata.ocrText || content || '');
   const [confidence, setConfidence] = useState(metadata.confidence || 98.6);
   const [activeTab, setActiveTab] = useState<'split' | 'image' | 'text'>('split');
-  const [filter, setFilter] = useState<'natural' | 'contrast' | 'bw'>(metadata.filter || 'contrast');
+  const [filter, setFilter] = useState<OcrFilterMode>(metadata.filter || 'contrast');
   const [isCopied, setIsCopied] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isProcessingOcr, setIsProcessingOcr] = useState(false);
+  const [ocrProgressText, setOcrProgressText] = useState<string>('');
 
+  const rawSourceRef = useRef<string>(metadata.rawImageUrl || metadata.imageUrl || '');
   const fileInputRef = useRef<any>(null);
   const videoRef = useRef<any>(null);
   const streamRef = useRef<any>(null);
 
   // Sync state if props change externally
   useEffect(() => {
-    if (metadata.imageUrl && metadata.imageUrl !== imageUrl) {
+    if (metadata.imageUrl !== undefined && metadata.imageUrl !== imageUrl) {
       setImageUrl(metadata.imageUrl);
     }
-    if (metadata.ocrText && metadata.ocrText !== ocrText) {
+    if (metadata.ocrText !== undefined && metadata.ocrText !== ocrText) {
       setOcrText(metadata.ocrText);
     }
-  }, [metadata]);
+    if (metadata.rawImageUrl) {
+      rawSourceRef.current = metadata.rawImageUrl;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metadata.imageUrl, metadata.ocrText, metadata.rawImageUrl]);
+
+  // Real on-device OCR pipeline for both Images and PDFs
+  const runOcrPipeline = useCallback(
+    async (
+      source: string,
+      docName: string,
+      filterMode: OcrFilterMode = filter
+    ) => {
+      setIsProcessingOcr(true);
+      setOcrProgressText('Initializing on-device OCR...');
+      setDocumentName(docName);
+      rawSourceRef.current = source;
+
+      const isPdf =
+        docName.toLowerCase().endsWith('.pdf') ||
+        source.startsWith('data:application/pdf') ||
+        source.toLowerCase().includes('.pdf');
+
+      // For direct images, set preview immediately while OCR recognizes text
+      if (!isPdf) {
+        setImageUrl(source);
+      }
+
+      try {
+        let result: OcrExtractionResult;
+
+        if (isPdf) {
+          setOcrProgressText('Analyzing PDF pages...');
+          result = await ocrEngine.extractFromPdf(source, {
+            filter: filterMode,
+            onProgress: (info) => {
+              const pct = Math.round(info.progress * 100);
+              setOcrProgressText(`${info.status} (${pct}%)`);
+            },
+          });
+        } else {
+          setOcrProgressText('Preprocessing document...');
+          result = await ocrEngine.extractFromImage(source, {
+            filter: filterMode,
+            onProgress: (info) => {
+              const pct = Math.round(info.progress * 100);
+              setOcrProgressText(`${info.status} (${pct}%)`);
+            },
+          });
+        }
+
+        const finalImage = result.processedImageUrl || source;
+        const finalConfidence = result.confidence || 98.5;
+        const finalDocName = docName || (isPdf ? 'Scanned_Document.pdf' : 'Scanned_Document.jpg');
+
+        setImageUrl(finalImage);
+        setDocumentName(finalDocName);
+        setOcrText(result.text);
+        setConfidence(finalConfidence);
+        setIsProcessingOcr(false);
+        setOcrProgressText('');
+
+        onUpdateScan({
+          documentName: finalDocName,
+          imageUrl: finalImage,
+          rawImageUrl: source,
+          ocrText: result.text,
+          confidence: finalConfidence,
+          filter: filterMode,
+          pageCount: result.pageCount,
+          capturedAt: new Date().toISOString(),
+        });
+      } catch (err: any) {
+        console.error('On-device OCR pipeline error:', err);
+        setIsProcessingOcr(false);
+        setOcrProgressText('');
+        const errorMsg = `[OCR Notice: ${err?.message || 'Text could not be extracted'}]\n\nImage captured successfully.`;
+        setOcrText(errorMsg);
+        onUpdateScan({
+          documentName: docName,
+          imageUrl: source,
+          rawImageUrl: source,
+          ocrText: errorMsg,
+          confidence: 80.0,
+        });
+      }
+    },
+    [filter, onUpdateScan]
+  );
 
   // Handle native / web camera stream
   const handleStartCamera = async () => {
@@ -156,7 +251,7 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
         });
         if (!result.canceled && result.assets?.[0]) {
           const asset = result.assets[0];
-          simulateOcrExtraction(asset.uri, asset.fileName || `Camera_Scan_${Date.now()}.jpg`);
+          runOcrPipeline(asset.uri, asset.fileName || `Camera_Scan_${Date.now()}.jpg`);
         }
       } catch (err) {
         console.warn('Mobile camera launch error:', err);
@@ -195,7 +290,7 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
         });
         if (!docResult.canceled && docResult.assets?.[0]) {
           const asset = docResult.assets[0];
-          simulateOcrExtraction(asset.uri, asset.name || `Scanned_Doc_${Date.now()}.jpg`);
+          runOcrPipeline(asset.uri, asset.name || `Scanned_Doc_${Date.now()}.jpg`);
         }
       } catch (err) {
         console.warn('Mobile document picker error:', err);
@@ -224,7 +319,7 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const snappedUrl = canvas.toDataURL('image/jpeg', 0.85);
         handleStopCamera();
-        simulateOcrExtraction(snappedUrl, 'Camera_Scan_' + Date.now() + '.jpg');
+        runOcrPipeline(snappedUrl, `Camera_Scan_${Date.now()}.jpg`);
       }
     }
   };
@@ -236,43 +331,29 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
     reader.onload = (event) => {
       const result = event.target?.result as string;
       if (result) {
-        simulateOcrExtraction(result, file.name);
+        runOcrPipeline(result, file.name);
       }
     };
     reader.readAsDataURL(file);
   };
 
-  const simulateOcrExtraction = (img: string, docName: string) => {
-    setIsProcessingOcr(true);
-    setImageUrl(img);
-    setDocumentName(docName);
+  const handleFilterChange = async (mode: OcrFilterMode) => {
+    setFilter(mode);
+    onUpdateScan({ filter: mode });
+    // If we have the source document, re-run with the updated filter
+    if (rawSourceRef.current && !isProcessingOcr) {
+      await runOcrPipeline(rawSourceRef.current, documentName, mode);
+    }
+  };
 
-    // Fast sub-second simulated local OCR inference engine
-    setTimeout(() => {
-      const extracted = `DOCUMENT SCAN • ${docName.toUpperCase()}
-Capture Timestamp: ${new Date().toLocaleTimeString()}
-Extracted Coordinates: Rect(x=0, y=0, w=100%, h=100%)
-
-Text Content:
-This document was captured and digitized by the ScribeX on-device scanner.
-High-contrast perspective edge filters have been applied.
-Text fidelity is preserved and ready for synthesis by Friday AI.`;
-      
-      const newConfidence = 98.7;
-      setOcrText(extracted);
-      setConfidence(newConfidence);
-      setIsProcessingOcr(false);
-      onUpdateScan({
-        documentName: docName,
-        imageUrl: img,
-        ocrText: extracted,
-        confidence: newConfidence,
-        capturedAt: new Date().toISOString(),
-      });
-    }, 700);
+  const handleRerunOcr = async () => {
+    if (rawSourceRef.current && !isProcessingOcr) {
+      await runOcrPipeline(rawSourceRef.current, documentName, filter);
+    }
   };
 
   const handleApplyPreset = (preset: typeof PRESETS[0]) => {
+    rawSourceRef.current = preset.imageUrl;
     setImageUrl(preset.imageUrl);
     setDocumentName(preset.documentName);
     setOcrText(preset.ocrText);
@@ -280,6 +361,7 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
     onUpdateScan({
       documentName: preset.documentName,
       imageUrl: preset.imageUrl,
+      rawImageUrl: preset.imageUrl,
       ocrText: preset.ocrText,
       confidence: preset.confidence,
       capturedAt: new Date().toISOString(),
@@ -330,14 +412,14 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
       onStartDrag={onStartDrag}
       headerRightContent={
         <View className="flex-row items-center gap-2">
-          {imageUrl && (
+          {imageUrl ? (
             <View className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-cyan-500/15 border border-cyan-500/30">
               <Sparkles size={11} color="#06B6D4" />
               <Text className="text-[10px] font-bold text-cyan-400">
                 {isProcessingOcr ? 'Extracting...' : `OCR ${confidence}%`}
               </Text>
             </View>
-          )}
+          ) : null}
           {onDelete && (
             <Pressable
  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -356,7 +438,7 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf"
           capture="environment"
           style={{ display: 'none' }}
           onChange={handleFileUpload}
@@ -373,13 +455,24 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
             Camera & Document Scanner with OCR
           </Text>
           <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center max-w-sm mb-4 leading-relaxed">
-            Snap physical paper notes, whiteboards, or invoices with edge rectification and sub-second OCR text extraction.
+            Snap physical paper notes, whiteboards, or invoices with edge rectification and on-device OCR text extraction.
           </Text>
+
+          {/* Real-time processing indicator while initial document loads */}
+          {isProcessingOcr && (
+            <View className="flex-row items-center gap-2 mb-4 px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20">
+              <ActivityIndicator size="small" color="#06B6D4" />
+              <Text className="text-xs font-semibold text-cyan-400">
+                {ocrProgressText || 'Extracting on-device text...'}
+              </Text>
+            </View>
+          )}
 
           {/* Action Buttons */}
           <View className="flex-row flex-wrap items-center justify-center gap-2.5 mb-5">
             <Pressable
               onPress={handleStartCamera}
+              disabled={isProcessingOcr}
               className="flex-row items-center gap-2 px-4 py-2 rounded-xl bg-cyan-500 active:scale-95 shadow-sm"
             >
               <Camera size={15} color="#FFFFFF" />
@@ -388,6 +481,7 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
 
             <Pressable
               onPress={handleTriggerUpload}
+              disabled={isProcessingOcr}
               className="flex-row items-center gap-2 px-4 py-2 rounded-xl bg-light-surface dark:bg-white/10 border border-light-border dark:border-white/10 active:scale-95"
             >
               <Upload size={14} color={isDark ? '#F4F4F5' : '#18181B'} />
@@ -491,10 +585,8 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
               {(['natural', 'contrast', 'bw'] as const).map((mode) => (
                 <Pressable
                   key={mode}
-                  onPress={() => {
-                    setFilter(mode);
-                    onUpdateScan({ filter: mode });
-                  }}
+                  onPress={() => handleFilterChange(mode)}
+                  disabled={isProcessingOcr}
                   className={`px-1.5 py-0.5 rounded ${
                     filter === mode ? 'bg-cyan-500/20 text-cyan-400' : ''
                   }`}
@@ -508,6 +600,17 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
                   </Text>
                 </Pressable>
               ))}
+
+              <Pressable
+                onPress={handleRerunOcr}
+                disabled={isProcessingOcr}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                className="ml-1 px-1.5 py-0.5 rounded bg-cyan-500/10 hover:bg-cyan-500/20 active:scale-95 flex-row items-center gap-1"
+                accessibilityLabel="Re-scan document"
+              >
+                <RefreshCw size={10} color="#06B6D4" />
+                <Text className="text-[10px] font-medium text-cyan-400">Re-scan</Text>
+              </Pressable>
             </View>
           </View>
 
@@ -554,11 +657,20 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
                     </Text>
                   </View>
 
+                  {isProcessingOcr && (
+                    <View className="mb-2 p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex-row items-center gap-2">
+                      <ActivityIndicator size="small" color="#06B6D4" />
+                      <Text className="text-[11px] font-medium text-cyan-400">
+                        {ocrProgressText || 'Extracting on-device text...'}
+                      </Text>
+                    </View>
+                  )}
+
                   <TextInput
                     multiline
                     value={ocrText}
                     onChangeText={handleOcrTextChange}
-                    placeholder="Extracted OCR text will appear here..."
+                    placeholder={isProcessingOcr ? "Extracting on-device OCR text..." : "Extracted OCR text will appear here..."}
                     placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
                     className="text-xs font-mono leading-relaxed text-light-textPrimary dark:text-dark-textPrimary min-h-[180px] p-0 outline-none"
                     style={{ textAlignVertical: 'top' }}
@@ -596,8 +708,21 @@ Text fidelity is preserved and ready for synthesis by Friday AI.`;
           <View className="flex-row items-center justify-between pt-1">
             <Pressable
               onPress={() => {
+                onFocus?.();
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                rawSourceRef.current = '';
                 setImageUrl('');
                 setOcrText('');
+                setDocumentName('Scanned Document');
+                setIsProcessingOcr(false);
+                setOcrProgressText('');
+                onUpdateScan({
+                  documentName: 'Scanned Document',
+                  imageUrl: '',
+                  rawImageUrl: '',
+                  ocrText: '',
+                  pageCount: 1,
+                });
               }}
               className="flex-row items-center gap-1.5 px-2.5 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10 active:scale-95"
             >

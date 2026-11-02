@@ -594,20 +594,18 @@ export const useEditorState = ({
     metadata?: Record<string, any>
   ) => {
     const currentBlocks = blocksRef.current;
-    let nextBlocks: ComposableBlock[] = [];
-    setBlocks((prevBlocks) => {
-      nextBlocks = prevBlocks.map((b) =>
-        b.id === blockId
-          ? {
-              ...b,
-              type,
-              content,
-              metadata: metadata !== undefined ? metadata : b.metadata,
-            }
-          : b
-      );
-      return nextBlocks;
-    });
+    const nextBlocks: ComposableBlock[] = currentBlocks.map((b) =>
+      b.id === blockId
+        ? {
+            ...b,
+            type,
+            content,
+            metadata: metadata !== undefined ? metadata : b.metadata,
+          }
+        : b
+    );
+    blocksRef.current = nextBlocks;
+    setBlocks(nextBlocks);
 
     actionHistory.recordAction({
       tier: 2,

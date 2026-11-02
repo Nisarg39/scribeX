@@ -940,11 +940,11 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
             if (onUpdateBlock) {
               onUpdateBlock({
                 metadata: nextMeta,
-                content: scanData.ocrText || block.content,
+                content: scanData.ocrText !== undefined ? scanData.ocrText : block.content,
               });
             } else {
               onUpdateMetadata(nextMeta);
-              if (scanData.ocrText) onUpdateContent(scanData.ocrText);
+              if (scanData.ocrText !== undefined) onUpdateContent(scanData.ocrText);
             }
           }}
           onConvertToText={(text) => {

@@ -32,8 +32,6 @@ Remaining Tasks to fix
 23 - [x]impliment on device search functionality using database
 23.1 - [x] impliment filter option for notes list in home
 23.2 - fix the document ocr block issue which is giving error and also check all the fucntionalities that it is working or not
-24 - simplify the cards of the home screen and see what to do for the weired text showing up in the cards due to custom blocks detection not there in the home screen
-25 - impliment scroll based pagination to the notes cards list in the home screen
 26 - long press gesture to select multiple notes and then perform actions like delete, move to folder, share, etc in the home screen and make sure it works perfectly for all the platforms and when the multiple selection is active there should be a top action bar that should display the number of selected notes and the actions that can be performed on them and also there should be a back button to deselect all the notes and go back to the normal mode
 27 - memory management for web platform currently i just saw 6.5 gb tab resource so we need to make this optimised
 
