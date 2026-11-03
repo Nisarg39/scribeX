@@ -6,11 +6,11 @@ This document defines the production technical architecture for ScribeX - Friday
 
 ### Core Architectural Pillars
 0. **User Journey Starts with Friction-Free Manual Note Taking First, AI Assistant Second:** The foundation of ScribeX is a world-class, local-first note-taking experience that works with zero friction and zero mandatory AI setup. The user can immediately capture ideas, organize folders, tag items, write rich blocks, track tasks, and link notes with sub-5ms local SQLite speed. The AI assistant ("Friday") is layered on top of this rock-solid note engine as an intelligent companion rather than an intrusive gatekeeper.
-1. **Zero-Downtime 24/7 Availability (Lightweight Cloud VPS):** The core FastAPI backend and embedded memory engine run on an always-on lightweight Linux VPS. The assistant remains $100\%$ operational for note-taking, context retrieval, daily briefings, and planning even when the user's personal PC is powered off.
-2. **Sub-Millisecond AI Context Retrieval (Embedded VPS Storage):** Instead of making slow network hops to external cloud databases, the VPS stores the Markdown Context Vault, Vector Index, and Temporal Knowledge Graph directly on its local NVMe SSD. FastAPI retrieves context in $< 5\text{ ms}$.
-3. **True Local-First Multi-Device Concurrency (SQLite Operational Core + Resilient Sync):** Every client device (iOS, Android, Desktop Web) maintains a local SQLite replica (`expo-sqlite` with OPFS on Web). The app opens instantly ($0\text{ ms}$ network wait) and writes optimistically. Real-time syncing uses an event-sourced revision protocol (`sync_rev`) over WebSockets as an instant push notification ('doorbell'), backed by guaranteed revision catch-up upon reconnection and an HTTP REST fallback endpoint. The central SQLite database serves as the operational synchronization engine, which asynchronously projects updates to the Git Markdown Vault.
-4. **Decoupled Remote PC Agentic Execution:** The user's personal PC runs a lightweight background daemon that connects outbound to the Cloud VPS over an encrypted WebSocket tunnel. When the PC is online, it executes tasks via any configured CLI AI agent (Claude Code, Gemini CLI, Codex CLI, Aider, Goose, OpenCode). If the PC is offline, tasks are queued safely on the VPS until the PC comes online.
-5. **Day-1 SaaS-Ready Architecture (Zero-Rewrite Commercial Path):** Although initially implemented and deployed for a single user, all database schemas, sync logs, and filesystem vault paths strictly enforce a parameterized `user_id` convention (defaulting to `'default_user'`). This guarantees that transitioning to a multi-tenant commercial SaaS (detailed in `docs/SaaS_Architecture_and_Integration_Plan.md`) requires zero code or schema rewrites.
+1. **Zero-Cost Serverless Cloud Architecture (Supabase + Vercel):** The cloud operational core runs on Supabase (PostgreSQL with Realtime CDC subscriptions, Supabase Auth, and Row-Level Security), while AI orchestration and API routing execute on Next.js hosted on Vercel's free serverless tier. This delivers 24/7 high availability, instant autoscaling, and zero hosting expenses.
+2. **True Local-First Performance (< 5ms SQLite Writes) + Real-Time Cloud Mirroring:** The client device (iOS, Android, Desktop Web) operates directly against its local SQLite database (`expo-sqlite` on native, Wasm + IndexedDB on Web) for zero-latency UI response. When online, Supabase Realtime synchronization streams deltas bi-directionally via an event-sourced `sync_changelog` with monotonic `sync_rev` revision tracking.
+3. **Zero-Cost Media Vault via Google Drive API:** Rather than incurring expensive object storage or server disk bills, media assets (audio memos, camera scans, drawings, PDF attachments, images) are stored directly on the user's personal Google Drive via Google Drive API v3. Supabase and local SQLite tables store only lightweight asset links, file IDs, and extracted metadata.
+4. **Decoupled Remote PC Agentic Execution:** The user's personal PC runs a lightweight background daemon (`pc-agent-bridge`) that communicates with the Next.js API and Supabase Realtime channel. When the PC is online, it executes tasks via any configured CLI AI agent (Claude Code, Gemini CLI, Codex CLI, Aider, Goose, OpenCode) with an independent 3-stage verification loop.
+5. **Day-1 SaaS-Ready Architecture (Zero-Rewrite Commercial Path):** All database schemas, sync logs, and RLS policies enforce a parameterized `user_id` convention (tied to `auth.uid()`). This guarantees that transitioning to a multi-tenant commercial SaaS requires zero schema rewrites.
 
 ---
 
@@ -22,33 +22,39 @@ This document defines the production technical architecture for ScribeX - Friday
 |                                                                                   |
 |  +-------------------------+  +-------------------------+  +-------------------+  |
 |  |   Expo iOS / Android    |  |    Expo Desktop Web     |  |   Personal PC     |  |
-|  | (Voice, Share Sheet,    |  | (3-Pane IDE, Diff View, |  | Local Vault Mirror|  |
-|  |  Push Approvals, Notes) |  |  Manual Context Control)|  |                   |  |
+|  | (Voice, Camera Scan,    |  | (3-Pane Workspace,      |  | Local Vault Mirror|  |
+|  |  Multi-Select, Notes)   |  |  Manual Context Control)|  |                   |  |
 |  +------------+------------+  +------------+------------+  +---------+---------+  |
 |               |                            |                         |            |
-|  [Local SQLite + MMKV Cache]  [IndexedDB / OPFS SQLite]   [Local Git Workspace]   |
+|  [Local SQLite + MMKV Cache]  [IndexedDB / Wasm SQLite]   [Local Git Workspace]   |
 +---------------+----------------------------+-------------------------+------------+
                 |                            |                         |
                 +----------------------------+-------------------------+
                                              |
-                      Bidirectional WSS (Real-Time Delta Sync & RPC)
+              HTTPS REST & Supabase Realtime WebSocket Subscriptions
                                              |
 +--------------------------------------------v--------------------------------------+
-|                     24/7 LIGHTWEIGHT CLOUD VPS (FastAPI Core)                     |
+|             SERVERLESS CLOUD ARCHITECTURE (Zero Hosting Cost Model)               |
 |                                                                                   |
-|  +-----------------------------------------------------------------------------+  |
-|  |                        FastAPI Async Application Server                     |  |
-|  |  - Universal Intake & Clarification Router   - Multi-Device Delta Sync Hub  |  |
-|  |  - 4-Layer Memory Retrieval Orchestrator     - Manual Edit Diff Learner     |  |
-|  |  - Proactive Scheduler (APScheduler)         - Remote PC Task Dispatcher    |  |
-|  +------+------------------------------+------------------------------+--------+  |
-|         | (< 5ms Local SSD Read)       | (< 5ms Local SSD Read)       |           |
-|  +------v---------------+    +---------v--------------+    +----------v--------+  |
-|  | Git-Backed Markdown  |    |   Embedded SQLite DB   |    | Embedded LanceDB  |  |
-|  |    Context Vault     |    | (WAL Mode: Temporal    |    | (Vector Semantic  |  |
-|  | (Notes, Profile,     |    |  Identity Graph, Tasks,|    |  Search & Hybrid  |  |
-|  |  Commit Diff History)|    |  Behavioral Ledger)    |    |  BM25 Index)      |  |
-|  +----------------------+    +------------------------+    +-------------------+  |
+|  +-------------------------------------+  +------------------------------------+  |
+|  |   SUPABASE REALTIME CLOUD CORE      |  |    NEXT.JS SERVERLESS AI ENGINE    |  |
+|  |   (PostgreSQL 15+ & Realtime CDC)   |  |    (Hosted on Vercel - $0/mo Free) |  |
+|  |  - notes, tasks, folders, tags, rels|  |  - Friday Multi-Modal Intake & RAG |  |
+|  |  - sync_changelog (delta ledger)    |  |  - Cloud Whisper STT Audio Proxy   |  |
+|  |  - Supabase Auth + Row-Level Sec    |  |  - Inbound Email & External Hooks  |  |
+|  |  - pgvector Semantic Embeddings     |  |  - Remote PC Task Dispatcher       |  |
+|  +------------------+------------------+  +------------------+-----------------+  |
+|                     |                                        |                    |
+|                     +--------------------+-------------------+                    |
+|                                          |                                        |
+|                          +---------------v---------------+                        |
+|                          |    GOOGLE DRIVE MEDIA VAULT   |                        |
+|                          |     (Google Drive API v3)     |                        |
+|                          |  - Zero-Cost Binary Storage   |                        |
+|                          |  - Camera Scans, Audio Memos  |                        |
+|                          |  - PDFs, Images & Attachments |                        |
+|                          |  - Secure Tokenized Web Links |                        |
+|                          +-------------------------------+                        |
 +--------------------------------------------+--------------------------------------+
                                              |
                   Encrypted Outbound WSS Tunnel (or Tailscale Mesh)
@@ -85,7 +91,7 @@ A single **Expo (React Native)** codebase targets **iOS, Android, and Desktop/Mo
 
 ### 3.2. Adaptive Surface Design (Single Codebase, Tailored UX)
 * **Mobile Surface (iOS & Android):**
-  * **Zero-Friction Universal Input Bar:** Persistent bottom bar supporting text, file attachments, and instant voice recording (streamed to FastAPI for transcription and intake).
+  * **Zero-Friction Universal Input Bar:** Persistent bottom bar supporting text, file attachments, and instant voice recording (streamed to Next.js API for transcription and intake).
   * **Native OS Share Extension (`expo-share-intent`):** Allows sharing PDFs, screenshots, voice memos, or URLs directly from any mobile app into the assistant.
   * **Actionable Push Notifications (`expo-notifications`):** Interactive notification buttons (`[Approve]`, `[Reject]`, `[Reply]`) for answering the AI's clarifying questions or approving sensitive Remote PC CLI actions without opening the full app.
 * **Desktop Web Surface:**
@@ -96,76 +102,71 @@ A single **Expo (React Native)** codebase targets **iOS, Android, and Desktop/Mo
 
 ---
 
-## 4. Backend Architecture: FastAPI on Lightweight Cloud VPS
+## 4. Backend Architecture: Supabase Realtime Database, Next.js Serverless AI (Vercel), & Google Drive Media Vault
 
-### 4.1. VPS Specifications & Co-Located Storage Advantage
-* **Target Hosting:** Any lightweight Linux VPS ($2\text{ vCPU}$, $4\text{ GB RAM}$, $40\text{ GB NVMe SSD}$ — e.g., Hetzner, DigitalOcean, Linode, or AWS Lightsail).
-* **Why Co-Located Storage on the VPS:** By storing the Git Markdown Vault, SQLite database, and LanceDB vector index on the VPS's local NVMe filesystem rather than a separate cloud database server, FastAPI performs multi-step hybrid retrieval in $< 5\text{ ms}$ with zero network overhead.
+### 4.1. Zero-Cost Serverless & Cloud Infrastructure Advantage
+Rather than maintaining an expensive dedicated Linux VPS server ($20–$50/mo), the production architecture adopts a **Zero-Cost Serverless Cloud Architecture** coordinating three specialized cloud tiers on their generous free offerings:
+1. **Supabase Cloud (PostgreSQL 15+ & Realtime CDC):** Authoritative operational store, instant WebSocket real-time change broadcasting, secure authentication, and granular Row-Level Security (`RLS`).
+2. **Next.js on Vercel (Hobby Serverless Tier — $0/mo):** Hosts serverless AI API orchestration routes (`/api/ai/*`), Friday cognitive workflows, Cloud Whisper STT proxy, and external inbound webhook receivers.
+3. **Google Drive Media Vault (Google Drive API v3):** Provides zero-cost, persistent media storage for audio recordings, camera scans, drawings, and documents, leveraging each user's free 15GB Google Drive storage. Note records and the `assets` table only store lightweight metadata and authenticated file links.
 
 ### 4.2. Core Backend Tech Stack
-* **API Framework:** **FastAPI** (Python 3.12+, Uvicorn with ASGI workers, native `asyncio` and `WebSockets`).
-* **AI Orchestration & Structured Outputs:** **PydanticAI** or **LangGraph** + **LiteLLM** (allowing seamless switching between Gemini, Claude, and OpenAI models for the Main AI brain).
-* **Embedded Databases (Zero External DB Maintenance):**
-  * **Operational Core: Embedded SQLite (`aiosqlite` in `WAL` mode + `FTS5`):** Serves as the high-throughput operational core on the VPS. Handles the real-time multi-entity device sync ledger (`sync_changelog` with monotonically increasing `sync_rev`), active notes with composable block AST (`notes`), unified task entities (`tasks`), binary media ledger (`assets`), knowledge graph relationships (`entity_relations`), and the Temporal Identity timeline ("Versions of Me").
-  * **Projected Document Layer: Git-Backed Markdown Vault (`GitPython`):** Asynchronously projected from SQLite changes on the VPS. Every note and profile document is maintained as a human-readable Extended Markdown AST `.md` file with YAML frontmatter inside a local Git repository, serving as the version-controlled document archive, off-site backup, and the primary source for the manual edit diff-learning pipeline and Remote PC CLI agents.
-  * **Semantic Memory: LanceDB (Embedded Disk Mode):** Serverless, file-based vector database stored on the VPS disk for semantic chunk search across notes and uploaded files.
-* **Document & Audio Ingestion:** `MarkItDown` / `PyMuPDF` + Vision LLM pipeline for documents, spreadsheets, and images, paired with a lightweight audio transcription pipeline (`faster-whisper` / Whisper API) for persistent voice note capture.
-* **Proactive Background Engine:** `APScheduler` (AsyncIOScheduler) running inside FastAPI for daily priority recalculation, morning briefings, and periodic "sleep-cycle" memory consolidation.
+* **Cloud Database & Realtime Sync Hub:** **Supabase** (PostgreSQL 15+, Supabase Realtime via PostgreSQL CDC, Row-Level Security, Supabase Auth).
+  * Stores operational tables: `notes`, `folders`, `tags`, `note_tags`, `tasks`, `assets`, `entity_relations`, and `sync_changelog`.
+  * Built-in vector support via **`pgvector`** for semantic search embeddings across note content.
+* **Serverless AI & API Gateway:** **Next.js (App Router)** hosted on **Vercel**:
+  * Edge & Node.js Serverless Route Handlers (`/api/ai/intake`, `/api/ai/chat`, `/api/ai/briefing`, `/api/ai/transcribe`, `/api/webhooks/*`).
+  * LLM Orchestration via Vercel AI SDK or direct provider SDKs (Gemini 1.5 Pro, Claude 3.5 Sonnet, GPT-4o) with structured JSON outputs.
+  * Audio transcription proxy (Cloud Whisper STT) for mobile recordings and live dictation.
+* **Media & Asset Vault:** **Google Drive API v3**:
+  * User-authorized OAuth 2.0 or service account upload.
+  * Files stored in an isolated folder (`ScribeX_Vault/assets/`) on the user's personal Google Drive.
+  * Zero hosting disk costs, zero cloud egress fees; note records store Google Drive file IDs and web URLs.
+* **Client Database (Local-First):** `expo-sqlite` (native SQLite on iOS/Android, `sql.js` + IndexedDB on Web) maintaining instant sub-5ms local reads and writes.
 
 ---
 
 ## 5. Hybrid Local-First Storage & Real-Time Multi-Device Delta Sync
 
-To allow you to use your phone, tablet, and desktop web browser **concurrently** with instant local speed, offline resilience, and zero data loss, the platform uses an **Operational Block SQLite Delta Sync + Canonical Markdown AST Projection Protocol**.
+To allow you to use your phone, tablet, and desktop web browser **concurrently** with instant local speed, offline resilience, and zero data loss, the platform uses a **Local SQLite Operational Core + Supabase Realtime Delta Sync + Google Drive Media Vault Protocol**.
 
-### 5.1. Architecture of Truth: Decoupled Operational & Projection Layers
-To ensure maximum speed without file-locking bottlenecks:
-1. **Operational Layer (Device-to-Device Sync):** The central **SQLite database on the VPS** (and the local `expo-sqlite` replica on each client) serves as the authoritative real-time operational state. All client devices sync directly against this SQLite core. High-frequency updates (typing blocks, checking off tasks, updating priorities, creating folders, tagging) occur as atomic SQLite transactions.
-   * `folders`: Stores hierarchical project containers with recursive `parent_id` and physical vault directory paths.
-   * `tags` & `note_tags`: Stores multi-dimensional classification tags and many-to-many note associations.
-   * `notes`: Stores `content_markdown` along with cached `blocks_json` for instant UI rendering across all 20 composable block types, plus folder and tag links.
-   * `tasks`: Stores single-source-of-truth task entities shared between embedded note blocks and the global task engine.
-   * `assets`: Tracks binary media (audio, PDFs, images, vector sketches) with processing states and extracted OCR/Whisper text.
-   * `entity_relations`: Stores bidirectional knowledge graph edges (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`).
+### 5.1. Architecture of Truth: Decoupled Local Operational & Cloud Sync Layers
+To ensure maximum speed without network blocking:
+1. **Local Operational Layer (Zero-Latency Core):** The client device writes immediately to local SQLite (`expo-sqlite` on native, `sql.js` + IndexedDB on Web) with sub-5ms latency. High-frequency operations (typing blocks, checking off tasks, updating priorities, creating folders, tagging) occur as atomic local SQLite transactions.
+   * `folders`: Hierarchical project containers with recursive `parent_id`.
+   * `tags` & `note_tags`: Multi-dimensional classification tags and many-to-many note associations.
+   * `notes`: Stores `content_markdown` along with cached `blocks_json` for instant UI rendering across all composable block types.
+   * `tasks`: Single-source-of-truth task entities shared between embedded note blocks and the global task engine.
+   * `assets`: Tracks binary media metadata (Google Drive file IDs, web URLs, processing states, and extracted OCR/Whisper text).
+   * `entity_relations`: Bidirectional knowledge graph edges (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`).
    * `sync_changelog`: Event-sourced change ledger tracking monotonic `sync_rev` deltas for all operational entities.
-2. **Projection Layer (Git Markdown Vault & LanceDB):** When a note transaction commits in the operational SQLite database, an asynchronous background task serializes the composable blocks into a clean **Extended Markdown AST** `.md` file in the Git Vault and refreshes the LanceDB vector chunks. This completely isolates live UI typing from disk-level Git commit overhead while ensuring:
-   * The Git Vault remains 100% human-readable and mirrors the physical folder hierarchy (`data/vault/{user_id}/folders/...`).
-   * Remote PC CLI agents (Claude Code, Gemini CLI) can read and edit notes natively using standard text tools.
-   * Diff learning works reliably without proprietary file corruption.
+2. **Cloud Operational Layer (Supabase PostgreSQL + Realtime CDC):** When online, local deltas are pushed to Supabase PostgreSQL, and Supabase Realtime broadcasts change-data-capture (CDC) events to all connected tenant devices.
+3. **Media Vault Layer (Google Drive API):** When a user attaches a photo, scan, audio note, or PDF, the file binary is sent to Google Drive. The returned Google Drive file ID and web view link are saved in Supabase and local SQLite `assets` table. No heavy binaries ever hit Supabase database storage.
 
 ### 5.2. Local-First Reading & Optimistic Writes
-1. **Instant Local Reads ($0\text{ ms}$):** When you open the Expo app on any device, the UI renders immediately from the local `expo-sqlite` database replica.
-2. **Optimistic Local Writes:** When you edit a block or check off a task, the change writes immediately to your device's local SQLite storage with a `pending_sync: true` flag and queues for transmission to the VPS.
+1. **Instant Local Reads ($0\text{ ms}$):** When you open the Expo app on any device, the UI renders immediately from the local SQLite database replica.
+2. **Optimistic Local Writes:** When you edit a block or check off a task, the change writes immediately to your device's local SQLite storage with a `pending_sync: true` flag and queues for transmission to Supabase.
 
 ### 5.3. Resilient Multi-Device Sync Protocol (`sync_rev`) & Multi-Entity Changelog
-To guarantee that syncing is 100% reliable even when devices sleep, disconnect, or switch networks, the system decouples **data persistence** from the **transport connection**:
+To guarantee that syncing is 100% reliable even when devices sleep, disconnect, or switch networks:
 
-* **Event-Sourced Revision Counter (`sync_rev`):** Every operational row tracks a monotonically increasing integer `sync_rev`. The VPS maintains a `sync_changelog` table recording every incremental delta across entity types:
-  * `entity_type: 'folder'`: Folder creation, renaming, nested hierarchy updates, and color tokens.
-  * `entity_type: 'tag'`: Tag creation and metadata.
-  * `entity_type: 'note'`: Document metadata, `content_markdown`, and `blocks_json`.
-  * `entity_type: 'task'`: Title, completion status, priority, and due dates.
-  * `entity_type: 'relation'`: Knowledge graph connections and confidence scores.
-  * `entity_type: 'asset'`: Binary attachment processing state and extracted text.
-* **WebSocket as an Instant "Doorbell" Push:**
-  * When devices are online and connected via WebSocket (`wss://vps-domain/api/v1/ws/sync`), changes broadcast across devices in $< 50\text{ ms}$.
-  * The WebSocket does *not* need to be permanently reliable. If a device drops Wi-Fi or goes into background sleep, the WebSocket simply disconnects without losing data.
+* **Event-Sourced Revision Counter (`sync_rev`):** Every operational row tracks a monotonically increasing integer `sync_rev`. The `sync_changelog` table records every incremental delta across entity types (`folder`, `tag`, `note`, `task`, `relation`, `asset`).
+* **Supabase Realtime Subscriptions (Instant Push):**
+  * When devices are online, they subscribe to Supabase Realtime channels (`supabase.channel('user-sync')`). Changes broadcast across devices in $< 50\text{ ms}$.
+  * If a device disconnects or goes into background sleep, the WebSocket simply disconnects without losing data.
 * **Guaranteed Reconnection Catch-Up (State Reconciliation):**
-  * When a device reconnects (or wakes up from sleep), the client sends a handshake message with its highest known `local_sync_rev`.
-  * FastAPI queries `SELECT * FROM sync_changelog WHERE sync_rev > :local_sync_rev ORDER BY sync_rev ASC` and streams only the missing deltas down to the client.
-  * The client applies these deltas inside a local SQLite transaction and pushes any queued `pending_sync` local edits up to the VPS.
-* **HTTP REST Sync Fallback:**
-  * For environments where WebSockets are blocked by restrictive firewalls or corporate proxies, the client automatically falls back to standard HTTP endpoints:
-    * `POST /api/v1/sync/push` (upload local deltas)
-    * `POST /api/v1/sync/pull` (fetch deltas since `local_sync_rev`)
+  * When a device reconnects, the client queries Supabase: `SELECT * FROM sync_changelog WHERE sync_rev > :local_sync_rev ORDER BY sync_rev ASC`.
+  * The client applies these deltas inside a local SQLite transaction and pushes any queued `pending_sync` local edits up to Supabase.
+* **HTTPS REST Sync Fallback:**
+  * If Realtime WebSockets are blocked by restrictive firewalls, standard Supabase REST API queries (`/rest/v1/sync_changelog`) fetch deltas seamlessly.
 
 ### 5.4. Conflict Resolution Strategy
 * **Tasks & Metadata (Field-Level LWW):** For priority changes, tag updates, and task completions, SQLite uses field-level Last-Write-Wins (LWW) based on NTP-synchronized UTC timestamps (`updated_at`).
 * **Unified Task Model Synchronization:** Checking off a task embedded inside a meeting note immediately updates the `tasks` table and emits a `task` delta. The background projector simultaneously updates the `- [x]` marker in the note's `.md` file, keeping both views in perfect sync.
-* **Note Body Text (3-Way Merge & AI Reconciliation):** If two devices simultaneously edit blocks of the same note while offline, FastAPI detects the concurrent revision and runs a 3-way text merge (`diff3` / `git merge-file`) on the Markdown AST. If non-overlapping lines/blocks were edited, they merge cleanly. If conflicting edits overlap, both versions are preserved in a conflict block (`<<<<<<< LOCAL / >>>>>>> REMOTE`) and the Main AI assistant immediately prompts the user via a quick mobile notification or chat prompt to choose or synthesize the final text.
+* **Note Body Text (3-Way Merge & AI Reconciliation):** If two devices simultaneously edit blocks of the same note while offline, Next.js / Supabase detects the concurrent revision and runs a 3-way text merge (`diff3` / AST merge) on the Markdown AST. If non-overlapping lines/blocks were edited, they merge cleanly. If conflicting edits overlap, both versions are preserved in a conflict block (`<<<<<<< LOCAL / >>>>>>> REMOTE`) and the Main AI assistant immediately prompts the user via a quick mobile notification or chat prompt to choose or synthesize the final text.
 
 ### 5.5. Manual Edit Diff Learning Pipeline (Noise-Filtered)
-Because the VPS asynchronously projects all accepted note edits into the Markdown Git Vault:
+Because the system synchronizes all accepted note edits into the Markdown context store:
 * **AI Edits** are committed to Git with author: `ScribeX-AI <ai@assistant.local>`.
 * **Manual User Edits** are committed to Git with author: `User <user@assistant.local>`.
 * **Diff Learning Trigger:** Whenever a `user_manual` commit modifies a note previously created or organized by the AI, the **Diff Analyzer Worker** runs `git diff HEAD~1 HEAD`.
@@ -217,22 +218,22 @@ sync_rev: 142
 ```
 
 ### 5.7. Automated Off-Site Cloud Backup
-* Every commit to the VPS Git Vault and hourly SQLite snapshot (via `Litestream` or `rclone`) is automatically pushed to a **Private Git Repository (GitHub/GitLab)** and/or **Encrypted S3-Compatible Storage (Cloudflare R2 / Backblaze B2)**. If you ever migrate to a new VPS or new device, your entire life history restores in one command.
+* All notes and tables in Supabase are continuously backed up via point-in-time recovery (PITR) and automated daily snapshots. Media files are safeguarded by Google's native Drive redundancy. If you ever migrate to a new device, your entire vault restores in seconds from Supabase and Google Drive.
 
 ---
 
 ## 6. Technical Implementation of the 4-Layer Cognitive Memory
 
-| Memory Layer | Storage Medium on VPS | Technical Schema & Role |
+| Memory Layer | Storage Medium | Technical Schema & Role |
 | :--- | :--- | :--- |
-| **Layer 1: Core Identity & Vault Index (Always-Active)** | `_core/identity.md` + `_core/vault_index.json` (Cached in FastAPI RAM) | Injected into the system prompt of every Main AI call ($\sim 1,500\text{ tokens}$). Contains your current profile summary, active short/long-term goals, top priorities, and the directory map of all existing note groups. |
-| **Layer 2: Living Notes & Semantic Graph** | Markdown Vault (`.md` files with Extended AST) + SQLite `entity_relations` + `tasks` + LanceDB | Notes store composable blocks projected to Markdown. SQLite stores bidirectional graph edges (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`) and unified task entities so retrieval always pulls connected context. |
-| **Layer 3: Temporal Identity & Version Logs ("Versions of Me")** | SQLite `identity_timeline` + `task_history` + Git Commit Log | Bi-temporal table storing (`attribute`, `old_value`, `new_value`, `valid_from`, `valid_to`, `change_reason`, `git_commit_sha`). Tracks every evolution of your career, goals, mindset, and past tasks without overwriting history. |
-| **Layer 4: Behavioral & Preference Ledger** | `_core/behavioral_ledger.md` + SQLite `learned_preferences` | Stores structured rules learned from your response patterns and noise-filtered manual edit diffs (`category`, `preference_rule`, `confidence_score`, `source_diff_sha`). Dynamically shapes the AI's persona, questioning threshold, and filing logic. |
+| **Layer 1: Core Identity & Vault Index (Always-Active)** | Supabase `user_profile` table + `_core/identity.md` (Cached in Next.js Serverless runtime) | Injected into the system prompt of every Main AI call ($\sim 1,500\text{ tokens}$). Contains your current profile summary, active short/long-term goals, top priorities, and the directory map of all existing note groups. |
+| **Layer 2: Living Notes & Semantic Graph** | Supabase PostgreSQL (`notes`, `entity_relations`, `tasks`) + `pgvector` semantic embeddings | Notes store composable blocks projected to Markdown. PostgreSQL stores bidirectional graph edges (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`) and unified task entities so retrieval always pulls connected context. |
+| **Layer 3: Temporal Identity & Version Logs ("Versions of Me")** | Supabase `identity_timeline` + `task_history` table | Bi-temporal table storing (`attribute`, `old_value`, `new_value`, `valid_from`, `valid_to`, `change_reason`). Tracks every evolution of your career, goals, mindset, and past tasks without overwriting history. |
+| **Layer 4: Behavioral & Preference Ledger** | Supabase `learned_preferences` table + `_core/behavioral_ledger.md` | Stores structured rules learned from your response patterns and noise-filtered manual edit diffs (`category`, `preference_rule`, `confidence_score`). Dynamically shapes the AI's persona, questioning threshold, and filing logic. |
 
 ### The Ask-Before-Write Ambiguity Gate
-When you submit a new raw note or file to `POST /api/v1/intake`:
-1. The Main AI evaluates the input against **Layer 1** and **Layer 2** and returns a structured Pydantic schema:
+When you submit a new raw note or file to `POST /api/ai/intake` (Next.js App Router endpoint on Vercel):
+1. The Main AI evaluates the input against **Layer 1** and **Layer 2** and returns a structured schema:
    ```json
    {
      "clarity_score": 0.62,
@@ -243,20 +244,20 @@ When you submit a new raw note or file to `POST /api/v1/intake`:
      "proposed_actions": []
    }
    ```
-2. If `clarity_score < 0.85` or contradictions exist, FastAPI holds the note in a `staging_intake` state and pushes the clarifying question to your Expo app. Only after you reply does it commit the file update.
+2. If `clarity_score < 0.85` or contradictions exist, Next.js holds the note in a `staging_intake` record in Supabase and pushes the clarifying question to your Expo app. Only after you reply does it commit the note update.
 
 ---
 
 ## 7. Remote PC Agentic Execution & Pluggable CLI Daemon
 
-Because the FastAPI backend runs on a 24/7 Cloud VPS and your Personal PC is on your home/office network, the PC runs a lightweight Python service called the **`pc-agent-bridge`**.
+Because the Next.js and Supabase backend runs 24/7 in the cloud and your Personal PC is on your home/office network, the PC runs a lightweight Python service called the **`pc-agent-bridge`**.
 
 ### 7.1. Connectivity & Offline Resilience
-* **Zero Open Ports on PC:** The `pc-agent-bridge` initiates an outbound persistent WebSocket connection (`wss://vps-domain/api/v1/ws/pc-bridge`) authenticated with a long-lived Ed25519/JWT machine token (or connects over a private **Tailscale** mesh network).
+* **Zero Open Ports on PC:** The `pc-agent-bridge` initiates an outbound persistent connection / WebSocket authenticated with a machine token.
 * **PC Offline Task Queueing:** If you assign a PC task from your phone while your PC is turned off or asleep:
-  * FastAPI saves the Context-Enriched Execution Spec in the SQLite `pc_task_queue` table with status `QUEUED_WAITING_FOR_PC`.
-  * The moment your PC boots up and `pc-agent-bridge` connects, FastAPI automatically dispatches the queued task (or sends a push notification asking if you want to start it now).
-* **Automatic Vault Mirroring:** Whenever the PC is online, the `pc-agent-bridge` keeps a local mirror of your Markdown Vault in sync so local CLI agents can directly read any reference file or note on disk.
+  * Next.js saves the Context-Enriched Execution Spec in the Supabase `pc_task_queue` table with status `QUEUED_WAITING_FOR_PC`.
+  * The moment your PC boots up and `pc-agent-bridge` connects, the queued task is automatically dispatched (or a push notification is sent asking if you want to start it now).
+* **Automatic Vault Mirroring:** Whenever the PC is online, the `pc-agent-bridge` keeps a local mirror of your Markdown context files in sync so local CLI agents can directly read any reference file or note on disk.
 
 ### 7.2. Universal Pluggable CLI Adapter Configuration (`cli_agents.yaml`)
 On your PC, you can configure, add, or switch between any CLI AI agent by editing `cli_agents.yaml` (or toggling it from the Expo app UI):
@@ -300,22 +301,22 @@ agents:
 ```
 
 ### 7.3. The 3-Layer Independent Verification & Self-Correction Loop
-When the Main AI on the VPS dispatches a task to the `pc-agent-bridge`:
+When the Main AI dispatches a task to the `pc-agent-bridge`:
 
 1. **Pre-Execution Safety Checkpoint:**
    * The `pc-agent-bridge` verifies the target directory is inside `allowed_workspaces`.
    * If the directory is a Git repository, it records the pre-task `HEAD` hash and creates a safety snapshot (`git stash create`) so any failed execution can be rolled back cleanly.
 2. **Headless CLI Execution & Live Streaming:**
-   * The bridge spawns the selected CLI agent subprocess, streams live stdout/JSON events over WebSocket to FastAPI (visible in your Expo app), and intercepts any high-risk permission requests to trigger a mobile/web approval prompt.
+   * The bridge spawns the selected CLI agent subprocess, streams live stdout/JSON events over WebSocket / REST to Next.js and Supabase (visible in your Expo app), and intercepts any high-risk permission requests to trigger a mobile/web approval prompt.
 3. **3-Stage Verification Pipeline (Zero Blind Trust):**
    * **Stage 1 (Process Telemetry):** Captures process exit code, execution duration, and CLI agent output summary.
    * **Stage 2 (Deterministic Environment Proof):** The bridge runs independent verification commands *outside* the CLI agent:
      * `git status --porcelain` and `git diff` (proving exact lines changed).
      * File existence, checksums, and byte sizes for non-code tasks.
      * Custom verification command specified by the Main AI (e.g., `pytest`, `npm run build`, `ruff check`).
-   * **Stage 3 (Main AI Acceptance Review):** The bridge sends the deterministic proof bundle back to FastAPI. The Main AI compares the actual `git diff` and test results against your original task requirements.
-     * **If verification fails:** FastAPI automatically dispatches a corrective prompt back to the CLI agent (up to `max_retries = 3`).
-     * **If verification passes:** FastAPI marks the checklist item complete, logs the execution summary and diff in **Layer 3 (Task History)**, updates the relevant project notes in **Layer 2**, and notifies your Expo app.
+   * **Stage 3 (Main AI Acceptance Review):** The bridge sends the deterministic proof bundle back to Next.js. The Main AI compares the actual `git diff` and test results against your original task requirements.
+     * **If verification fails:** Next.js automatically dispatches a corrective prompt back to the CLI agent (up to `max_retries = 3`).
+     * **If verification passes:** Next.js marks the checklist item complete in Supabase, logs the execution summary and diff in **Layer 3 (Task History)**, updates the relevant project notes in **Layer 2**, and notifies your Expo app.
 
 ---
 
@@ -371,41 +372,35 @@ scribex/
 │   ├── app.json                        # Expo configuration
 │   └── package.json                    # Frontend dependencies
 │
-├── backend/                            # 24/7 Cloud VPS FastAPI Backend (Phase 2 & 3)
+├── backend/                            # Next.js Serverless AI & API Gateway (Phase 2 & 3 - Vercel)
 │   ├── app/
-│   │   ├── main.py                     # FastAPI entry point & lifespan events
-│   │   ├── core/
-│   │   │   ├── config.py               # VPS environment settings & paths
-│   │   │   └── security.py             # Auth & JWT verification
 │   │   ├── api/
-│   │   │   ├── sync_ws.py              # Multi-device WebSocket doorbell hub
-│   │   │   ├── sync_http.py            # HTTP REST delta sync fallback (/push, /pull)
-│   │   │   ├── assets.py               # Binary media upload & streaming (/assets/upload)
-│   │   │   ├── intake.py               # Friday universal intake & ambiguity gate (Phase 3)
-│   │   │   └── pc_bridge_ws.py         # Remote PC daemon WebSocket controller (Phase 4)
-│   │   ├── db/
-│   │   │   ├── schemas.sql             # Authoritative SQLite WAL schemas
-│   │   │   └── sqlite_db.py            # Async SQLite manager (aiosqlite)
-│   │   ├── storage/
-│   │   │   ├── git_vault.py            # GitPython commit, merge & diff engine
-│   │   │   ├── lancedb_store.py        # Embedded vector index (Phase 3)
-│   │   │   └── file_parser.py          # Whisper & document text extraction
-│   │   ├── agents/                     # Friday AI Brain & Multi-Agent Orchestrator (Phase 3)
-│   │   │   ├── orchestrator.py         # Friday assistant core logic
-│   │   │   ├── intake_agent.py         # Ask-Before-Write ambiguity gate
-│   │   │   ├── onboarding_agent.py     # Interactive discovery interview
-│   │   │   └── scheduler.py            # Daily briefings & memory consolidation
-│   │   └── memory/                     # 4-Layer Cognitive Memory (Phase 3)
-│   │       ├── layer1_identity.py      # Core Identity & Always-Active Index
-│   │       ├── layer2_vault.py         # Git Markdown Vault + LanceDB + Graph
-│   │       ├── layer3_temporal.py      # Bi-temporal "Versions of Me" & Task Logs
-│   │       └── layer4_learner.py       # Behavioral Ledger & Manual Git Diff Learner
-│   ├── data/                           # Mounted persistent NVMe volume on VPS
-│   │   ├── vault/                      # Git-backed Markdown context files (mirroring folders)
-│   │   ├── sqlite/                     # scribex_core.db
-│   │   └── lancedb/                    # Embedded vector index
-│   ├── Dockerfile
-│   └── pyproject.toml
+│   │   │   ├── ai/
+│   │   │   │   ├── intake/route.ts     # Friday universal intake & ambiguity gate
+│   │   │   │   ├── chat/route.ts       # Friday conversational assistant & tool-calling
+│   │   │   │   ├── briefing/route.ts   # Proactive morning briefings & priority recalculation
+│   │   │   │   └── transcribe/route.ts # Whisper STT audio proxy for mobile recordings
+│   │   │   ├── gdrive/
+│   │   │   │   ├── auth/route.ts       # Google Drive OAuth 2.0 flow
+│   │   │   │   └── upload/route.ts     # Google Drive file upload & permission generator
+│   │   │   └── webhooks/
+│   │   │       ├── email/route.ts      # Method 41: Inbound Email-to-Note parser
+│   │   │       └── integrations/route.ts # Method 42: External GitHub/GCal webhooks
+│   │   └── page.tsx                    # Optional web dashboard / status
+│   ├── lib/
+│   │   ├── supabaseAdmin.ts            # Supabase service role client
+│   │   ├── gdrive.ts                   # Google Drive API client
+│   │   └── ai/
+│   │       ├── FridayBrain.ts          # Cognitive orchestrator & prompt templates
+│   │       ├── memory.ts               # pgvector / semantic search retrieval
+│   │       └── ambiguityGate.ts        # Ask-Before-Write evaluation logic
+│   ├── supabase/
+│   │   └── migrations/
+│   │       ├── 001_initial_schema.sql  # notes, folders, tags, tasks, assets, relations
+│   │       ├── 002_rls_policies.sql    # Row-Level Security rules (auth.uid() = user_id)
+│   │       └── 003_realtime_setup.sql  # Supabase Realtime publication for sync_changelog
+│   ├── package.json                    # Next.js, Vercel AI SDK, @supabase/supabase-js, googleapis
+│   └── vercel.json                     # Vercel deployment & cron configurations
 │
 ├── pc-agent-bridge/                    # Lightweight Daemon installed on Personal PC (Phase 4)
 │   ├── bridge/
@@ -416,7 +411,7 @@ scribex/
 │   ├── cli_agents.yaml                 # Configurable CLI Agent Provider Registry
 │   └── pyproject.toml
 │
-└── docker-compose.vps.yml              # One-command deployment for Cloud VPS (FastAPI + Caddy HTTPS)
+└── package.json                        # Root monorepo workspace configuration
 ```
 
 ---
@@ -425,13 +420,16 @@ scribex/
 
 To build and test this systematically without getting overwhelmed, instruct your AI coding assistant to follow these phases starting from the **user's core journey first**:
 
-* **Phase 1: Universal Manual Note Engine & Local-First Canvas (Core User Journey) — `[ ] ACTIVE FOUNDATION`:**  
-  Build the client-side universal note application with sub-5ms local SQLite storage (`expo-sqlite` / OPFS), soft minimalist pastel design tokens (strictly avoiding generic cards or boxy layouts), composable block editor engine supporting all 20 content blocks and 42 manual input methods, hierarchical folders (with physical vault directory mirroring), multi-tags, starred favorites, pinning, 30-day recoverable trash, bidirectional cross-note links (`[[Note Title]]`), unified task engine (note checklist $\leftrightarrow$ global task board), and fast local full-text search (< 5ms via FTS5). *See [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md) and [Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md).*
-* **Phase 2: Resilient Client-Server Delta Sync & Multi-Device Vault Mirroring — `[ ] NEXT`:**  
-  Set up the 24/7 Cloud VPS FastAPI core with SQLite WAL operational tables (`sync_changelog`, `folders`, `tags`, `notes`, `tasks`, `assets`, `entity_relations`), real-time WebSocket doorbell push (< 50ms) with reconnection catch-up and HTTP REST fallback (`/push`, `/pull`), binary asset upload pipeline (`/api/v1/assets/upload`), and asynchronous Git Markdown Vault projection. *See [Phase_2_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_2_Implementation_Plan.md).*
+* **Phase 1: Universal Manual Note Engine & Local-First Canvas (Core User Journey) — `[x] COMPLETED (100% AUDITED)`:**  
+  Built the client-side universal note application with sub-5ms local SQLite storage (`expo-sqlite` / OPFS / Wasm), soft minimalist pastel design tokens (strictly avoiding generic cards or boxy layouts), composable block editor engine supporting all 36 content blocks and manual input methods, hierarchical folders, multi-tags, starred favorites, pinning, 30-day recoverable trash, bidirectional cross-note links (`[[Note Title]]`), unified task engine (note checklist $\leftrightarrow$ global task board), multi-note selection with sticky contextual toolbar, and fast local search (< 5ms via FTS5).
+* **Phase 2: Supabase Realtime Sync, Next.js Serverless AI (Vercel) & Google Drive Media Vault — `[ ] NEXT`:**  
+  1. Provision Supabase PostgreSQL operational tables (`notes`, `folders`, `tags`, `note_tags`, `tasks`, `assets`, `entity_relations`, `sync_changelog`) with Supabase Auth and Row-Level Security (`RLS`).
+  2. Implement bidirectional Realtime delta sync in the Expo frontend via `@supabase/supabase-js` subscribing to Postgres CDC channels and synchronizing local SQLite state.
+  3. Deploy Next.js App Router API backend on Vercel ($0/mo free tier) for AI API endpoints (`/api/ai/*`), Friday cognitive workflows, Whisper STT proxy for audio blocks, and inbound webhook parsers (Methods 41 & 42).
+  4. Integrate Google Drive API v3 for zero-cost media storage: photos, scans, audio recordings, and documents upload directly to the user's personal Google Drive folder (`ScribeX_Vault/assets/`), with secure web links and metadata persisted in Supabase and local SQLite.
 * **Phase 3: Cognitive Memory & Friday AI Assistant Integration — `[ ] PENDING`:**  
-  Integrate the Friday conversational assistant, interactive discovery onboarding interview, Ask-Before-Write Ambiguity Gate with universal multi-modal intake router, LanceDB embedded vector semantic search, and the 4-layer cognitive memory architecture (Layer 1 Identity, Layer 2 Living Notes & Graph, Layer 3 Temporal "Versions of Me", Layer 4 Behavioral Ledger & noise-filtered Git manual diff learner). *See [Phase_3_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_3_Implementation_Plan.md).*
+  Integrate the Friday conversational assistant, interactive discovery onboarding interview, Ask-Before-Write Ambiguity Gate with universal multi-modal intake router, `pgvector` semantic embeddings in Supabase, and the 4-layer cognitive memory architecture (Layer 1 Identity, Layer 2 Living Notes & Graph, Layer 3 Temporal "Versions of Me", Layer 4 Behavioral Ledger & noise-filtered edit learner).
 * **Phase 4: Remote PC Agent Bridge Daemon & Pluggable CLI Execution — `[ ] PENDING`:**  
   Deploy the `pc-agent-bridge` daemon on the user's personal PC with outbound WebSocket tunnel, configure `cli_agents.yaml` supporting any local CLI AI agent (Claude Code, Gemini CLI, Codex, Aider), and activate the 3-stage independent verification & self-correction loop.
 * **Phase 5: SaaS Multi-Tenancy, Commercial Billing & Production Scaling — `[ ] PENDING`:**  
-  Attach multi-tenant parameterized `user_id` security boundaries, production authentication (Clerk / Supabase Auth), Stripe billing webhooks, LiteLLM token spend quotas, and Docker Compose deployment with automated Caddy HTTPS. *See [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md).*
+  Attach multi-tenant parameterized `user_id` security boundaries via Supabase Auth + RLS, Stripe subscription billing webhooks, LLM token spend quotas, and custom domain deployment. *See [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md).*

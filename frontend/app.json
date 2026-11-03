@@ -4,12 +4,42 @@
     "slug": "scribex",
     "version": "1.0.0",
     "orientation": "portrait",
+    "icon": "./assets/icon.png",
     "scheme": "scribex",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#101115"
+    },
+    "android": {
+      "package": "com.nashtech.scribex",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#101115"
+      },
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_AUDIO",
+        "READ_MEDIA_VIDEO"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "com.nashtech.scribex",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "ScribeX uses your camera to scan documents, notes, and receipts.",
+        "NSMicrophoneUsageDescription": "ScribeX uses your microphone to record voice notes and audio memos."
+      }
+    },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",

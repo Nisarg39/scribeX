@@ -761,50 +761,42 @@ To ensure that notes remain **100% human-readable in the Git Vault**, accessible
 
 ---
 
-### 5.3. Binary Asset Ingestion & Lifecycle API Contracts
+### 5.3. Binary Asset Ingestion & Lifecycle API Contracts (Google Drive Media Vault)
 
-Media uploads follow an asynchronous, non-blocking lifecycle:
+Media uploads follow an asynchronous, zero-cost storage pipeline:
 
 ```
-[Client] ──POST /api/v1/assets/upload──> [FastAPI Backend] ──> Saves to disk (vault/_assets/)
-   │                                           │
-   │                                           └── Enqueues background worker (Whisper / OCR)
-   │                                           
-   ◄──── WebSocket Event ("ASSET_PROCESSED") ──┘
+[Client] ──Upload Media Binary (Direct / Next.js API)──> [Google Drive API v3]
+   │                                                             │
+   │                                                             └── Returns drive_file_id & webViewLink
+   │                                                             
+   └── Store Metadata & Links in Supabase & Local SQLite ────────┘
 ```
 
-1. **Upload Endpoint:**
-   * `POST /api/v1/assets/upload` (`multipart/form-data`)
-   * **Request:** `file: UploadFile`, `note_id?: string`, `block_id?: string`
-   * **Response:**
+1. **Google Drive Ingestion Pipeline:**
+   * Media files (camera scans, audio recordings, documents, images) upload to an isolated folder on the user's personal Google Drive (`ScribeX_Vault/assets/`).
+   * **Stored Asset Metadata in Supabase & Local SQLite:**
      ```json
      {
        "id": "ast_01j9b2",
        "file_name": "quarterly_budget.pdf",
        "mime_type": "application/pdf",
        "size_bytes": 1420800,
-       "storage_key": "_assets/ast_01j9b2.pdf",
-       "processing_status": "processing",
+       "gdrive_file_id": "1A2B3C4D5E6F_example",
+       "web_view_link": "https://drive.google.com/file/d/1A2B3C4D5E6F_example/view",
+       "thumbnail_link": "https://drive.google.com/thumbnail?id=1A2B3C4D5E6F_example",
+       "processing_status": "completed",
        "created_at": "2026-10-25T14:30:00Z"
      }
      ```
-2. **Asynchronous Notification & Status Check:**
-   * While processing, client can check: `GET /api/v1/assets/{asset_id}/status`.
-   * Upon completion, server broadcasts a WebSocket event to all tenant devices:
-     ```json
-     {
-       "type": "ASSET_PROCESSED",
-       "asset_id": "ast_01j9b2",
-       "processing_status": "completed",
-       "extracted_text": "Extracted text summary from document..."
-     }
-     ```
+2. **Zero Storage & Egress Cost:**
+   * Neither Supabase nor Vercel stores raw binary files. Note blocks reference the Google Drive link and local offline cache.
 
 ---
 
-### 5.4. Resilient Delta Sync Protocol (`sync_changelog`)
+### 5.4. Resilient Delta Sync Protocol (`sync_changelog` with Supabase Realtime)
 
-The sync engine uses an event-sourced revision counter (`sync_rev`) supporting multiple entity types:
+The sync engine uses an event-sourced revision counter (`sync_rev`) coordinated between local SQLite and Supabase PostgreSQL:
 
 * **Changelog Record Format:**
   ```json
@@ -826,15 +818,15 @@ The sync engine uses an event-sourced revision counter (`sync_rev`) supporting m
   }
   ```
 * **Task Synchronization:**  
-  Checking off a task emits `{ "entity_type": "task", "entity_id": "tsk_01", "change_type": "UPDATE", "delta_payload": { "is_completed": 1 } }`. The server automatically updates the parent note's markdown projection with `- [x]`.
+  Checking off a task emits `{ "entity_type": "task", "entity_id": "tsk_01", "change_type": "UPDATE", "delta_payload": { "is_completed": 1 } }`. Supabase Realtime immediately broadcasts this to all connected devices.
 
 ---
 
-### 5.5. Ask-Before-Write Ambiguity Gate RPC Contracts
+### 5.5. Ask-Before-Write Ambiguity Gate RPC Contracts (Next.js on Vercel)
 
 When raw input contains ambiguity or contradictions:
 
-1. **Intake Evaluation Response:**
+1. **Intake Evaluation Response (`POST /api/ai/intake`):**
    ```json
    {
      "status": "NEEDS_CLARIFICATION",
@@ -851,43 +843,45 @@ When raw input contains ambiguity or contradictions:
    }
    ```
 2. **Clarification Resolution Endpoint:**
-   * `POST /api/v1/intake/{staging_id}/clarify`
-   * **Request:** `{ "answers": "Append to Project ScribeX", "selected_option_id": "opt_1" }`
-   * **Action:** Atomic 3-way commit to SQLite, Git Vault, and LanceDB $\rightarrow$ WebSocket doorbell `SYNC_PING` emitted.
+   * `POST /api/ai/intake/clarify`
+   * **Request:** `{ "staging_id": "stg_01j9d5", "answers": "Append to Project ScribeX", "selected_option_id": "opt_1" }`
+   * **Action:** Commits update to Supabase $\rightarrow$ Realtime `sync_changelog` event emitted to client devices.
 
 ---
 
 ## 6. Phased Implementation Roadmap
 
 ```
-Phase 1: Universal Manual Note Engine & Local-First Canvas (ACTIVE FOUNDATION)
-├── [ ] NativeWind v4 & Soft Minimalist Pastel Design Tokens (Strict non-generic layout)
-├── [ ] Local-first client SQLite WAL database (expo-sqlite / OPFS) with full schemas
-├── [ ] Composable block editor engine & AST renderer for all 20 content block types
-├── [ ] Complete support for 42 manual input methods (Text, Tables, Code, LaTeX, Media, Files)
-├── [ ] Hierarchical folders & physical Git Vault directory mirroring
-├── [ ] Multi-dimensional tags (#tags), starred favorites, pinning & 30-day trash
-├── [ ] Bidirectional cross-note links ([[Note Title]]), Backlinks drawer & entity_relations
-├── [ ] Unified task engine (single source of truth: note checklist <-> global task board)
-├── [ ] Fast local full-text search (< 5ms via FTS5) & dynamic Smart Collections
-└── [ ] Phase 1 master test & verification suite
+Phase 1: Universal Manual Note Engine & Local-First Canvas (COMPLETED - 100% AUDITED)
+├── [x] NativeWind v4 & Soft Minimalist Pastel Design Tokens (Strict non-generic layout)
+├── [x] Local-first client SQLite WAL database (expo-sqlite / OPFS / Wasm) with full schemas
+├── [x] Composable block editor engine & AST renderer for all 36 content block types
+├── [x] Complete support for manual input methods (Text, Tables, Code, LaTeX, Media, Files)
+├── [x] Hierarchical folders & path resolution
+├── [x] Multi-dimensional tags (#tags), starred favorites, pinning & 30-day trash
+├── [x] Bidirectional cross-note links ([[Note Title]]), Backlinks drawer & entity_relations
+├── [x] Unified task engine (single source of truth: note checklist <-> global task board)
+├── [x] Fast local search (< 5ms via FTS5) & dynamic Smart Collections
+└── [x] Phase 1 master test & verification suite (30/30 interactions, 13/13 UI/UX, 36/36 AST)
 
-Phase 2: Resilient Client-Server Delta Sync & Multi-Device Vault Mirroring
-├── [ ] 24/7 Cloud VPS FastAPI operational core & SQLite WAL multi-tenant database
-├── [ ] Event-sourced delta sync engine (sync_changelog with monotonic sync_rev)
-├── [ ] Real-time WebSocket doorbell push (< 50ms) + reconnection catch-up + REST fallback
-├── [ ] Binary asset upload API (/assets/upload) with local vault disk storage
+Phase 2: Supabase Realtime Sync, Next.js Serverless AI (Vercel) & Google Drive Media Vault (NEXT)
+├── [ ] Supabase PostgreSQL database schemas & Row-Level Security (RLS) policies
+├── [ ] Supabase Auth integration (Google OAuth / Magic Links)
+├── [ ] Bidirectional Realtime delta sync (@supabase/supabase-js with local SQLite sync_changelog)
+├── [ ] Next.js App Router API backend on Vercel ($0/mo free tier) for AI routes & webhooks
+├── [ ] Cloud Whisper STT transcription proxy route for mobile audio recordings
+├── [ ] Google Drive API v3 zero-cost media vault (uploading files to user's Google Drive)
 └── [ ] Multi-device real-time state reconciliation & offline synchronization
 
-Phase 3: Cognitive Memory & Friday AI Assistant Integration
+Phase 3: Cognitive Memory & Friday AI Assistant Integration (PENDING)
 ├── [ ] Friday conversational assistant interface & proactive daily briefings
 ├── [ ] Interactive user onboarding interview (capturing baseline goals & identity)
 ├── [ ] Ask-Before-Write Ambiguity Gate & universal multi-modal intake router
 ├── [ ] 4-layer cognitive memory architecture:
-│   ├── Layer 1: Core Identity & Always-Active Index
-│   ├── Layer 2: Living Notes & LanceDB vector semantic search
+│   ├── Layer 1: Core Identity & Always-Active Index (Supabase user_profile)
+│   ├── Layer 2: Living Notes & pgvector semantic search
 │   ├── Layer 3: Temporal Identity Timeline ("Versions of Me") & Task Execution History
-│   └── Layer 4: Behavioral & Preference Ledger
+│   └── Layer 4: Behavioral & Preference Ledger (learned_preferences)
 └── [ ] Automated Git manual edit diff learner (learning user habits from edits)
 
 Phase 4: Remote PC Agent Orchestration & Pluggable CLI Daemon
@@ -900,7 +894,7 @@ Phase 5: SaaS Multi-Tenancy, Cloud Deployment & Commercial Scaling
 ├── [ ] Multi-tenant isolated vaults & parameterized user_id security boundaries
 ├── [ ] Production authentication (Clerk / Supabase Auth) & device pairing
 ├── [ ] Stripe billing webhooks & LiteLLM token spend quotas
-└── [ ] Production Dockerized VPS deployment with Caddy HTTPS reverse proxy
+└── [ ] Production Vercel & Supabase cloud deployment with custom domain
 ```
 
 ---

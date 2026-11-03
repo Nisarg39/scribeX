@@ -61,19 +61,24 @@ def get_user_lancedb_path(user_id: str = "default_user") -> Path:
     return lancedb_dir
 ```
 
-### 2.3. Rule 3: Injected Request Context (`get_current_user`)
-All API endpoints and WebSocket handlers must resolve the active user through a FastAPI dependency:
+### 2.3. Rule 3: Injected Request Context (`get_current_user_id`)
+All Next.js API endpoints and Supabase RLS policies resolve the active user through Supabase Auth:
 
-```python
-# backend/app/api/deps.py
-from fastapi import Header, Depends
+```typescript
+// backend/lib/auth.ts (Next.js App Router)
+import { createServerClient } from '@supabase/ssr';
+import { headers, cookies } from 'next/headers';
 
-async def get_current_user_id(authorization: str | None = Header(default=None)) -> str:
-    # Phase 1: Single user default
-    if not authorization:
-        return "default_user"
-    # Phase SaaS: Decode JWT / API Key
-    return decode_jwt_user_id(authorization)
+export async function getCurrentUserId(): Promise<string> {
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { get(name) { return cookieStore.get(name)?.value; } } }
+  );
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.id || 'default_user';
+}
 ```
 
 ---
@@ -85,41 +90,40 @@ async def get_current_user_id(authorization: str | None = Header(default=None)) 
                                          │
                                          ▼
                      ┌───────────────────────────────────────┐
-                     │   Cloudflare Edge & Caddy Ingress     │
-                     │  - SSL Termination & DDoS Protection  │
-                     │  - Rate Limiting by Tenant IP / Key   │
+                     │     Cloudflare Edge & Vercel CDN      │
+                     │  - Global Edge Caching & DDoS Defense │
+                     │  - Zero-Cold-Start Serverless Routing │
                      └───────────────────┬───────────────────┘
                                          │
                                          ▼
                      ┌───────────────────────────────────────┐
-                     │     FastAPI Multi-Tenant Core         │
-                     │  - JWT / OAuth Auth & Tenant Filter   │
-                     │  - Real-Time WebSocket Hub (by user)  │
+                     │    Next.js Serverless AI & Gateway    │
+                     │  - Supabase Auth JWT Verification     │
                      │  - LiteLLM Multi-User Token Metering  │
-                     │  - Stripe Subscription Gatekeeper     │
+                     │  - Stripe Subscription Webhook Hub    │
+                     │  - Friday AI Tool-Calling Endpoints   │
                      └───────┬───────────────────────┬───────┘
                              │                       │
          ┌───────────────────┴──┐                 ┌──┴───────────────────┐
          ▼                      ▼                 ▼                      ▼
 ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
 │ Tenant: User 1   │  │ Tenant: User 2   │  │ Tenant: User 3   │  │ Tenant: User N   │
-│ - SQLite DB      │  │ - SQLite DB      │  │ - SQLite DB      │  │ - SQLite DB      │
-│ - Git Vault (.md)│  │ - Git Vault (.md)│  │ - Git Vault (.md)│  │ - Git Vault (.md)│
-│ - LanceDB Vector │  │ - LanceDB Vector │  │ - LanceDB Vector │  │ - LanceDB Vector │
+│ - Supabase RLS   │  │ - Supabase RLS   │  │ - Supabase RLS   │  │ - Supabase RLS   │
+│ - pgvector RLS   │  │ - pgvector RLS   │  │ - pgvector RLS   │  │ - pgvector RLS   │
+│ - GDrive Assets  │  │ - GDrive Assets  │  │ - GDrive Assets  │  │ - GDrive Assets  │
 └──────────────────┘  └──────────────────┘  └──────────────────┘  └──────────────────┘
 ```
 
 ### 3.1. Tenant Isolation Models
-ScribeX supports two operational tiers depending on commercial scale:
+ScribeX enforces multi-tenancy at the database and storage level:
 
-1. **Tier A: Partitioned Multi-Tenancy (Scale: 1 to 5,000 Users):**
-   * Shared FastAPI process pool.
-   * Dedicated SQLite database file per user (`/data/tenants/{user_id}/scribex.db`) or multi-tenant SQLite with indexed `user_id`.
-   * Completely isolated Git repo and LanceDB folder per tenant (`/data/tenants/{user_id}/`).
-   * **Advantage:** Maximum privacy, zero chance of cross-tenant data leaks, instant individual account backups and exports.
-2. **Tier B: Clustered Enterprise Cloud (Scale: 5,000+ Users):**
-   * Centralized high-availability PostgreSQL cluster (with Row-Level Security `RLS`) or distributed LibSQL / Turso.
-   * Object Storage backend (Cloudflare R2 / AWS S3) backing each user's Git Vault.
+1. **Native PostgreSQL Row-Level Security (RLS) via Supabase:**
+   * Every operational table (`notes`, `folders`, `tags`, `tasks`, `assets`, `entity_relations`, `sync_changelog`) enforces `auth.uid() = user_id`.
+   * Realtime subscriptions are filtered per-user at the PostgreSQL publication level, preventing any cross-tenant data leakage.
+   * Built-in `pgvector` queries filter automatically by `user_id`.
+2. **Zero-Cost Asset Isolation via User's Personal Google Drive:**
+   * Each tenant connects their own Google Drive account via OAuth 2.0.
+   * User assets (images, scans, recordings, PDFs) live directly in the tenant's personal Google Drive folder (`ScribeX_Vault/assets/`), eliminating cloud storage liability and hosting costs for the platform.
 
 ---
 
@@ -150,9 +154,9 @@ Because every tenant's notes are stored as physical Markdown files with Git hist
 In a commercial SaaS, users run the `pc-agent-bridge` daemon on their home or work computers. The SaaS backend securely routes commands only to that user's specific PC.
 
 ```
-[User's Mobile Phone] ──> FastAPI VPS ──> WebSocket Tunnel ──> [User's Personal PC Daemon]
- (Auth: User JWT)         (Routes by      (Outbound WSS:        (Executes CLI tools in
-                           user_id)        Auth: Machine Token)   allowed_workspaces)
+[User's Mobile Phone] ──> Next.js API / Supabase ──> Outbound Tunnel ──> [User's Personal PC Daemon]
+ (Auth: Supabase JWT)    (Routes by user_id)        (Outbound WSS / SSE:         (Executes CLI tools in
+                                                    Auth: Machine Token)          allowed_workspaces)
 ```
 
 ### 5.1. Pairing Flow
@@ -161,14 +165,14 @@ In a commercial SaaS, users run the `pc-agent-bridge` daemon on their home or wo
    ```bash
    scribex-bridge connect --server https://api.scribex.com --token scx_pair_984f29a0c1
    ```
-3. The local bridge sends the token to `POST /api/v1/pc/pair`. FastAPI verifies the token, creates a permanent machine credentials file (`~/.scribex/machine_token.json`) on the PC, and registers the PC under that `user_id`.
-4. The PC daemon opens a persistent outbound WebSocket connection to `wss://api.scribex.com/api/v1/ws/pc-bridge` with header `X-Machine-Token`.
+3. The local bridge sends the token to `POST /api/pc/pair` on Next.js. Next.js verifies the token with Supabase, creates a permanent machine credentials file (`~/.scribex/machine_token.json`) on the PC, and registers the PC under that `user_id`.
+4. The PC daemon opens a persistent outbound WebSocket / SSE connection with header `X-Machine-Token`.
 
 ### 5.2. Multi-Tenant Connection Registry
-FastAPI maintains an in-memory dictionary of live socket connections partitioned by user:
-```python
-# active_pc_tunnels: dict[user_id, WebSocket]
-active_pc_tunnels[user_id] = websocket
+Next.js and Supabase channels manage live connections partitioned by user:
+```typescript
+// Active user task queues in Supabase Realtime channels
+const userChannel = supabase.channel(`pc-bridge:${userId}`);
 ```
 When User A dispatches a task from their iPhone, the router looks up `active_pc_tunnels[user_id]` and pushes the execution spec directly to User A's PC daemon.
 
@@ -210,4 +214,4 @@ PHASE 1 (Completed) & 2–4        PHASE 5: SaaS Foundation        PHASE 6: Comm
 └───────────────────────────┘    └───────────────────────────┘   └───────────────────────────┘
 ```
 
-Phase 1 (FastAPI Core, Operational SQLite, Git Vault Projector, LanceDB Vector Store, Cognitive Memory Layers 1 & 2, Universal Intake with Ask-Before-Write Ambiguity Gate, and Interactive Onboarding) is **100% completed and verified** with full parameterization. Transitioning to Phase 5 and 6 will simply be a matter of plugging in authentication and billing layers without touching the note-taking, cognitive memory, or agent verification logic.
+Phase 1 (Universal Manual Note Engine, Local SQLite Core, 36 Composable Blocks, Folders, Tags, and Relations) is **100% completed and verified** with full user parameterization. Transitioning to Phase 5 and 6 will simply be a matter of plugging in authentication and billing layers without touching the note-taking, cognitive memory, or agent verification logic.

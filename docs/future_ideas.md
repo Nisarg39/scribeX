@@ -38,8 +38,8 @@ Remaining Tasks to fix
 
 Long term Ideas
 
-1 - Use supabase sdk for realtime database update and backup / cloud sync for the user data and use nextjs for AI API calls and host it on vercel for maintaining free hosting. use google drive api for storing media files on google drive and the supabase storage will only store the links of the media files in notes 
+1 - [x] Use Supabase SDK for realtime database update and backup / cloud sync for the user data, use Next.js for AI API calls hosted on Vercel for maintaining free hosting, and use Google Drive API for zero-cost media storage on Google Drive (Supabase/SQLite stores metadata & links). (ADOPTED AS OFFICIAL BACKEND SPECIFICATION & ALIGNED ACROSS ALL ARCHITECTURE DOCS FOR PHASE 2)
 
-2 - Ai assistant inside the note editor where we can give prompt and it starts editing the existing note
+2 - [ ] AI assistant inside the note editor where we can give prompt and it starts editing the existing note (Phase 3 AI Assistant)
 
-3 - Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes . these multi agents will be also added using the help of the main agent i.e the main AI Assistant that has all the context of the user and the system so they can perform tasks but with limited access to the context either provided by the main agent when creating them or either by the user 
+3 - [ ] Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes. These multi agents will be added using the help of the main agent (Friday) that has all the context of the user and the system, with scoped access to context. (Phase 4 Multi-Agent) 

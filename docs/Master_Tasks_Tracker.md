@@ -12,8 +12,8 @@
 | Phase | Description | Status | Reference Doc |
 | :---: | :--- | :---: | :--- |
 | **Phase 1** | **Universal Manual Note Engine & Local-First Canvas (Core User Journey)** | `[x] COMPLETED (100% AUDITED)` | [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md) |
-| **Phase 2** | **Resilient Client-Server Delta Sync & Multi-Device Vault Mirroring** | `[ ] NEXT` | [Phase_2_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_2_Implementation_Plan.md) |
-| **Phase 3** | **Cognitive Memory & Friday AI Assistant Integration** | `[ ] PENDING` | [Phase_3_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_3_Implementation_Plan.md) |
+| **Phase 2** | **Supabase Realtime Sync, Next.js Serverless AI (Vercel) & Google Drive Media Vault** | `[ ] NEXT` | [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md#4-backend-architecture-supabase-realtime-database-nextjs-serverless-ai-vercel--google-drive-media-vault) |
+| **Phase 3** | **Cognitive Memory & Friday AI Assistant Integration** | `[ ] PENDING` | [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md#6-cognitive-memory-architecture-4-layer-engine) |
 | **Phase 4** | **Remote PC Bridge Daemon + Pluggable CLI Verification Loop** | `[ ] PENDING` | [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md#7-remote-pc-agentic-execution--pluggable-cli-daemon) |
 | **Phase 5** | **SaaS Multi-Tenancy, Commercial Billing & Production Scaling** | `[ ] PENDING` | [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md) |
 
@@ -75,18 +75,29 @@
 
 ## Upcoming Phases Summary
 
-### Phase 2: Resilient Client-Server Delta Sync & Multi-Device Vault Mirroring
-- Cloud VPS FastAPI operational core + SQLite WAL multi-tenant database.
-- Event-sourced delta sync engine (`sync_changelog` with monotonic `sync_rev`).
-- WebSocket doorbell push (< 50ms) + reconnection catch-up + HTTP REST fallback (`/push`, `/pull`).
-- Binary asset upload API (`/assets/upload`) with disk vault storage.
-- Asynchronous Git Vault projection committing Extended Markdown AST `.md` files to VPS disk.
+### Phase 2: Supabase Realtime Sync, Next.js Serverless AI (Vercel) & Google Drive Media Vault
+- **Supabase Cloud Database & Auth Core:**
+  - Supabase PostgreSQL schema with tables mirroring local SQLite (`notes`, `folders`, `tags`, `tasks`, `assets`, `entity_relations`, `sync_changelog`).
+  - Row Level Security (RLS) enforcing strict tenant isolation (`auth.uid() = user_id`) and Supabase Auth (Social / Magic Link).
+- **Bidirectional Real-Time Delta Sync Engine:**
+  - `@supabase/supabase-js` client in frontend subscribing to Postgres Realtime CDC (Change Data Capture) channels.
+  - Event-sourced delta sync coordinating between local SQLite (`expo-sqlite` / Wasm) and Supabase (`sync_changelog` with monotonic `sync_rev`).
+  - Sub-5ms optimistic local writes with automatic background push and offline reconnection catch-up.
+- **Serverless AI Engine on Next.js (Hosted on Vercel - Free Tier):**
+  - Next.js App Router Route Handlers (`/api/ai/*`) deployed on Vercel for zero-cost hosting.
+  - LLM orchestration endpoints for universal intake, proactive briefings, and task synthesis.
+  - Audio transcription proxy (Cloud Whisper STT) for mobile recordings and live dictation.
+  - Inbound webhook receivers (Method 41 Email-to-Note parser and Method 42 External integrations).
+- **Zero-Cost Media Vault via Google Drive API:**
+  - Media files (camera scans, audio recordings, PDFs, drawings, images) uploaded directly to the user's Google Drive via Google Drive API v3.
+  - Supabase & local SQLite `assets` table store only lightweight metadata, Google Drive file IDs, and secure web links.
+  - Zero storage disk costs and zero cloud egress fees; leverages user's free 15GB Google Drive storage.
 
 ### Phase 3: Cognitive Memory & Friday AI Assistant Integration
-- Friday conversational assistant interface & proactive morning briefings.
+- Friday conversational assistant interface & proactive morning briefings powered by Next.js Serverless Routes.
 - User-initiated interactive discovery interview ("Everything About Me").
 - Ask-Before-Write Ambiguity Gate & universal intake router.
-- 4-layer cognitive memory: Layer 1 (Identity), Layer 2 (Living Vault & LanceDB vector store), Layer 3 (Versions of Me temporal timeline), Layer 4 (Behavioral Ledger & noise-filtered Git diff learner).
+- 4-layer cognitive memory: Layer 1 (Identity), Layer 2 (Living Vault & pgvector / semantic embeddings), Layer 3 (Versions of Me temporal timeline), Layer 4 (Behavioral Ledger & noise-filtered edit learner).
 
 ### Phase 4: Remote PC Agent Bridge Daemon & Pluggable CLI Execution
 - Outbound WebSocket tunnel daemon (`pc-agent-bridge`) running on personal PC.
