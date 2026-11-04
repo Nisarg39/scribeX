@@ -57,7 +57,7 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({
                   transform: [{ scale: pressed ? 0.97 : 1 }],
                 },
               ]}
-              className="flex-row items-center gap-2 px-3.5 py-2 rounded-full border transition-all hover:border-note-cyan/60 hover:bg-note-cyan/5 group"
+              className="flex-row items-center gap-2 px-3.5 py-2 rounded-full border hover:border-note-cyan/60 hover:bg-note-cyan/5 group"
             >
               {/* Pastel Category Accent Dot */}
               <View

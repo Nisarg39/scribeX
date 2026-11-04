@@ -152,7 +152,7 @@ export const HabitBlock: React.FC<HabitBlockProps> = ({
   return (
     <View
       style={containerStyle}
-      className="py-3 px-3.5 my-2 rounded-2xl border-2 transition-all"
+      className="py-3 px-3.5 my-2 rounded-2xl border-2"
     >
       {/* Top Header: Flame Badge, Title, Streak & Frequency Pills */}
       <View className="flex-row items-center justify-between mb-3 flex-wrap gap-2">

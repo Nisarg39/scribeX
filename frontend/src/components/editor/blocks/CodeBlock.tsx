@@ -80,7 +80,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({
             : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.07)'),
         },
       ]}
-      className="my-1.5 w-full rounded-2xl border overflow-hidden transition-all group"
+      className="my-1.5 w-full rounded-2xl border overflow-hidden group"
     >
       {/* Code Header Bar */}
       <View className="flex-row items-center justify-between px-3.5 py-2 bg-black/[0.04] dark:bg-[#1E1E1E] border-b border-light-border/60 dark:border-white/5">

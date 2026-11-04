@@ -341,7 +341,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
               onPress={() => setIsFolderPickerOpen(!isFolderPickerOpen)}
               accessibilityLabel="Change note folder"
               style={{ backgroundColor: NoteColors[colorToken] }}
-              className="flex-row items-center gap-1.5 px-3 py-1 rounded-full shadow-sm active:scale-95 transition-transform"
+              className="flex-row items-center gap-1.5 px-3 py-1 rounded-full shadow-sm active:scale-95"
             >
               <Folder size={11} color="#191919" />
               <Text className="text-xs font-bold text-[#191919]">{folderPath || 'General'}</Text>
@@ -436,7 +436,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                         handleFolderPathChange(folderName);
                         setIsFolderPickerOpen(false);
                       }}
-                      className={`flex-row items-center justify-between px-3 py-2 rounded-xl transition-colors ${
+                      className={`flex-row items-center justify-between px-3 py-2 rounded-xl ${
                         isCurrent
                           ? 'bg-cyan-500/15 border border-cyan-500/30'
                           : 'hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10'

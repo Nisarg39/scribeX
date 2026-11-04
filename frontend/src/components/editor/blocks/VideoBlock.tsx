@@ -151,7 +151,7 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({
       <Pressable
         onPress={onFocus}
         style={[widthStyle, { borderColor: isSelected ? '#06B6D4' : 'transparent' }]}
-        className="relative group rounded-2xl border-2 transition-all"
+        className="relative group rounded-2xl border-2"
       >
         {/* Floating Media Toolbar on Selection */}
         {isSelected && (

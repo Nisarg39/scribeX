@@ -148,7 +148,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           borderColor: isSelected ? '#06B6D4' : isSelectionMode ? 'rgba(0, 0, 0, 0.15)' : 'transparent',
           transform: [{ scale: isSelected ? 0.985 : 1 }],
         }}
-        className="p-4 rounded-[18px] justify-between shadow-sm active:scale-[0.99] transition-all relative overflow-hidden"
+        className="p-4 rounded-[18px] justify-between shadow-sm active:scale-[0.99] relative overflow-hidden"
       >
         {/* Top Row: Folder Badge, Status/Pin Chips & Action Buttons / Selection Indicator */}
         <View className="flex-row items-center justify-between mb-3">
@@ -186,7 +186,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
               }}
               hitSlop={8}
               accessibilityLabel={isSelected ? 'Deselect Note' : 'Select Note'}
-              className={`w-6 h-6 rounded-full items-center justify-center transition-all ${
+              className={`w-6 h-6 rounded-full items-center justify-center ${
                 isSelected
                   ? 'bg-[#06B6D4] shadow-sm'
                   : 'border-2 border-black/30 bg-black/5'

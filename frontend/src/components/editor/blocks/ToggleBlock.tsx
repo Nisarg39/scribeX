@@ -90,7 +90,7 @@ export const ToggleBlock: React.FC<ToggleBlockProps> = ({
           borderLeftColor: isSelected ? '#06B6D4' : 'transparent',
         },
       ]}
-      className="my-1.5 w-full pl-2 pr-1 py-1 transition-all group"
+      className="my-1.5 w-full pl-2 pr-1 py-1 group"
     >
       {/* Header Row: Toggle Icon + Summary Title */}
       <View className="flex-row items-start">

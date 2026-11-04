@@ -108,7 +108,7 @@ export const CalloutBlock: React.FC<CalloutBlockProps> = ({
           : (isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.05)'),
         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.025)' : 'rgba(0, 0, 0, 0.018)',
       }}
-      className="my-1.5 pl-3.5 pr-3 py-2.5 rounded-r-xl border-t border-r border-b w-full transition-all group"
+      className="my-1.5 pl-3.5 pr-3 py-2.5 rounded-r-xl border-t border-r border-b w-full group"
     >
       {/* Top Variant Pill Selector */}
       <View className="flex-row items-center justify-between mb-2">

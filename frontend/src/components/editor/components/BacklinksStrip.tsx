@@ -65,7 +65,7 @@ export const BacklinksStrip: React.FC<BacklinksStripProps> = ({
                   transform: [{ scale: pressed ? 0.98 : 1 }],
                 },
               ]}
-              className="flex-row items-center gap-2.5 px-3 py-2 rounded-xl border hover:border-note-cyan/60 hover:bg-note-cyan/5 transition-all group"
+              className="flex-row items-center gap-2.5 px-3 py-2 rounded-xl border hover:border-note-cyan/60 hover:bg-note-cyan/5 group"
             >
               {/* Note Swatch */}
               <View

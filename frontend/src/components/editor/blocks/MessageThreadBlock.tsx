@@ -187,7 +187,7 @@ export const MessageThreadBlock: React.FC<MessageThreadBlockProps> = ({
             : 'rgba(0, 0, 0, 0.08)',
           backgroundColor: isDark ? 'rgba(18, 18, 22, 0.7)' : 'rgba(250, 250, 252, 0.9)',
         }}
-        className="rounded-2xl border transition-all overflow-hidden p-4"
+        className="rounded-2xl border overflow-hidden p-4"
       >
         {/* Thread Header: Channel Badge, Subject & Actions */}
         <View className="flex-row items-start justify-between gap-3 mb-3 pb-3 border-b border-light-border dark:border-white/5">

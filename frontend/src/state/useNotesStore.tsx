@@ -6,7 +6,13 @@ import { tasksRepo } from '../db/tasksRepo';
 import { foldersRepo } from '../db/foldersRepo';
 import { tagsRepo } from '../db/tagsRepo';
 import { searchHistoryRepo } from '../db/searchHistoryRepo';
-import { DBFolder, SearchHistorySource } from '../db/types';
+import {
+  DBFolder,
+  SearchHistorySource,
+  FolderNoteStats,
+  DBSyncChangelog,
+  FolderSyncResult,
+} from '../db/types';
 import { serializeBlocksToMarkdown } from '../core/astSerializer';
 import { NoteSearchDocument, buildNoteSearchDocument } from '../core/searchIndexer';
 import {
@@ -92,7 +98,19 @@ interface NotesContextValue {
   batchPermanentlyDeleteNotes: (ids: string[]) => Promise<void>;
   createFolder: (name: string, parentPath?: string) => Promise<DBFolder>;
   renameFolder: (id: string, newName: string) => Promise<void>;
+  moveFolder: (id: string, newParentPath: string | null) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
+  deleteFolderWithOptions: (
+    id: string,
+    folderPath: string,
+    noteAction: 'moveToGeneral' | 'trash'
+  ) => Promise<{ affectedNotes: number; deletedFolders: number }>;
+  duplicateFolder: (id: string, folderPath: string, newName?: string) => Promise<DBFolder>;
+  updateFolderColor: (id: string, colorToken: string) => Promise<void>;
+  updateFolderIcon: (id: string, icon: string | null) => Promise<void>;
+  getFolderStats: (folderPath: string, folderId?: string) => Promise<FolderNoteStats>;
+  getPendingFolderChangelogs: (sinceRev?: number) => Promise<DBSyncChangelog[]>;
+  applyRemoteFolderDelta: (entry: DBSyncChangelog) => Promise<FolderSyncResult>;
   moveNoteToFolder: (noteId: string, folderPath: string, folderId?: string) => Promise<void>;
   setNoteTags: (noteId: string, tags: string[]) => Promise<void>;
   addTask: (
@@ -182,7 +200,20 @@ const NotesContext = createContext<NotesContextValue>({
   batchPermanentlyDeleteNotes: async () => {},
   createFolder: async () => ({} as DBFolder),
   renameFolder: async () => {},
+  moveFolder: async () => {},
   deleteFolder: async () => {},
+  deleteFolderWithOptions: async () => ({ affectedNotes: 0, deletedFolders: 0 }),
+  duplicateFolder: async () => ({} as DBFolder),
+  updateFolderColor: async () => {},
+  updateFolderIcon: async () => {},
+  getFolderStats: async () => ({
+    directNotesCount: 0,
+    nestedNotesCount: 0,
+    totalNotesCount: 0,
+    subfoldersCount: 0,
+  }),
+  getPendingFolderChangelogs: async () => [],
+  applyRemoteFolderDelta: async () => ({ status: 'applied', folderId: '' }),
   moveNoteToFolder: async () => {},
   setNoteTags: async () => {},
   addTask: async () => {},
@@ -688,13 +719,200 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const renameFolder = async (id: string, newName: string) => {
-    await foldersRepo.renameFolder(id, newName);
-    await refreshFromDB();
+    try {
+      const { oldPath, newPath } = await foldersRepo.renameFolderCascade(id, newName);
+      setFolders((prev) =>
+        prev.map((f) => {
+          if (f.id === id) {
+            return { ...f, name: newName, path: newPath };
+          }
+          if (f.path.startsWith(`${oldPath}/`)) {
+            return { ...f, path: `${newPath}${f.path.slice(oldPath.length)}` };
+          }
+          return f;
+        })
+      );
+      setNotes((prev) =>
+        prev.map((n) => {
+          if (n.folderPath === oldPath) {
+            return { ...n, folderPath: newPath };
+          }
+          if (n.folderPath?.startsWith(`${oldPath}/`)) {
+            return { ...n, folderPath: `${newPath}${n.folderPath.slice(oldPath.length)}` };
+          }
+          return n;
+        })
+      );
+      if (queryRequest.folderPath === oldPath) {
+        setFolderFilter(newPath);
+      } else if (queryRequest.folderPath?.startsWith(`${oldPath}/`)) {
+        setFolderFilter(`${newPath}${queryRequest.folderPath.slice(oldPath.length)}`);
+      }
+      logWorkspaceActivity('folder', 'rename', `Renamed folder "${oldPath}" to "${newPath}"`, id);
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to rename folder:', err);
+      throw err;
+    }
+  };
+
+  const moveFolder = async (id: string, newParentPath: string | null) => {
+    try {
+      const { oldPath, newPath } = await foldersRepo.moveFolderCascade(id, newParentPath);
+      setFolders((prev) =>
+        prev.map((f) => {
+          if (f.id === id) {
+            return { ...f, path: newPath };
+          }
+          if (f.path.startsWith(`${oldPath}/`)) {
+            return { ...f, path: `${newPath}${f.path.slice(oldPath.length)}` };
+          }
+          return f;
+        })
+      );
+      setNotes((prev) =>
+        prev.map((n) => {
+          if (n.folderPath === oldPath) {
+            return { ...n, folderPath: newPath };
+          }
+          if (n.folderPath?.startsWith(`${oldPath}/`)) {
+            return { ...n, folderPath: `${newPath}${n.folderPath.slice(oldPath.length)}` };
+          }
+          return n;
+        })
+      );
+      if (queryRequest.folderPath === oldPath) {
+        setFolderFilter(newPath);
+      } else if (queryRequest.folderPath?.startsWith(`${oldPath}/`)) {
+        setFolderFilter(`${newPath}${queryRequest.folderPath.slice(oldPath.length)}`);
+      }
+      logWorkspaceActivity('folder', 'move', `Moved folder "${oldPath}" to "${newPath}"`, id);
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to move folder:', err);
+      throw err;
+    }
+  };
+
+  const deleteFolderWithOptions = async (
+    id: string,
+    folderPath: string,
+    noteAction: 'moveToGeneral' | 'trash'
+  ) => {
+    try {
+      const cleanPath = folderPath.trim().replace(/^\/+|\/+$/g, '');
+      const res = await foldersRepo.deleteFolderCascade(id, cleanPath, noteAction);
+
+      setFolders((prev) =>
+        prev.filter((f) => f.id !== id && f.path !== cleanPath && !f.path.startsWith(`${cleanPath}/`))
+      );
+
+      if (noteAction === 'moveToGeneral') {
+        setNotes((prev) =>
+          prev.map((n) => {
+            if (n.folderId === id || n.folderPath === cleanPath || n.folderPath?.startsWith(`${cleanPath}/`)) {
+              return { ...n, folderPath: 'General', folderId: undefined };
+            }
+            return n;
+          })
+        );
+      } else {
+        const nowIso = new Date().toISOString();
+        setNotes((prev) =>
+          prev.map((n) => {
+            if (n.folderId === id || n.folderPath === cleanPath || n.folderPath?.startsWith(`${cleanPath}/`)) {
+              return { ...n, status: 'trashed', trashedAt: nowIso };
+            }
+            return n;
+          })
+        );
+      }
+
+      if (queryRequest.folderPath === cleanPath || queryRequest.folderPath?.startsWith(`${cleanPath}/`)) {
+        setFolderFilter(null);
+      }
+
+      logWorkspaceActivity(
+        'folder',
+        'delete',
+        `Deleted folder "${cleanPath}" (${res.affectedNotes} notes ${noteAction === 'moveToGeneral' ? 'moved to General' : 'trashed'})`,
+        id
+      );
+
+      await refreshFromDB();
+      return res;
+    } catch (err) {
+      console.warn('Failed to delete folder cascade:', err);
+      throw err;
+    }
   };
 
   const deleteFolder = async (id: string) => {
-    await foldersRepo.deleteFolder(id);
-    setFolders((prev) => prev.filter((f) => f.id !== id));
+    const folder = folders.find((f) => f.id === id);
+    const folderPath = folder?.path || folder?.name || '';
+    await deleteFolderWithOptions(id, folderPath, 'moveToGeneral');
+  };
+
+  const duplicateFolder = async (id: string, folderPath: string, newName?: string): Promise<DBFolder> => {
+    try {
+      const { newFolder, duplicatedNotesCount } = await foldersRepo.duplicateFolderCascade(id, folderPath, newName);
+      logWorkspaceActivity(
+        'folder',
+        'duplicate',
+        `Duplicated folder "${folderPath}" -> "${newFolder.path}" (${duplicatedNotesCount} notes copied)`,
+        newFolder.id
+      );
+      await refreshFromDB();
+      return newFolder;
+    } catch (err) {
+      console.warn('Failed to duplicate folder:', err);
+      throw err;
+    }
+  };
+
+  const updateFolderColor = async (id: string, colorToken: string): Promise<void> => {
+    try {
+      await foldersRepo.updateFolderColor(id, colorToken);
+      setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, color_token: colorToken } : f)));
+    } catch (err) {
+      console.warn('Failed to update folder color:', err);
+    }
+  };
+
+  const updateFolderIcon = async (id: string, icon: string | null): Promise<void> => {
+    try {
+      await foldersRepo.updateFolderIcon(id, icon);
+      setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, icon } : f)));
+    } catch (err) {
+      console.warn('Failed to update folder icon:', err);
+    }
+  };
+
+  const getFolderStats = async (folderPath: string, folderId?: string): Promise<FolderNoteStats> => {
+    try {
+      return await foldersRepo.getFolderNoteStats(folderPath, folderId);
+    } catch (err) {
+      const cleanPath = folderPath.trim().replace(/^\/+|\/+$/g, '');
+      const direct = notes.filter((n) => n.status !== 'trashed' && (n.folderPath === cleanPath || n.folderId === folderId)).length;
+      const nested = notes.filter((n) => n.status !== 'trashed' && n.folderPath?.startsWith(`${cleanPath}/`)).length;
+      const subfolders = folders.filter((f) => f.path.startsWith(`${cleanPath}/`)).length;
+      return {
+        directNotesCount: direct,
+        nestedNotesCount: nested,
+        totalNotesCount: direct + nested,
+        subfoldersCount: subfolders,
+      };
+    }
+  };
+
+  const getPendingFolderChangelogs = async (sinceRev = 0): Promise<DBSyncChangelog[]> => {
+    return foldersRepo.getPendingFolderChangelogs(sinceRev);
+  };
+
+  const applyRemoteFolderDelta = async (entry: DBSyncChangelog): Promise<FolderSyncResult> => {
+    const res = await foldersRepo.applyRemoteFolderDelta(entry);
+    await refreshFromDB();
+    return res;
   };
 
   const moveNoteToFolder = async (noteId: string, folderPath: string, folderId?: string) => {
@@ -904,7 +1122,15 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         batchPermanentlyDeleteNotes,
         createFolder,
         renameFolder,
+        moveFolder,
         deleteFolder,
+        deleteFolderWithOptions,
+        duplicateFolder,
+        updateFolderColor,
+        updateFolderIcon,
+        getFolderStats,
+        getPendingFolderChangelogs,
+        applyRemoteFolderDelta,
         moveNoteToFolder,
         setNoteTags,
         addTask,

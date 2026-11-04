@@ -35,7 +35,7 @@ export default function OnboardingScreen() {
           onPress={toggleTheme}
           accessibilityRole="button"
           accessibilityLabel="Toggle color scheme"
-          className="w-10 h-10 rounded-full bg-light-iconBg dark:bg-dark-iconBg items-center justify-center active:scale-95 transition-transform"
+          className="w-10 h-10 rounded-full bg-light-iconBg dark:bg-dark-iconBg items-center justify-center active:scale-95"
         >
           {isDark ? (
             <Sun size={18} color="#FFFFFF" strokeWidth={2} />
@@ -61,7 +61,7 @@ export default function OnboardingScreen() {
           onPress={handleContinue}
           accessibilityRole="button"
           accessibilityLabel="Get Started with ScribeX"
-          className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-2 active:scale-98 transition-transform"
+          className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-2 active:scale-98"
         >
           <Text className="text-base font-semibold text-white">
             Get Started

@@ -519,7 +519,7 @@ export const ScanBlock: React.FC<ScanBlockProps> = ({
                 <Pressable
                   key={p.id}
                   onPress={() => handleApplyPreset(p)}
-                  className="px-3 py-1.5 rounded-full bg-light-surface dark:bg-white/5 border border-light-border dark:border-white/10 hover:border-cyan-500/40 active:scale-95 transition-all"
+                  className="px-3 py-1.5 rounded-full bg-light-surface dark:bg-white/5 border border-light-border dark:border-white/10 hover:border-cyan-500/40 active:scale-95"
                 >
                   <Text className="text-xs font-medium text-cyan-400">
                     ⚡ {p.label}

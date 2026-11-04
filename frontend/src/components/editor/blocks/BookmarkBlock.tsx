@@ -98,7 +98,7 @@ export const BookmarkBlock: React.FC<BookmarkBlockProps> = ({
           backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
         },
       ]}
-      className="my-1.5 w-full rounded-2xl border p-3.5 flex-row items-center transition-all group"
+      className="my-1.5 w-full rounded-2xl border p-3.5 flex-row items-center group"
     >
       {/* Edit Mode URL Bar */}
       {isEditing ? (

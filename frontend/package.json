@@ -4,14 +4,15 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "audit:all": "npx tsx ../scripts/run_cross_platform_audit.mjs",
     "test:interactions": "npx tsx ../scripts/test_headless_interactions_and_history.mjs",
     "test:e2e:validate": "node ../scripts/validate_maestro_flows.mjs",
     "test:uiux": "node ../scripts/test_cross_platform_ui_ux.mjs",
-    "test:all": "npm run audit:all && npm run test:interactions && npm run test:e2e:validate && npm run test:uiux"
+    "test:all": "npm run audit:all && npm run test:interactions && npm run test:e2e:validate && npm run test:uiux",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo/metro-runtime": "~57.0.17",
@@ -54,6 +55,7 @@
     "@babel/core": "^7.25.2",
     "@types/react": "~19.2.4",
     "@types/sql.js": "^1.4.11",
+    "patch-package": "^8.0.0",
     "tailwindcss": "^3.4.17",
     "typescript": "~6.0.3"
   },

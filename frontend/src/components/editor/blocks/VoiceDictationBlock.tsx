@@ -357,7 +357,7 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
             : 'rgba(0, 0, 0, 0.08)',
           backgroundColor: isDark ? 'rgba(18, 18, 22, 0.7)' : 'rgba(250, 250, 252, 0.9)',
         }}
-        className="rounded-2xl border transition-all overflow-hidden p-4"
+        className="rounded-2xl border overflow-hidden p-4"
       >
         {/* Header Bar: Status Badge, Waveform & Toolbar */}
         <View className="flex-row items-center justify-between mb-3 pb-2.5 border-b border-light-border dark:border-white/5">
@@ -481,7 +481,7 @@ export const VoiceDictationBlock: React.FC<VoiceDictationBlockProps> = ({
                     backgroundColor: audioLevel > 15 ? '#EF4444' : '#F43F5E',
                     opacity: 0.6 + (audioLevel / 100) * 0.4,
                   }}
-                  className="w-1.5 rounded-full transition-all duration-75"
+                  className="w-1.5 rounded-full duration-75"
                 />
               );
             })}

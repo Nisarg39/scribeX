@@ -158,7 +158,7 @@ export const BulletedListBlock: React.FC<BulletedListBlockProps> = ({
           borderLeftColor: isSelected ? '#06B6D4' : 'transparent',
         },
       ]}
-      className="my-1 w-full pl-2.5 pr-1 py-1 transition-all group"
+      className="my-1 w-full pl-2.5 pr-1 py-1 group"
     >
       {listItems.map((item, index) => (
         <View key={item.id} className="flex-row items-start mb-1 relative group/item">
@@ -193,7 +193,7 @@ export const BulletedListBlock: React.FC<BulletedListBlockProps> = ({
           {listItems.length > 1 ? (
             <Pressable
               onPress={() => handleDeleteItem(index)}
-              className="opacity-0 group-hover/item:opacity-40 hover:!opacity-100 p-1 rounded ml-1 transition-opacity"
+              className="opacity-0 group-hover/item:opacity-40 hover:!opacity-100 p-1 rounded ml-1"
               accessibilityLabel="Delete item"
             >
               <Trash2 size={12} color={isDark ? '#FF6B6B' : '#DC2626'} />

@@ -128,7 +128,7 @@ export const WebClipBlock: React.FC<WebClipBlockProps> = ({
             : 'rgba(0, 0, 0, 0.08)',
           backgroundColor: isDark ? 'rgba(18, 18, 22, 0.7)' : 'rgba(250, 250, 252, 0.9)',
         }}
-        className="rounded-2xl border transition-all overflow-hidden p-4"
+        className="rounded-2xl border overflow-hidden p-4"
       >
         {/* Header Bar: Domain, Byline, Reading Time & Source Link */}
         <View className="flex-row items-start justify-between gap-3 mb-2.5 pb-2.5 border-b border-light-border dark:border-white/5">

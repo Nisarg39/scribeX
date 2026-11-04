@@ -91,7 +91,7 @@ export const ContactBlock: React.FC<ContactBlockProps> = ({
   return (
     <View
       style={containerStyle}
-      className="py-3 px-3.5 my-2 rounded-2xl border-2 transition-all cursor-default"
+      className="py-3 px-3.5 my-2 rounded-2xl border-2 cursor-default"
     >
       {/* Top Header: Avatar + Name + Delete */}
       <View className="flex-row items-center justify-between mb-2">

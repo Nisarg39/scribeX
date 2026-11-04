@@ -97,7 +97,7 @@ export const EventBlock: React.FC<EventBlockProps> = ({
   return (
     <View
       style={containerStyle}
-      className="py-3 px-3.5 my-2 rounded-2xl border-2 transition-all cursor-default"
+      className="py-3 px-3.5 my-2 rounded-2xl border-2 cursor-default"
     >
       {/* Event Header Strip */}
       <View className="flex-row items-center justify-between mb-2.5">

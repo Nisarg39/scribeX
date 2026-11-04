@@ -72,7 +72,7 @@ export const NoteLinkBlock: React.FC<NoteLinkBlockProps> = ({
           backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
         },
       ]}
-      className="my-1.5 w-full rounded-2xl border p-3 transition-all group"
+      className="my-1.5 w-full rounded-2xl border p-3 group"
     >
       {isPickerOpen ? (
         <View className="w-full">

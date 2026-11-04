@@ -34,7 +34,7 @@ Remaining Tasks to fix
 23.2 - [x] fix the document ocr block issue which is giving error and also check all the fucntionalities that it is working or not (COMPLETED)
 26 - [x] long press gesture to select multiple notes and then perform actions like delete, move to folder, share, etc in the home screen and make sure it works perfectly for all the platforms and when the multiple selection is active there should be a top action bar that should display the number of selected notes and the actions that can be performed on them and also there should be a back button to deselect all the notes and go back to the normal mode (COMPLETED)
 27 - [x] memory management for web platform currently i just saw 6.5 gb tab resource so we need to make this optimised (COMPLETED)
-
+28 - [] Folder management feature where we can create folders and move notes to folders and also when creating a folder user can add cover image for the folder and the folder should be displayed with the cover image in the home screen
 
 Long term Ideas
 

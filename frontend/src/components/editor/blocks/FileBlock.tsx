@@ -113,7 +113,7 @@ export const FileBlock: React.FC<FileBlockProps> = ({
           backgroundColor: isDark ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
         },
       ]}
-      className="my-1 w-full rounded-2xl border p-3 flex-row items-center justify-between transition-all group"
+      className="my-1 w-full rounded-2xl border p-3 flex-row items-center justify-between group"
     >
       {/* Left: Icon & File Info */}
       <View className="flex-row items-center gap-3 flex-1 mr-3">

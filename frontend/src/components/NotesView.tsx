@@ -26,8 +26,17 @@ import {
   CheckSquare,
   FolderInput,
   Share2,
-  RotateCcw
+  RotateCcw,
+  MoreVertical,
+  FolderTree
 } from 'lucide-react-native';
+import { FolderActionSheet, renderFolderIcon } from './folders/FolderActionSheet';
+import { DeleteFolderModal } from './folders/DeleteFolderModal';
+import { RenameFolderModal } from './folders/RenameFolderModal';
+import { MoveFolderModal } from './folders/MoveFolderModal';
+import { FolderExplorerModal } from './folders/FolderExplorerModal';
+import { NoteColors, NoteColorToken } from '../theme/tokens';
+import { FolderNoteStats } from '../db/types';
 
 export const NotesView: React.FC = () => {
   const router = useRouter();
@@ -64,6 +73,13 @@ export const NotesView: React.FC = () => {
     permanentlyDeleteNote,
     emptyTrash,
     createFolder,
+    renameFolder,
+    moveFolder,
+    deleteFolderWithOptions,
+    duplicateFolder,
+    updateFolderColor,
+    updateFolderIcon,
+    getFolderStats,
     batchDeleteNotes,
     batchMoveNotesToFolder,
     batchTogglePin,
@@ -81,6 +97,15 @@ export const NotesView: React.FC = () => {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [selectedParentPath, setSelectedParentPath] = useState<string>('');
+
+  // Folder Actions Management State
+  const [actionSheetFolder, setActionSheetFolder] = useState<{ path: string; id?: string; colorToken?: string; icon?: string | null } | null>(null);
+  const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+  const [isFolderExplorerOpen, setIsFolderExplorerOpen] = useState(false);
+  const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
+  const [isMoveFolderReparentModalOpen, setIsMoveFolderReparentModalOpen] = useState(false);
+  const [isDeleteFolderModalOpen, setIsDeleteFolderModalOpen] = useState(false);
+  const [activeFolderStats, setActiveFolderStats] = useState<FolderNoteStats | null>(null);
 
   // Voice-to-Text Search Dictation State
   const [isVoiceSearching, setIsVoiceSearching] = useState(false);
@@ -201,6 +226,92 @@ export const NotesView: React.FC = () => {
     setNewFolderName('');
     setIsFolderModalOpen(false);
     setFolderFilter(targetPath);
+  };
+
+  const handleOpenFolderActions = async (folderPath: string) => {
+    const existingFolder = folders.find((f) => (f.path || f.name) === folderPath);
+    let folderId = existingFolder?.id;
+    if (!folderId) {
+      try {
+        const created = await createFolder(folderPath);
+        folderId = created?.id;
+      } catch (_) {}
+    }
+    const colorToken = existingFolder?.color_token || 'cyan';
+    const icon = existingFolder?.icon || null;
+    setActionSheetFolder({ path: folderPath, id: folderId, colorToken, icon });
+    try {
+      const stats = await getFolderStats(folderPath, folderId);
+      setActiveFolderStats(stats);
+    } catch (_) {
+      setActiveFolderStats(null);
+    }
+    setIsActionSheetOpen(true);
+  };
+
+  const handleOpenCreateSubfolderFromSheet = (parentPath?: string) => {
+    setSelectedParentPath(parentPath || '');
+    setNewFolderName('');
+    setIsFolderModalOpen(true);
+  };
+
+  const handleConfirmRenameFolder = async (newName: string) => {
+    if (!actionSheetFolder?.id) return;
+    await renameFolder(actionSheetFolder.id, newName);
+  };
+
+  const handleConfirmMoveFolder = async (newParentPath: string | null) => {
+    if (!actionSheetFolder?.id) return;
+    await moveFolder(actionSheetFolder.id, newParentPath);
+  };
+
+  const handleConfirmDuplicateFolder = async (folderPath: string, folderId?: string) => {
+    const idToUse = folderId || actionSheetFolder?.id;
+    if (!idToUse) return;
+    await duplicateFolder(idToUse, folderPath);
+  };
+
+  const handleConfirmDeleteFolder = async (noteAction: 'moveToGeneral' | 'trash') => {
+    if (!actionSheetFolder) return;
+    const idToUse = actionSheetFolder.id || '';
+    await deleteFolderWithOptions(idToUse, actionSheetFolder.path, noteAction);
+  };
+
+  const handleChangeFolderColor = async (colorToken: string) => {
+    if (!actionSheetFolder?.id) return;
+    await updateFolderColor(actionSheetFolder.id, colorToken);
+    setActionSheetFolder((prev) => (prev ? { ...prev, colorToken } : null));
+  };
+
+  const handleChangeFolderIcon = async (icon: string | null) => {
+    if (!actionSheetFolder?.id) return;
+    await updateFolderIcon(actionSheetFolder.id, icon);
+    setActionSheetFolder((prev) => (prev ? { ...prev, icon } : null));
+  };
+
+  const handleSelectAllFolderNotes = (folderPath: string) => {
+    const clean = folderPath.trim().replace(/^\/+|\/+$/g, '');
+    const matchingIds = notes
+      .filter((n) => n.status !== 'trashed' && (n.folderPath === clean || n.folderPath?.startsWith(`${clean}/`)))
+      .map((n) => n.id);
+    setSelectedNoteIds(new Set(matchingIds));
+  };
+
+  const handleExportFolderNotes = async (folderPath: string) => {
+    const clean = folderPath.trim().replace(/^\/+|\/+$/g, '');
+    const folderNotes = notes.filter(
+      (n) => n.status !== 'trashed' && (n.folderPath === clean || n.folderPath?.startsWith(`${clean}/`))
+    );
+    if (folderNotes.length === 0) return;
+    const bundleText = folderNotes
+      .map((n) => `# ${n.title || 'Untitled'}\n\n${n.contentMarkdown || ''}`)
+      .join('\n\n---\n\n');
+    try {
+      await Share.share({
+        title: `ScribeX - /${clean} Export`,
+        message: bundleText,
+      });
+    } catch (_) {}
   };
 
   // Derive all active folders from repository and notes (including intermediate parent paths)
@@ -831,24 +942,65 @@ export const NotesView: React.FC = () => {
         {/* Dynamic Folder Pills */}
         {allFolderNames.map((folderName) => {
           const isSelected = queryRequest.folderPath === folderName;
+          const folderObj = folders.find((f) => (f.path || f.name) === folderName);
+          const customColorHex = folderObj?.color_token
+            ? NoteColors[folderObj.color_token as NoteColorToken]
+            : undefined;
+
           return (
             <Pressable
               key={folderName}
               onPress={() => setFolderFilter(isSelected ? null : folderName)}
-              className={`flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border transition-all ${
+              onLongPress={() => handleOpenFolderActions(folderName)}
+              delayLongPress={350}
+              accessibilityLabel={`Folder ${folderName}. Long press for options.`}
+              className={`flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border ${
                 isSelected
                   ? 'bg-light-iconBg dark:bg-white border-transparent'
                   : 'bg-transparent border-light-border dark:border-dark-border'
               }`}
             >
-              <Folder size={11} color={isSelected ? (isDark ? '#111111' : '#FFFFFF') : (isDark ? '#B5B5B5' : '#626262')} />
-              <Text className={`text-xs font-semibold ${
-                isSelected
-                  ? 'text-white dark:text-[#111111]'
-                  : 'text-light-textSecondary dark:text-dark-textSecondary'
-              }`}>
+              <View className="flex-row items-center gap-1">
+                {customColorHex && (
+                  <View
+                    style={{ backgroundColor: customColorHex }}
+                    className="w-2 h-2 rounded-full mr-0.5"
+                  />
+                )}
+                {renderFolderIcon(
+                  folderObj?.icon,
+                  11,
+                  isSelected
+                    ? isDark
+                      ? '#111111'
+                      : '#FFFFFF'
+                    : customColorHex || (isDark ? '#B5B5B5' : '#626262')
+                )}
+              </View>
+
+              <Text
+                className={`text-xs font-semibold ${
+                  isSelected
+                    ? 'text-white dark:text-[#111111]'
+                    : 'text-light-textSecondary dark:text-dark-textSecondary'
+                }`}
+              >
                 {folderName}
               </Text>
+
+              {isSelected && (
+                <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    handleOpenFolderActions(folderName);
+                  }}
+                  accessibilityLabel={`Manage folder ${folderName}`}
+                  className="ml-1 -mr-1 p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 active:opacity-60"
+                >
+                  <MoreVertical size={12} color={isDark ? '#111111' : '#FFFFFF'} />
+                </Pressable>
+              )}
             </Pressable>
           );
         })}
@@ -861,6 +1013,16 @@ export const NotesView: React.FC = () => {
         >
           <Plus size={11} color={isDark ? '#A1A1AA' : '#71717A'} />
           <Text className="text-xs text-light-textMuted dark:text-dark-textMuted font-medium">Folder</Text>
+        </Pressable>
+
+        {/* Folder Explorer Tree Button */}
+        <Pressable
+          onPress={() => setIsFolderExplorerOpen(true)}
+          accessibilityLabel="Open Folder Explorer Tree"
+          className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-light-surface/60 dark:bg-white/5 border border-light-border dark:border-white/10 hover:border-cyan-500/50 active:scale-95"
+        >
+          <FolderTree size={12} color="#06B6D4" />
+          <Text className="text-xs text-light-textPrimary dark:text-dark-textPrimary font-semibold">Tree</Text>
         </Pressable>
 
         {/* Dynamic Tag Pills */}
@@ -924,6 +1086,53 @@ export const NotesView: React.FC = () => {
             <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
               {partitionCounts.archived} notes preserved. Tap unarchive on any note to restore it to your main notebook.
             </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Active Folder Filter Banner with Direct Manage Action */}
+      {queryRequest.folderPath && queryRequest.statusScope === 'active' && (
+        <View className="flex-row items-center justify-between mb-6 p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20">
+          <View className="flex-row items-center gap-3 flex-1 mr-2">
+            <View className="w-9 h-9 rounded-xl bg-cyan-500/20 items-center justify-center">
+              <Folder size={18} color="#06B6D4" />
+            </View>
+            <View className="flex-1">
+              <View className="flex-row items-center gap-2">
+                <Text className="text-sm font-bold text-light-textPrimary dark:text-dark-textPrimary" numberOfLines={1}>
+                  /{queryRequest.folderPath}
+                </Text>
+                <Text className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400">
+                  {feedCards.length + pinnedCards.length} notes
+                </Text>
+              </View>
+              <Text className="text-xs text-light-textMuted dark:text-dark-textMuted" numberOfLines={1}>
+                Filtering thoughts & captures in this directory
+              </Text>
+            </View>
+          </View>
+
+          <View className="flex-row items-center gap-1.5">
+            <Pressable
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => handleOpenFolderActions(queryRequest.folderPath!)}
+              accessibilityLabel="Manage Folder Actions"
+              className="px-3 py-1.5 rounded-full bg-light-surface dark:bg-white/10 border border-light-border dark:border-white/10 flex-row items-center gap-1 active:scale-95"
+            >
+              <MoreVertical size={13} color={isDark ? '#E5E7EB' : '#1F2937'} />
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Manage
+              </Text>
+            </Pressable>
+
+            <Pressable
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              onPress={() => setFolderFilter(null)}
+              accessibilityLabel="Clear Folder Filter"
+              className="p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 active:opacity-60"
+            >
+              <X size={15} color={isDark ? '#A1A1AA' : '#71717A'} />
+            </Pressable>
           </View>
         </View>
       )}
@@ -1431,6 +1640,84 @@ export const NotesView: React.FC = () => {
           </Pressable>
         </Modal>
       )}
+
+      {/* Folder Action Sheet (Rename, Move, Duplicate, Subfolder, Delete, Colors, Icons, Select All, Export) */}
+      {actionSheetFolder && (
+        <FolderActionSheet
+          visible={isActionSheetOpen}
+          folderId={actionSheetFolder.id}
+          folderPath={actionSheetFolder.path}
+          currentColorToken={actionSheetFolder.colorToken}
+          currentIcon={actionSheetFolder.icon}
+          stats={activeFolderStats}
+          onClose={() => setIsActionSheetOpen(false)}
+          onOpenCreateSubfolder={(parent) => handleOpenCreateSubfolderFromSheet(parent)}
+          onOpenRename={() => setIsRenameModalOpen(true)}
+          onOpenMove={() => setIsMoveFolderReparentModalOpen(true)}
+          onDuplicate={(p, id) => handleConfirmDuplicateFolder(p, id)}
+          onOpenDelete={() => setIsDeleteFolderModalOpen(true)}
+          onSelectAllNotes={(p) => handleSelectAllFolderNotes(p)}
+          onExportFolder={(p) => handleExportFolderNotes(p)}
+          onChangeColor={(col) => handleChangeFolderColor(col)}
+          onChangeIcon={(icon) => handleChangeFolderIcon(icon)}
+        />
+      )}
+
+      {/* Delete Folder Modal with Note Count & Safe General Re-route */}
+      {actionSheetFolder && (
+        <DeleteFolderModal
+          visible={isDeleteFolderModalOpen}
+          folderId={actionSheetFolder.id}
+          folderPath={actionSheetFolder.path}
+          stats={activeFolderStats}
+          onClose={() => setIsDeleteFolderModalOpen(false)}
+          onConfirmDelete={(noteAction) => handleConfirmDeleteFolder(noteAction)}
+        />
+      )}
+
+      {/* Rename Folder Modal with Path Preview */}
+      {actionSheetFolder && (
+        <RenameFolderModal
+          visible={isRenameModalOpen}
+          folderId={actionSheetFolder.id}
+          currentPath={actionSheetFolder.path}
+          onClose={() => setIsRenameModalOpen(false)}
+          onConfirmRename={(newName) => handleConfirmRenameFolder(newName)}
+        />
+      )}
+
+      {/* Move / Reparent Folder Modal with Cycle Prevention */}
+      {actionSheetFolder && (
+        <MoveFolderModal
+          visible={isMoveFolderReparentModalOpen}
+          folderId={actionSheetFolder.id}
+          folderPath={actionSheetFolder.path}
+          allFolderPaths={allFolderNames}
+          onClose={() => setIsMoveFolderReparentModalOpen(false)}
+          onConfirmMove={(newParent) => handleConfirmMoveFolder(newParent)}
+        />
+      )}
+
+      {/* Folder Explorer Tree Hierarchy Modal */}
+      <FolderExplorerModal
+        visible={isFolderExplorerOpen}
+        folders={folders}
+        notes={notes}
+        activeFolderPath={queryRequest.folderPath}
+        onClose={() => setIsFolderExplorerOpen(false)}
+        onSelectFolder={(folderPath) => {
+          setIsFolderExplorerOpen(false);
+          setFolderFilter(folderPath);
+        }}
+        onOpenFolderActions={(folderPath) => {
+          setIsFolderExplorerOpen(false);
+          handleOpenFolderActions(folderPath);
+        }}
+        onOpenCreateSubfolder={(parentPath) => {
+          setIsFolderExplorerOpen(false);
+          handleOpenCreateSubfolderFromSheet(parentPath);
+        }}
+      />
     </View>
   );
 };

@@ -99,6 +99,19 @@ export interface DBSyncChangelog {
   created_at: string;
 }
 
+export type FolderSyncApplyStatus =
+  | 'applied'
+  | 'ignored_stale'
+  | 'ignored_tombstone'
+  | 'conflict_renamed';
+
+export interface FolderSyncResult {
+  status: FolderSyncApplyStatus;
+  folderId: string;
+  effectivePath?: string;
+  details?: string;
+}
+
 export type SearchHistorySource = 'text' | 'voice' | 'ai';
 
 export interface DBSearchHistory {
@@ -212,5 +225,12 @@ export interface FolderTreeNode {
   icon?: string;
   children: FolderTreeNode[];
   noteCount?: number;
+}
+
+export interface FolderNoteStats {
+  directNotesCount: number;
+  nestedNotesCount: number;
+  totalNotesCount: number;
+  subfoldersCount: number;
 }
 

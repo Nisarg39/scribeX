@@ -106,7 +106,7 @@ export const EquationBlock: React.FC<EquationBlockProps> = ({
             : 'transparent',
         },
       ]}
-      className="my-1.5 w-full rounded-2xl border-2 p-3 transition-all relative group"
+      className="my-1.5 w-full rounded-2xl border-2 p-3 relative group"
     >
       {/* Floating Toolbar when selected in preview mode */}
       {isSelected && !isEditing && (

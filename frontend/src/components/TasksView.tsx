@@ -220,7 +220,7 @@ export const TasksView: React.FC = () => {
             onPress={handleAddTask}
             disabled={!newTaskTitle.trim()}
             accessibilityLabel="Add Task"
-            className={`w-8 h-8 rounded-full items-center justify-center transition-all ${
+            className={`w-8 h-8 rounded-full items-center justify-center ${
               newTaskTitle.trim()
                 ? 'bg-light-iconBg dark:bg-white active:scale-95'
                 : 'bg-black/10 dark:bg-white/10 opacity-40'

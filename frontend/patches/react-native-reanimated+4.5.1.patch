@@ -1,0 +1,55 @@
+diff --git a/node_modules/react-native-reanimated/lib/module/hook/utils.js b/node_modules/react-native-reanimated/lib/module/hook/utils.js
+index f3dc69e..8566475 100644
+--- a/node_modules/react-native-reanimated/lib/module/hook/utils.js
++++ b/node_modules/react-native-reanimated/lib/module/hook/utils.js
+@@ -1,15 +1,20 @@
+ 'use strict';
+ 
+-export function isAnimated(prop) {
++export function isAnimated(prop, seen, depth) {
+   'worklet';
+ 
++  if (depth === undefined) depth = 0;
++  if (depth > 10) return false;
+   if (Array.isArray(prop)) {
+-    return prop.some(isAnimated);
++    return prop.some(item => isAnimated(item, seen, depth + 1));
+   } else if (typeof prop === 'object' && prop !== null) {
++    if (!seen) seen = new WeakSet();
++    if (seen.has(prop)) return false;
++    seen.add(prop);
+     if (prop.onFrame !== undefined) {
+       return true;
+     } else {
+-      return Object.values(prop).some(isAnimated);
++      return Object.values(prop).some(item => isAnimated(item, seen, depth + 1));
+     }
+   }
+   return false;
+diff --git a/node_modules/react-native-reanimated/src/hook/utils.ts b/node_modules/react-native-reanimated/src/hook/utils.ts
+index 4a9686d..a8f4101 100644
+--- a/node_modules/react-native-reanimated/src/hook/utils.ts
++++ b/node_modules/react-native-reanimated/src/hook/utils.ts
+@@ -1,14 +1,19 @@
+ 'use strict';
+ 
+-export function isAnimated(prop: unknown) {
++export function isAnimated(prop: unknown, seen?: WeakSet<object>, depth?: number): boolean {
+   'worklet';
++  const currentDepth = depth ?? 0;
++  if (currentDepth > 10) return false;
+   if (Array.isArray(prop)) {
+-    return prop.some(isAnimated);
++    return prop.some((item) => isAnimated(item, seen, currentDepth + 1));
+   } else if (typeof prop === 'object' && prop !== null) {
++    const visited = seen ?? new WeakSet<object>();
++    if (visited.has(prop)) return false;
++    visited.add(prop);
+     if ((prop as Record<string, unknown>).onFrame !== undefined) {
+       return true;
+     } else {
+-      return Object.values(prop).some(isAnimated);
++      return Object.values(prop).some((item) => isAnimated(item, visited, currentDepth + 1));
+     }
+   }
+   return false;

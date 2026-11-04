@@ -667,7 +667,7 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
           backgroundColor: isDark ? 'rgba(24, 24, 27, 0.75)' : '#FFFFFF',
         },
       ]}
-      className="my-2 w-full rounded-2xl border p-3.5 transition-all group"
+      className="my-2 w-full rounded-2xl border p-3.5 group"
     >
       {/* Top Header Ribbon */}
       <View className="flex-row items-center justify-between mb-3">
@@ -838,7 +838,7 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
                   ? '#27272A'
                   : '#E4E4E7',
               }}
-              className="flex-1 rounded-full transition-all"
+              className="flex-1 rounded-full"
             />
           );
         })}

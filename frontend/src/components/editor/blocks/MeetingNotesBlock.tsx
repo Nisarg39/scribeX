@@ -248,7 +248,7 @@ export const MeetingNotesBlock: React.FC<MeetingNotesBlockProps> = ({
             : 'rgba(0, 0, 0, 0.08)',
           backgroundColor: isDark ? 'rgba(18, 18, 22, 0.7)' : 'rgba(250, 250, 252, 0.9)',
         }}
-        className="rounded-2xl border transition-all overflow-hidden p-4"
+        className="rounded-2xl border overflow-hidden p-4"
       >
         {/* Top Header: Badge, Date, Duration & Actions */}
         <View className="flex-row items-start justify-between gap-3 mb-2 pb-2.5 border-b border-light-border dark:border-white/5">
@@ -393,7 +393,7 @@ export const MeetingNotesBlock: React.FC<MeetingNotesBlockProps> = ({
                   height: isPlaying ? (h * ((i % 3) + 1)) / 3 : h * 0.6,
                   backgroundColor: isPlaying ? '#38BDF8' : isDark ? '#52525B' : '#D1D5DB',
                 }}
-                className="w-1 rounded-full transition-all"
+                className="w-1 rounded-full"
               />
             ))}
           </View>

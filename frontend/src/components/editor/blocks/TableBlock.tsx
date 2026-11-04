@@ -122,7 +122,7 @@ export const TableBlock: React.FC<TableBlockProps> = ({
           backgroundColor: isDark ? 'rgba(255, 255, 255, 0.015)' : 'rgba(0, 0, 0, 0.01)',
         },
       ]}
-      className="my-1.5 w-full rounded-2xl border p-2.5 transition-all group"
+      className="my-1.5 w-full rounded-2xl border p-2.5 group"
     >
       {/* Table Actions Header */}
       <View className="flex-row items-center justify-between mb-2">

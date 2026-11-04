@@ -108,7 +108,7 @@ export const ReadingBlock: React.FC<ReadingBlockProps> = ({
   return (
     <View
       style={containerStyle}
-      className="py-3 px-3.5 my-2 rounded-2xl border-2 transition-all cursor-default"
+      className="py-3 px-3.5 my-2 rounded-2xl border-2 cursor-default"
     >
       {/* Top Header: Book Icon + Title + Status Pill */}
       <View className="flex-row items-center justify-between mb-2">

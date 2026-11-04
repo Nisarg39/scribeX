@@ -237,7 +237,7 @@ export const LectureNoteBlock: React.FC<LectureNoteBlockProps> = ({
             : 'rgba(0, 0, 0, 0.08)',
           backgroundColor: isDark ? 'rgba(18, 18, 22, 0.7)' : 'rgba(250, 250, 252, 0.9)',
         }}
-        className="rounded-2xl border transition-all overflow-hidden p-4"
+        className="rounded-2xl border overflow-hidden p-4"
       >
         {/* Top Header: Badge, Title & Speaker */}
         <View className="flex-row items-start justify-between gap-3 mb-3">
