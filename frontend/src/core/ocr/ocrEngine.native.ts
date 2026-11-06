@@ -1,8 +1,6 @@
 import { Platform } from 'react-native';
 import * as ImageManipulator from 'expo-image-manipulator';
 import * as FileSystem from 'expo-file-system/legacy';
-import { isSupported, extractTextFromImage } from 'expo-text-extractor';
-import PdfThumbnail, { ThumbnailResult } from 'react-native-pdf-thumbnail';
 import {
   IOcrEngine,
   OcrExtractionOptions,
@@ -10,6 +8,26 @@ import {
   OcrFilterMode,
   OcrPageResult,
 } from './types';
+
+// Safely resolve native modules without top-level crash in unlinked environments (e.g. Expo Go or iOS simulator without native build)
+let isSupported = false;
+let extractTextFromImage: ((uri: string) => Promise<string[]>) | null = null;
+let PdfThumbnail: any = null;
+
+try {
+  const textExtractor = require('expo-text-extractor');
+  isSupported = !!textExtractor?.isSupported;
+  extractTextFromImage = textExtractor?.extractTextFromImage || null;
+} catch (e) {
+  console.warn('Native module expo-text-extractor is not available in current runtime environment:', e);
+}
+
+try {
+  const pdfModule = require('react-native-pdf-thumbnail');
+  PdfThumbnail = pdfModule?.default || pdfModule;
+} catch (e) {
+  console.warn('Native module react-native-pdf-thumbnail is not available in current runtime environment:', e);
+}
 
 class NativeOcrEngine implements IOcrEngine {
   /**
@@ -60,7 +78,7 @@ class NativeOcrEngine implements IOcrEngine {
 
     options?.onProgress?.({ status: 'extracting text', progress: 0.5 });
 
-    if (!isSupported) {
+    if (!isSupported || !extractTextFromImage) {
       console.warn('expo-text-extractor is not supported on this native device');
       return {
         text: 'On-device text extraction is not supported on this device/simulator. The image has been saved.',
@@ -125,8 +143,18 @@ class NativeOcrEngine implements IOcrEngine {
 
     options?.onProgress?.({ status: 'rendering PDF pages', progress: 0.3 });
 
+    if (!PdfThumbnail) {
+      console.warn('react-native-pdf-thumbnail is not available on this device');
+      return {
+        text: 'PDF extraction requires a native build with react-native-pdf-thumbnail linked.',
+        confidence: 0,
+        pageCount: 0,
+        filter: options?.filter || 'natural',
+      };
+    }
+
     try {
-      const thumbnails: ThumbnailResult[] = await PdfThumbnail.generateAllPages(localPath, {
+      const thumbnails: any[] = await PdfThumbnail.generateAllPages(localPath, {
         quality: 85,
         maxWidth: options?.maxDimension || 1600,
       });
@@ -144,7 +172,7 @@ class NativeOcrEngine implements IOcrEngine {
           progress: 0.3 + ((i + 1) / pagesToProcess.length) * 0.65,
         });
 
-        const lines = isSupported ? await extractTextFromImage(thumb.uri) : [];
+        const lines = (isSupported && extractTextFromImage) ? await extractTextFromImage(thumb.uri) : [];
         const pageText = lines.map((l) => (l || '').trim()).filter(Boolean).join('\n');
 
         pageResults.push({

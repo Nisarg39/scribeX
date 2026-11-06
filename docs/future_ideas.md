@@ -34,7 +34,10 @@ Remaining Tasks to fix
 23.2 - [x] fix the document ocr block issue which is giving error and also check all the fucntionalities that it is working or not (COMPLETED)
 26 - [x] long press gesture to select multiple notes and then perform actions like delete, move to folder, share, etc in the home screen and make sure it works perfectly for all the platforms and when the multiple selection is active there should be a top action bar that should display the number of selected notes and the actions that can be performed on them and also there should be a back button to deselect all the notes and go back to the normal mode (COMPLETED)
 27 - [x] memory management for web platform currently i just saw 6.5 gb tab resource so we need to make this optimised (COMPLETED)
-28 - [] Folder management feature where we can create folders and move notes to folders and also when creating a folder user can add cover image for the folder and the folder should be displayed with the cover image in the home screen
+28 - [x] Folder management feature where we can create folders and move notes to folders and also when creating a folder user can add cover image for the folder and the folder should be displayed with the cover image in the home screen(COMPLETED)
+29 - [x] Note Sorting & Ordering UI: Implement sort action button / menu in NotesView allowing users to sort notes by Recently Updated (Newest/Oldest), Date Created (Newest/Oldest), and Title (A-Z / Z-A) with visual active sort indicator and persistent preference (COMPLETED)
+30 - [x] Full Workspace Backup & Restore (JSON / SQLite Dump): Implement complete notebook snapshot export (all tables: notes, folders, tasks, tags, entity_relations) into a timestamped JSON backup file, and full workspace restore / import mechanism with schema validation ensuring zero data loss before cloud sync (COMPLETED)
+31 - [x] Workspace Storage & Settings Modal + "Empty Trash" Purge: Implement accessible settings modal in home screen top bar (triggerable via "Local SQLite Active" badge or settings action) displaying database health, storage stats, 1-tap backup/restore triggers, and a one-click "Empty Trash" action with cascade orphan media cleanup (COMPLETED)
 
 Long term Ideas
 

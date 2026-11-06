@@ -8,7 +8,8 @@ import { useNotesStore } from '../src/state/useNotesStore';
 import { NotesView } from '../src/components/NotesView';
 import { TasksView } from '../src/components/TasksView';
 import { BottomDock } from '../src/components/BottomDock';
-import { Sun, Moon, LogOut } from 'lucide-react-native';
+import { Sun, Moon, LogOut, Database } from 'lucide-react-native';
+import { WorkspaceSettingsModal } from '../src/components/settings/WorkspaceSettingsModal';
 
 export default function HomeContainerScreen() {
   const insets = useSafeAreaInsets();
@@ -18,6 +19,7 @@ export default function HomeContainerScreen() {
   const { tasks } = useNotesStore();
 
   const [activeTab, setActiveTab] = useState<'notes' | 'tasks'>('notes');
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const pendingCount = tasks.filter((t) => !t.isCompleted).length;
 
   const handleSignOut = async () => {
@@ -39,16 +41,32 @@ export default function HomeContainerScreen() {
           
           {/* Top Quiet App Bar */}
           <View className="flex-row items-center justify-between mb-6 pb-2 border-b border-light-border/40 dark:border-dark-border/40">
-            {/* Sync / Local Status Badge */}
-            <View className="flex-row items-center gap-2">
+            {/* Sync / Local Status Badge (Interactive) */}
+            <Pressable
+              onPress={() => setIsSettingsModalOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open Workspace Settings"
+              className="flex-row items-center gap-2 px-3 py-1.5 rounded-full bg-light-surface/60 dark:bg-white/5 border border-light-border/60 dark:border-white/10 active:scale-95"
+            >
               <View className="w-2 h-2 rounded-full bg-emerald-500" />
               <Text className="text-xs font-semibold text-light-textMuted dark:text-dark-textMuted tracking-tight">
                 Local SQLite Active
               </Text>
-            </View>
+            </Pressable>
 
             {/* Quiet Action Cluster */}
             <View className="flex-row items-center gap-2">
+              {/* Workspace Settings / Backup Button */}
+              <Pressable
+                onPress={() => setIsSettingsModalOpen(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Workspace & Storage Settings"
+                style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+                className="w-10 h-10 rounded-full bg-light-border/60 dark:bg-dark-raised items-center justify-center active:scale-95"
+              >
+                <Database size={16} color={isDark ? '#B5B5B5' : '#626262'} strokeWidth={2} />
+              </Pressable>
+
               {/* Circular Theme Toggle Button */}
               <Pressable
                 onPress={toggleTheme}
@@ -87,6 +105,12 @@ export default function HomeContainerScreen() {
             activeTab={activeTab} 
             onTabChange={setActiveTab} 
             pendingTasksCount={pendingCount} 
+          />
+
+          {/* Workspace Storage & Backup Settings Modal */}
+          <WorkspaceSettingsModal
+            visible={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
           />
 
         </View>

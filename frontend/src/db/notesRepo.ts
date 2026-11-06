@@ -317,7 +317,42 @@ export class NotesRepository {
   }
 
   public async permanentlyDeleteNote(id: string): Promise<void> {
+    await dbClient.run(`DELETE FROM tasks WHERE note_id = ?;`, [id]);
+    await dbClient.run(`DELETE FROM note_tags WHERE note_id = ?;`, [id]);
+    await dbClient.run(`DELETE FROM entity_relations WHERE source_id = ? OR target_id = ?;`, [id, id]);
+    await dbClient.run(
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+       VALUES (?, 'user-default', 1, 'note', ?, 'delete', ?);`,
+      [`log-purge-${id}-${Date.now()}`, id, JSON.stringify({ action: 'permanent_purge', timestamp: new Date().toISOString() })]
+    );
     await dbClient.run(`DELETE FROM notes WHERE id = ?;`, [id]);
+  }
+
+  public async emptyTrashCascade(): Promise<number> {
+    const trashedNotes = await dbClient.query<{ id: string }>(
+      `SELECT id FROM notes WHERE status = 'trashed';`
+    );
+    if (trashedNotes.length === 0) return 0;
+    const ids = trashedNotes.map((r) => r.id);
+    const placeholders = ids.map(() => '?').join(',');
+
+    await dbClient.run(`DELETE FROM tasks WHERE note_id IN (${placeholders});`, ids);
+    await dbClient.run(`DELETE FROM note_tags WHERE note_id IN (${placeholders});`, ids);
+    await dbClient.run(
+      `DELETE FROM entity_relations WHERE source_id IN (${placeholders}) OR target_id IN (${placeholders});`,
+      [...ids, ...ids]
+    );
+
+    for (const id of ids) {
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, 'user-default', 1, 'note', ?, 'delete', ?);`,
+        [`log-purge-${id}-${Date.now()}`, id, JSON.stringify({ action: 'empty_trash_purge', timestamp: new Date().toISOString() })]
+      );
+    }
+
+    await dbClient.run(`DELETE FROM notes WHERE id IN (${placeholders});`, ids);
+    return ids.length;
   }
 
   public async batchSoftDeleteNotes(ids: string[]): Promise<void> {

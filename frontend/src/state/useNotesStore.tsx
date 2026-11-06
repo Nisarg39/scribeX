@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NoteItem, TaskItem, ComposableBlock, TaskPriority, BlockType } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
 import { notesRepo } from '../db/notesRepo';
@@ -365,6 +366,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setSortByFilter = (sortBy: NoteSortBy) => {
     setQueryRequest({ sortBy });
+    AsyncStorage.setItem('scribex_sort_preference', sortBy).catch(() => {});
   };
 
   const loadNextPage = () => {
@@ -446,6 +448,16 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     refreshFromDB();
+    AsyncStorage.getItem('scribex_sort_preference')
+      .then((savedSort) => {
+        if (savedSort) {
+          setQueryRequestState((prev) => ({
+            ...prev,
+            sortBy: savedSort as NoteSortBy,
+          }));
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const addNote = async (
@@ -587,12 +599,12 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const emptyTrash = async () => {
-    const trashed = notes.filter((n) => n.status === 'trashed');
     setNotes((prev) => prev.filter((n) => n.status !== 'trashed'));
-    for (const n of trashed) {
-      try {
-        await notesRepo.permanentlyDeleteNote(n.id);
-      } catch (_) {}
+    try {
+      await notesRepo.emptyTrashCascade();
+      await refreshFromDB();
+    } catch (err) {
+      console.warn('Failed to empty trash via notesRepo:', err);
     }
   };
 

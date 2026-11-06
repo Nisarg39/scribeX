@@ -27,8 +27,11 @@ export type NoteStatusScope =
 export type NoteSortBy =
   | 'relevance'
   | 'updated_desc'
+  | 'updated_asc'
   | 'created_desc'
-  | 'title_asc';
+  | 'created_asc'
+  | 'title_asc'
+  | 'title_desc';
 
 export interface NoteQueryRequest {
   searchQuery: string;                  // Typed text or Voice-to-Text transcript
@@ -500,9 +503,19 @@ export function executeNoteQuery(
 
   if (request.sortBy === 'title_asc') {
     allViewModels.sort((a, b) => (a.note.title || '').localeCompare(b.note.title || ''));
+  } else if (request.sortBy === 'title_desc') {
+    allViewModels.sort((a, b) => (b.note.title || '').localeCompare(a.note.title || ''));
   } else if (request.sortBy === 'created_desc') {
     allViewModels.sort((a, b) =>
       String(b.note.createdAt || '').localeCompare(String(a.note.createdAt || ''))
+    );
+  } else if (request.sortBy === 'created_asc') {
+    allViewModels.sort((a, b) =>
+      String(a.note.createdAt || '').localeCompare(String(b.note.createdAt || ''))
+    );
+  } else if (request.sortBy === 'updated_asc') {
+    allViewModels.sort((a, b) =>
+      String(a.note.updatedAt || '').localeCompare(String(b.note.updatedAt || ''))
     );
   } else {
     // Default 'updated_desc'
