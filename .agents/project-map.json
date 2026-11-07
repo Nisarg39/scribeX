@@ -48,8 +48,11 @@
       "theme": "frontend/src/theme/index.ts"
     },
     "docsAndReports": {
+      "index": "docs/README.md",
+      "masterTracker": "docs/Master_Tasks_Tracker.md",
       "architectureSpec": "docs/Universal_Note_Input_Structure_and_Relations.md",
-      "searchImplementationPlan": "docs/Search_Implementation_Plan.md",
+      "technicalArchitecture": "docs/Technical_System_Architecture.md",
+      "phase2Plan": "docs/Phase_2_Cloud_Sync_and_Backend_Plan.md",
       "blockSearchabilityAudit": "docs/Block_Storage_and_Searchability_Audit.md",
       "blocksAuditReport": "docs/Cross_Platform_Input_Blocks_Audit_Report.md",
       "uiUxAuditReport": "docs/UI_UX_Cross_Platform_Inconsistencies_Report.md",

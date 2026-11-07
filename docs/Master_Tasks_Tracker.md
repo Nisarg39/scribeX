@@ -3,7 +3,7 @@
 > **Purpose:** High-level task management checklist tracking what is completed and what remains across the ScribeX architecture.  
 > **Status:** Active Tracking Document  
 > **Execution Strategy:** Build from the **User's Journey First**: Establish the comprehensive manual note-taking engine with all 42 input methods, local SQLite storage, folders, tags, and relations, followed by client-server delta sync, and then the Friday AI assistant.  
-> **Last Updated:** October 27, 2026  
+> **Last Updated:** November 8, 2026  
 
 ---
 
@@ -11,21 +11,21 @@
 
 | Phase | Description | Status | Reference Doc |
 | :---: | :--- | :---: | :--- |
-| **Phase 1** | **Universal Manual Note Engine & Local-First Canvas (Core User Journey)** | `[x] COMPLETED (100% AUDITED)` | [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md) |
-| **Phase 2** | **Supabase Realtime Sync, Next.js Serverless AI (Vercel) & Google Drive Media Vault** | `[ ] NEXT` | [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md#4-backend-architecture-supabase-realtime-database-nextjs-serverless-ai-vercel--google-drive-media-vault) |
+| **Phase 1** | **Universal Manual Note Engine & Local-First Canvas (Core User Journey)** | `[x] COMPLETED (100% AUDITED & VERIFIED)` | [Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md) |
+| **Phase 2** | **Supabase Realtime Sync, Next.js Serverless AI (Vercel) & Google Drive Media Vault** | `[ ] NEXT IN QUEUE` | [Phase_2_Cloud_Sync_and_Backend_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_2_Cloud_Sync_and_Backend_Plan.md) |
 | **Phase 3** | **Cognitive Memory & Friday AI Assistant Integration** | `[ ] PENDING` | [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md#6-cognitive-memory-architecture-4-layer-engine) |
 | **Phase 4** | **Remote PC Bridge Daemon + Pluggable CLI Verification Loop** | `[ ] PENDING` | [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md#7-remote-pc-agentic-execution--pluggable-cli-daemon) |
 | **Phase 5** | **SaaS Multi-Tenancy, Commercial Billing & Production Scaling** | `[ ] PENDING` | [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md) |
 
 ---
 
-## Active Phase 1 Breakdown: Universal Manual Note Engine & Local-First Canvas
+## Completed Phase 1 Ledger: Universal Manual Note Engine & Local-First Canvas
 
-> **Source of Truth:** [Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md) & [Phase_1_Implementation_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_1_Implementation_Plan.md)  
+> **Source of Truth:** [Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md)  
 > **Critical Design Constraint:** Strictly avoid generic cards, boxy components, and cookie-cutter SaaS widgets. Deliver a serene, soft minimalist editorial canvas with pastel note accents and circular action controls.
 
 - [x] **Step 1: Frontend Scaffolding, NativeWind v4 Configuration & Pastel Design Tokens**
-  - Universal Expo SDK 52 setup (`frontend/`).
+  - Universal Expo SDK 52 setup upgraded to Expo SDK 57 (`frontend/`).
   - NativeWind v4 + Tailwind CSS config with pastel note palette (`apricot`, `coral`, `lime`, `lavender`, `cyan`, `pink`, `sky`).
   - Fluid, non-generic workspace layout adhering strictly to `<RULE[user_global]>`.
 - [x] **Step 2: Local-First Client SQLite Engine & Core Data Repositories**
@@ -49,27 +49,36 @@
 - [x] **Step 6: Unified Task Engine (Embedded Checklists $\leftrightarrow$ Global Task View)**
   - Single-source-of-truth task entity linking note checklist blocks to global task records.
   - Reactive completion toggle, priority weights (`low`, `medium`, `high`, `urgent`), and due dates.
-- [x] **Milestone 1.5: Invisible Editorial Canvas Refactor (Blog Editor Flow & Resizable Media)**
+- [x] **Step 7: Invisible Editorial Canvas Refactor (Blog Editor Flow & Resizable Media)**
   - Strip outer cards, borders, and per-block header strips from `BlockRenderer.tsx`.
   - Unify all text and headings into a continuous editorial sheet (Medium / Substack / Notion style).
   - Implement single floating contextual formatting dock + slash command palette (`/`).
   - Add inline resizable media controls (`33%`, `50%`, `75%`, `100%`) with alignment (`left`, `center`, `right`).
-  - Ensure Google Drive URL linking compatibility for zero-cost media storage with Firebase sync.
-- [x] **Step 7: Hierarchical Folders & Physical Vault Directory Mirroring**
+- [x] **Step 8: Hierarchical Folders & Lifecycle Actions**
   - Nested project subfolders with recursive parent paths.
+  - Folder Rename, Delete (with preserve vs trash cascade), Move/Reparent, and subfolder creation.
   - Drag/move note into folders and breadcrumb navigation.
-- [x] **Step 8: Multi-Tags, Starred Favorites, Pinning, Archive & 30-Day Trash**
+- [x] **Step 9: Multi-Tags, Starred Favorites, Pinning, Archive & 30-Day Trash**
   - Non-exclusive `#tag` chips with fast tag filtering.
   - Top-of-canvas pinning and favorite starring.
-  - Soft-delete 30-day trash with restore and permanent purge.
-- [x] **Step 9: Bidirectional Cross-Note Links (`[[Note Title]]`) & Relational Knowledge Graph**
+  - Soft-delete 30-day trash with restore and permanent cascade purge.
+- [x] **Step 10: Bidirectional Cross-Note Links (`[[Note Title]]`) & Relational Knowledge Graph**
   - Autocomplete trigger for `[[` typing.
   - Backlinks drawer displaying incoming connections.
   - `entity_relations` edge tracking (`related_to`, `part_of`, `derived_from`, `contradicts`, `supersedes`).
-- [x] **Step 10: Fast Local Search (< 5ms via FTS5) & Dynamic Smart Collections**
+- [x] **Step 11: Fast Local Search (< 5ms via FTS5) & Search History**
   - SQLite FTS5 full-text indexing over note titles, blocks, and tags.
-  - Dynamic virtual views (e.g., `#meeting notes with pending tasks`).
-  - Automated Phase 1 verification test suite.
+  - Recent search chips ledger and query debouncing.
+- [x] **Step 12: Note Multi-Filter & Sorting UI**
+  - Filter modal covering block types, note status scopes, folder scopes, and tag filters.
+  - Sort modal supporting 6 orders (`updated_desc`, `updated_asc`, `created_desc`, `created_asc`, `title_asc`, `title_desc`) with AsyncStorage persistence.
+- [x] **Step 13: Local Workspace Backup & Restore & Storage Settings**
+  - Full workspace JSON backup export and validated schema restore (Merge vs Replace modes).
+  - Database health metrics and permanent trash purge.
+- [x] **Step 14: Quality Gate & Test Suite Certification**
+  - 36/36 Block AST Lossless Roundtrip verification (`npm run audit:all`).
+  - 30/30 Headless Interaction and 50-step deep undo/redo verification (`npm run test:interactions`).
+  - 13/13 Cross-platform UI/UX consistency assertions passing (`npm run test:uiux`).
 
 ---
 
