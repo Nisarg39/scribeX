@@ -97,6 +97,11 @@ The system is built from the **user's immediate journey first**:
 * **Learning from User Patterns:** The assistant must not remain a static, rigid persona following a fixed script. It must continuously observe the user's communication style, response patterns, working hours, decision-making habits, and preferences.
 * **Self-Refining Interaction:** Over time, the assistant must adapt its tone, level of detail, questioning frequency, and task-suggestion style to match what works best for the user—becoming more intuitive and tailored with every interaction.
 
+### 4.5. Universal AI Connector & Open MCP Interoperability
+* **Dual-Surface Agentic Parity:** The user must be able to leverage ScribeX's intelligence either from inside the native ScribeX app ("Friday Assistant") OR directly from external AI applications (Anthropic Claude Desktop, Google Gemini, OpenAI ChatGPT, Cursor, local Ollama) using the **ScribeX Universal AI Connector & MCP Server**.
+* **Zero Cognitive Divergence:** Regardless of which AI client is used, the system must inject the exact same 4-layer cognitive memory (Identity, Living Notes & Graph, Temporal Timeline, and Behavioral Preferences) and expose the exact same agentic tools (`search_vault`, `create_note`, `update_note`, `create_task`, `schedule_reminder`, etc.).
+* **Serverless Hardware Push Execution:** When any external AI tool calls `schedule_reminder` or creates a task with a due date/time, ScribeX's local `NotificationService` must immediately schedule the native hardware alarm (`AlarmManager` / `UNUserNotificationCenter` / Web Notifications) and record the delta into `sync_changelog` with monotonic `sync_rev`.
+
 ---
 
 ## 5. Remote Agentic PC Execution & Multi-Agent Orchestration
@@ -132,3 +137,4 @@ The system is built from the **user's immediate journey first**:
 * **Daily Review & Proactive Update Flow:** Friday presents the user with their prioritized daily checklist, highlights neglected goals or upcoming deadlines, and dynamically recalibrates based on feedback.
 * **Deep Retrieval & Life Reflection Flow:** The user asks about a past project, document, task, or personal evolution, and Friday synthesizes a rich answer spanning the historical timeline ("Versions of Me") and current living notes.
 * **Remote PC Agentic Execution Flow:** The user assigns a technical or operational task from mobile or web. Friday enriches the task with context from the user's notes, dispatches it to the user's configured CLI agent (Claude Code, Gemini CLI, etc.) on their PC, monitors progress, independently verifies the output with tests/git diffs, and updates notes upon verified completion.
+* **External AI Workflow via Universal MCP Connector:** The user opens Claude Desktop, Cursor, or ChatGPT on their laptop and asks to plan their sprint. The external AI connects to ScribeX via MCP or REST, reads active goals from Layer 1, analyzes existing project notes from Layer 2, creates actionable tasks, and schedules push reminders—all persisting directly into ScribeX's local SQLite vault and triggering hardware alarms on the user's phone.

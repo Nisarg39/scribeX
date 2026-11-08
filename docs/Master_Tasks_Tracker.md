@@ -107,6 +107,7 @@
 - User-initiated interactive discovery interview ("Everything About Me").
 - Ask-Before-Write Ambiguity Gate & universal intake router.
 - 4-layer cognitive memory: Layer 1 (Identity), Layer 2 (Living Vault & pgvector / semantic embeddings), Layer 3 (Versions of Me temporal timeline), Layer 4 (Behavioral Ledger & noise-filtered edit learner).
+- **Universal AI Connector & MCP Server (Cross-AI Parity):** Standalone MCP server (stdio / SSE) and OpenAI/Anthropic REST proxy exposing identical 4-layer cognitive context, vault search, task execution, and reminder triggers to external AIs (Claude Desktop, Gemini, ChatGPT, Cursor) with full feature parity. *See [Universal_AI_Connector_and_MCP_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_AI_Connector_and_MCP_Architecture.md).*
 
 ### Phase 4: Remote PC Agent Bridge Daemon & Pluggable CLI Execution
 - Outbound WebSocket tunnel daemon (`pc-agent-bridge`) running on personal PC.

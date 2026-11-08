@@ -45,4 +45,6 @@ Long term Ideas
 
 2 - [ ] AI assistant inside the note editor where we can give prompt and it starts editing the existing note (Phase 3 AI Assistant)
 
-3 - [ ] Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes. These multi agents will be added using the help of the main agent (Friday) that has all the context of the user and the system, with scoped access to context. (Phase 4 Multi-Agent) 
+3 - [ ] Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes. These multi agents will be added using the help of the main agent (Friday) that has all the context of the user and the system, with scoped access to context. (Phase 4 Multi-Agent)
+
+4 - [x] ScribeX Universal AI Connector & MCP Server: Dual-surface unified cognitive engine providing identical 4-layer context, agentic tools (search, create/update note, task toggle, reminder alarm scheduling), and Ask-Before-Write safety gates to both the In-App Friday assistant and external AI apps (Claude Desktop, Gemini CLI, ChatGPT, Cursor, local Ollama) via MCP and OpenAI/Anthropic REST proxy. (ADOPTED & SPECIFIED IN docs/Universal_AI_Connector_and_MCP_Architecture.md) 

@@ -27,6 +27,7 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 | **8** | [Multi-Modal Background Extraction Pipeline (Whisper & Document OCR)](#step-8-multi-modal-background-extraction-pipeline) | `backend/app/storage/file_parser.py` | `[ ] PENDING` |
 | **9** | [Proactive Background Scheduler & Sleep-Cycle Memory Consolidation](#step-9-proactive-background-scheduler--sleep-cycle-memory-consolidation) | `backend/app/agents/scheduler.py` | `[ ] PENDING` |
 | **10** | [Phase 3 Master Verification Suite & Cognitive Integration Testing](#step-10-phase-3-master-verification-suite--cognitive-integration-testing) | `backend/tests/test_cognitive_integration.py` | `[ ] PENDING` |
+| **11** | [Universal AI Connector & MCP Server (Cross-AI Context & Tool Parity)](#step-11-universal-ai-connector--mcp-server-cross-ai-context--tool-parity) | `connector/src/server.ts`, `connector/src/tools/`, `connector/src/rest/` | `[ ] PENDING` |
 
 ---
 
@@ -101,4 +102,19 @@ Use this checklist to track execution. Every step must be implemented, tested, a
 * **Verification Command:**
   ```bash
   cd backend && pytest tests/test_cognitive_integration.py -v
+  ```
+
+---
+
+### Step 11: Universal AI Connector & MCP Server (Cross-AI Context & Tool Parity)
+* **Objective:** Bridge ScribeX's 4-layer cognitive memory, vault query engine, task ledger, and hardware push reminder scheduler to external AI clients (Claude Desktop, Google Gemini, OpenAI ChatGPT, Cursor, local Ollama) with 100% feature and context parity to the in-app Friday assistant.
+* **Deliverables:**
+  * **MCP Server (`connector/src/server.ts`):** Implements Model Context Protocol over `stdio` and SSE transports exposing vault resources (`scribex://vault/identity`, `scribex://tasks/today`, `scribex://notes/{id}`) and prompts (`daily-briefing`, `synthesize-meeting`).
+  * **Unified Tool Handlers (`connector/src/tools/`):** Strongly typed agentic tools (`search_vault`, `read_note`, `create_note`, `update_note`, `create_task`, `toggle_task`, `schedule_reminder`).
+  * **Hardware Push Alarm & Event-Sourcing Integration:** Any task or reminder scheduled by an external AI triggers the local device hardware alarm via `NotificationService` and records deltas into `sync_changelog` with monotonic `sync_rev`.
+  * **OpenAI & Anthropic REST Gateway (`connector/src/rest/`):** `/v1/chat/completions` bridge enabling ChatGPT Custom Actions and external webhooks to use ScribeX context.
+  * **Specification Reference:** [Universal_AI_Connector_and_MCP_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_AI_Connector_and_MCP_Architecture.md).
+* **Verification Command:**
+  ```bash
+  node scripts/test_connector_headless.mjs
   ```

@@ -246,6 +246,18 @@ When you submit a new raw note or file to `POST /api/ai/intake` (Next.js App Rou
    ```
 2. If `clarity_score < 0.85` or contradictions exist, Next.js holds the note in a `staging_intake` record in Supabase and pushes the clarifying question to your Expo app. Only after you reply does it commit the note update.
 
+### 6.4. The Unified Dual-Surface AI Architecture: In-App Friday & Universal MCP/REST Connector
+To prevent vendor lock-in and ensure you can perform agentic tasks with identical context from *any* tool, ScribeX treats its cognitive engine, 4-layer memory, and tool execution catalog as a **Single Source of Truth (SSOT)** exposed via two mirrored surfaces:
+
+1. **Surface A: In-App Friday Conversational Assistant:**
+   * Embedded directly in the Expo mobile/web canvas (right-hand drawer / modal).
+   * Orchestrated via Next.js serverless routes (`/api/ai/*`) or local on-device LLM adapters.
+2. **Surface B: Universal AI Connector & MCP Server (`connector/`):**
+   * **Model Context Protocol (MCP) Server (`scribex-mcp`):** Native `stdio` and SSE endpoints allowing Claude Desktop, Gemini CLI, Antigravity, Cursor, and Zed to mount your ScribeX vault as tools and resources.
+   * **OpenAI & Anthropic REST Gateway (`/v1/chat/completions`):** Allows ChatGPT Custom GPTs, external webhooks, and local scripts to interact with ScribeX.
+   * **Guaranteed Parity:** Any task executed via MCP or REST uses the exact same tool handlers (`search_vault`, `create_note`, `update_note`, `create_task`, `toggle_task`, `schedule_reminder`). If Claude or Gemini sets a task reminder via MCP, ScribeX's `NotificationService` immediately schedules the local device hardware push alarm (`AlarmManager` / `UNUserNotificationCenter` / Web Notifications) and logs the event to `sync_changelog` with zero discrepancies.
+   * **Specification:** See [Universal_AI_Connector_and_MCP_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_AI_Connector_and_MCP_Architecture.md) for complete protocol schemas.
+
 ---
 
 ## 7. Remote PC Agentic Execution & Pluggable CLI Daemon
@@ -411,6 +423,15 @@ scribex/
 │   ├── cli_agents.yaml                 # Configurable CLI Agent Provider Registry
 │   └── pyproject.toml
 │
+├── connector/                          # ScribeX Universal AI Connector & MCP Server (Phase 3)
+│   ├── src/
+│   │   ├── server.ts                   # Model Context Protocol (MCP) Server (stdio & SSE)
+│   │   ├── rest/                       # OpenAI & Anthropic Compatible REST Proxy Gateway
+│   │   ├── context/                    # 4-Layer Cognitive Context Assembler
+│   │   └── tools/                      # Agentic Tools (search, create_note, task, reminder)
+│   ├── package.json
+│   └── tsconfig.json
+│
 └── package.json                        # Root monorepo workspace configuration
 ```
 
@@ -428,7 +449,7 @@ To build and test this systematically without getting overwhelmed, instruct your
   3. Deploy Next.js App Router API backend on Vercel ($0/mo free tier) for AI API endpoints (`/api/ai/*`), Friday cognitive workflows, Whisper STT proxy for audio blocks, and inbound webhook parsers (Methods 41 & 42).
   4. Integrate Google Drive API v3 for zero-cost media storage: photos, scans, audio recordings, and documents upload directly to the user's personal Google Drive folder (`ScribeX_Vault/assets/`), with secure web links and metadata persisted in Supabase and local SQLite.
 * **Phase 3: Cognitive Memory & Friday AI Assistant Integration — `[ ] PENDING`:**  
-  Integrate the Friday conversational assistant, interactive discovery onboarding interview, Ask-Before-Write Ambiguity Gate with universal multi-modal intake router, `pgvector` semantic embeddings in Supabase, and the 4-layer cognitive memory architecture (Layer 1 Identity, Layer 2 Living Notes & Graph, Layer 3 Temporal "Versions of Me", Layer 4 Behavioral Ledger & noise-filtered edit learner).
+  Integrate the Friday conversational assistant, interactive discovery onboarding interview, Ask-Before-Write Ambiguity Gate with universal multi-modal intake router, `pgvector` semantic embeddings in Supabase, the 4-layer cognitive memory architecture (Layer 1 Identity, Layer 2 Living Notes & Graph, Layer 3 Temporal "Versions of Me", Layer 4 Behavioral Ledger & noise-filtered edit learner), and the **ScribeX Universal AI Connector & MCP Server** (granting Claude Desktop, Gemini CLI, Cursor, and ChatGPT identical 4-layer context and agentic tool execution parity with in-app Friday).
 * **Phase 4: Remote PC Agent Bridge Daemon & Pluggable CLI Execution — `[ ] PENDING`:**  
   Deploy the `pc-agent-bridge` daemon on the user's personal PC with outbound WebSocket tunnel, configure `cli_agents.yaml` supporting any local CLI AI agent (Claude Code, Gemini CLI, Codex, Aider), and activate the 3-stage independent verification & self-correction loop.
 * **Phase 5: SaaS Multi-Tenancy, Commercial Billing & Production Scaling — `[ ] PENDING`:**  

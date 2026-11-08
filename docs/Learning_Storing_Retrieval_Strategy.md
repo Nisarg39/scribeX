@@ -82,3 +82,16 @@ To guarantee the remote CLI agent actually completed the task properly before re
 * **Main AI Acceptance Review & Automated Retry:** The Main AI evaluates the independent proof against your original intent and notes.
   * **If incomplete or broken:** The Main AI automatically re-prompts the remote CLI agent session with specific corrective feedback (up to a configured retry limit).
   * **If verified successful:** The Main AI logs the completed work in Layer 3 (Episodic Task History), updates your active project notes and checklists in Layer 2, and records effective CLI prompting patterns in Layer 4 so future remote executions become even faster and more reliable.
+
+---
+
+## 5. Universal Dual-Surface Context Delivery (In-App Friday + Universal MCP Connector)
+
+To prevent cognitive fragmentation and avoid being locked into a single AI app, the 4-layer memory model and multi-step retrieval pipeline are served equally across two surfaces:
+
+1. **Surface 1: In-App Assistant (Friday):** The conversational companion inside the mobile and web app.
+2. **Surface 2: Universal AI Connector & MCP Server (`scribex-mcp`):** Standard Model Context Protocol (stdio/SSE) and REST gateway that gives external AI clients (Claude Desktop, Google Gemini, OpenAI ChatGPT, Cursor, local Ollama) exact parity.
+
+### Guarantees of Dual-Surface Delivery:
+* **Identical Context Injection:** Whether you chat with Friday in the app or prompt Claude Desktop, both models receive the same Layer 1 Identity, Layer 2 Living Notes, Layer 3 Task Timeline, and Layer 4 Behavioral Learnings.
+* **Symmetrical Tool Execution:** Tools (`search_vault`, `create_note`, `create_task`, `schedule_reminder`) trigger the same local SQLite writes, hardware push notification alarms (`NotificationService`), and `sync_changelog` event entries regardless of which AI executed the task. *See [Universal_AI_Connector_and_MCP_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_AI_Connector_and_MCP_Architecture.md).*
