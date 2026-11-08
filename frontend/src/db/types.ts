@@ -5,6 +5,7 @@
 
 import { NoteColorToken } from '../theme/tokens';
 import { ComposableBlock, RelationType, TaskPriority } from '../types/note';
+import { ReminderTargetType } from '../types/reminder';
 
 // Database Row Types (Matching SQLite columns exactly)
 export interface DBFolder {
@@ -42,6 +43,7 @@ export interface DBNote {
   is_pinned: number; // 0 or 1
   status: 'active' | 'archived' | 'trashed';
   priority_score: number;
+  reminder_at: string | null;
   sync_rev: number;
   created_at: string;
   updated_at: string;
@@ -59,6 +61,24 @@ export interface DBTask {
   is_completed: number; // 0 or 1
   priority: TaskPriority;
   due_date: string | null;
+  reminder_at: string | null;
+  sync_rev: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DBReminder {
+  id: string;
+  user_id: string;
+  target_type: ReminderTargetType;
+  target_id: string;
+  note_id: string | null;
+  trigger_at: string;
+  notification_id: string | null;
+  channel_id: string;
+  is_dismissed: number; // 0 or 1
+  dismissed_at: string | null;
+  device_id: string;
   sync_rev: number;
   created_at: string;
   updated_at: string;
@@ -151,6 +171,7 @@ export interface CreateNoteDTO {
   colorToken?: NoteColorToken;
   isFavorite?: boolean;
   isPinned?: boolean;
+  reminderAt?: string;
   tags?: string[];
 }
 
@@ -164,6 +185,7 @@ export interface UpdateNoteDTO {
   isFavorite?: boolean;
   isPinned?: boolean;
   status?: 'active' | 'archived' | 'trashed';
+  reminderAt?: string | null;
   tags?: string[];
 }
 
@@ -178,6 +200,15 @@ export interface CreateTaskDTO {
   isCompleted?: boolean;
   priority?: TaskPriority;
   dueDate?: string;
+  reminderAt?: string;
+}
+
+export interface UpdateTaskDTO {
+  title?: string;
+  isCompleted?: boolean;
+  priority?: TaskPriority;
+  dueDate?: string;
+  reminderAt?: string | null;
 }
 
 export interface CreateFolderDTO {

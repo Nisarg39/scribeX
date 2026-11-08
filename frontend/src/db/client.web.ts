@@ -157,6 +157,15 @@ export class WebDatabaseClient {
       let db: Database;
       if (existingBinary && existingBinary.length > 0) {
         db = new SQL.Database(existingBinary);
+        try {
+          db.exec(SCHEMA_SQL);
+        } catch {}
+        try {
+          db.run('ALTER TABLE tasks ADD COLUMN reminder_at TEXT;');
+        } catch {}
+        try {
+          db.run('ALTER TABLE notes ADD COLUMN reminder_at TEXT;');
+        } catch {}
       } else {
         db = new SQL.Database();
         // Initialize standard schema

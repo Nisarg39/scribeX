@@ -7,6 +7,9 @@ import { tasksRepo } from '../db/tasksRepo';
 import { foldersRepo } from '../db/foldersRepo';
 import { tagsRepo } from '../db/tagsRepo';
 import { searchHistoryRepo } from '../db/searchHistoryRepo';
+import { remindersRepo } from '../db/remindersRepo';
+import { notificationService } from '../services/notifications/NotificationService';
+import { ReminderRecord } from '../types/reminder';
 import {
   DBFolder,
   SearchHistorySource,
@@ -126,6 +129,10 @@ interface NotesContextValue {
   updateTaskPriority: (taskId: string, priority: TaskPriority) => Promise<void>;
   updateTaskDueDate: (taskId: string, dueDate: string) => Promise<void>;
   deleteTask: (taskId: string) => Promise<void>;
+  reminders: ReminderRecord[];
+  setTaskReminder: (taskId: string, triggerAt: string | null) => Promise<void>;
+  setNoteReminder: (noteId: string, triggerAt: string | null) => Promise<void>;
+  cancelReminder: (reminderId: string) => Promise<void>;
   refreshFromDB: () => Promise<void>;
 }
 
@@ -222,6 +229,10 @@ const NotesContext = createContext<NotesContextValue>({
   updateTaskPriority: async () => {},
   updateTaskDueDate: async () => {},
   deleteTask: async () => {},
+  reminders: [],
+  setTaskReminder: async () => {},
+  setNoteReminder: async () => {},
+  cancelReminder: async () => {},
   refreshFromDB: async () => {},
 });
 
@@ -236,6 +247,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [workspaceHistory, setWorkspaceHistory] = useState<WorkspaceActivityEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isEditingNote, setIsEditingNote] = useState<boolean>(false);
+  const [reminders, setReminders] = useState<ReminderRecord[]>([]);
 
   const logWorkspaceActivity = (
     category: WorkspaceActivityEntry['category'],
@@ -411,12 +423,13 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const refreshFromDB = async () => {
     try {
-      const [allNotes, allTasks, fetchedFolders, fetchedTags, savedSearchHistory] = await Promise.all([
+      const [allNotes, allTasks, fetchedFolders, fetchedTags, savedSearchHistory, activeReminders] = await Promise.all([
         notesRepo.listNotes(), // Active + Archived notes (non-trashed)
         tasksRepo.listTasks(),
         foldersRepo.listFolders(),
         tagsRepo.listTags(),
         searchHistoryRepo.loadRecentSearches(8).catch(() => []),
+        remindersRepo.listActiveReminders().catch(() => []),
       ]);
 
       // Also fetch trashed notes so trash bin view can inspect them
@@ -430,6 +443,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setNotes(combinedNotes);
       setTasks(allTasks);
       setFolders(fetchedFolders);
+      setReminders(activeReminders);
       if (Array.isArray(savedSearchHistory) && savedSearchHistory.length > 0) {
         setRecentSearches(savedSearchHistory.map((item) => item.queryText));
       }
@@ -591,6 +605,21 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setNotes((prev) => prev.filter((n) => n.id !== noteId));
     setTasks((prev) => prev.filter((t) => t.noteId !== noteId));
     try {
+      const deletedReminders = await remindersRepo.deleteRemindersByNoteId(noteId);
+      for (const rem of deletedReminders) {
+        if (rem.notificationId) {
+          await notificationService.cancelReminder(rem.notificationId);
+        }
+      }
+      const noteReminders = await remindersRepo.deleteRemindersByTarget('note', noteId);
+      for (const rem of noteReminders) {
+        if (rem.notificationId) {
+          await notificationService.cancelReminder(rem.notificationId);
+        }
+      }
+      setReminders((prev) =>
+        prev.filter((r) => r.noteId !== noteId && !(r.targetType === 'note' && r.targetId === noteId))
+      );
       await notesRepo.permanentlyDeleteNote(noteId);
       await tasksRepo.syncNoteChecklists(noteId, '', 'apricot', []);
     } catch (err) {
@@ -1005,7 +1034,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         if (t.id === taskId) {
           noteIdToSync = t.noteId;
           nextCheckedState = !t.isCompleted;
-          return { ...t, isCompleted: nextCheckedState };
+          return {
+            ...t,
+            isCompleted: nextCheckedState,
+            reminderAt: nextCheckedState ? undefined : t.reminderAt,
+          };
         }
         return t;
       })
@@ -1013,6 +1046,19 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     try {
       await tasksRepo.toggleTask(taskId);
+
+      // Invariant: Auto-cancel reminder on task completion
+      if (nextCheckedState) {
+        const activeReminder = await remindersRepo.getActiveReminderByTarget('task', taskId);
+        if (activeReminder) {
+          if (activeReminder.notificationId) {
+            await notificationService.cancelReminder(activeReminder.notificationId);
+          }
+          await remindersRepo.dismissReminder(activeReminder.id);
+          await tasksRepo.updateTaskReminder(taskId, null);
+          setReminders((prev) => prev.filter((r) => r.id !== activeReminder.id));
+        }
+      }
 
       // Two-way task sync back to note
       if (noteIdToSync) {
@@ -1024,7 +1070,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               const updatedItems = b.metadata.items.map((item: any) => {
                 if (item.id === taskId) {
                   hasChanged = true;
-                  return { ...item, checked: nextCheckedState };
+                  return {
+                    ...item,
+                    checked: nextCheckedState,
+                    reminderAt: nextCheckedState ? undefined : item.reminderAt,
+                  };
                 }
                 return item;
               });
@@ -1073,10 +1123,199 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const deleteTask = async (taskId: string) => {
     setTasks((prev) => prev.filter((t) => t.id !== taskId));
     try {
+      const activeReminder = await remindersRepo.getActiveReminderByTarget('task', taskId);
+      if (activeReminder?.notificationId) {
+        await notificationService.cancelReminder(activeReminder.notificationId);
+      }
+      await remindersRepo.deleteRemindersByTarget('task', taskId);
+      setReminders((prev) => prev.filter((r) => !(r.targetType === 'task' && r.targetId === taskId)));
       await tasksRepo.deleteTask(taskId);
     } catch (err) {
       console.warn('Failed to delete task via tasksRepo:', err);
     }
+  };
+
+  const setTaskReminder = async (taskId: string, triggerAt: string | null) => {
+    const targetTask = tasks.find((t) => t.id === taskId);
+    if (!targetTask) return;
+
+    if (!triggerAt) {
+      const existing = await remindersRepo.getActiveReminderByTarget('task', taskId);
+      if (existing?.notificationId) {
+        await notificationService.cancelReminder(existing.notificationId);
+      }
+      await remindersRepo.dismissReminderByTarget('task', taskId);
+      await tasksRepo.updateTaskReminder(taskId, null);
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, reminderAt: undefined } : t)));
+      setReminders((prev) => prev.filter((r) => !(r.targetType === 'task' && r.targetId === taskId)));
+
+      if (targetTask.noteId) {
+        const targetNote = notes.find((n) => n.id === targetTask.noteId);
+        if (targetNote && targetNote.blocks) {
+          let hasChanged = false;
+          const updatedBlocks = targetNote.blocks.map((b) => {
+            if (b.type === 'checklist' && Array.isArray(b.metadata?.items)) {
+              const updatedItems = b.metadata.items.map((item: any) => {
+                if (item.id === taskId) {
+                  hasChanged = true;
+                  return { ...item, reminderAt: undefined };
+                }
+                return item;
+              });
+              return { ...b, metadata: { ...b.metadata, items: updatedItems } };
+            }
+            return b;
+          });
+          if (hasChanged) {
+            const nextContent = serializeBlocksToMarkdown(updatedBlocks);
+            await notesRepo.updateNote(targetTask.noteId, {
+              blocks: updatedBlocks,
+              contentMarkdown: nextContent,
+            });
+            updateNote({
+              ...targetNote,
+              blocks: updatedBlocks,
+              contentMarkdown: nextContent,
+            });
+          }
+        }
+      }
+    } else {
+      const reminder = await remindersRepo.createReminder({
+        targetType: 'task',
+        targetId: taskId,
+        noteId: targetTask.noteId,
+        triggerAt,
+        title: 'Task Reminder',
+        body: targetTask.title,
+      });
+
+      const notificationId = await notificationService.scheduleReminder({
+        reminderId: reminder.id,
+        title: 'Task Reminder',
+        body: targetTask.title,
+        triggerDate: new Date(triggerAt),
+        payload: {
+          targetType: 'task',
+          targetId: taskId,
+          noteId: targetTask.noteId,
+          title: 'Task Reminder',
+          body: targetTask.title,
+        },
+      });
+
+      if (notificationId) {
+        await remindersRepo.updateNotificationId(reminder.id, notificationId);
+        reminder.notificationId = notificationId;
+      }
+
+      await tasksRepo.updateTaskReminder(taskId, triggerAt);
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, reminderAt: triggerAt } : t)));
+      setReminders((prev) => [
+        ...prev.filter((r) => !(r.targetType === 'task' && r.targetId === taskId)),
+        reminder,
+      ]);
+
+      if (targetTask.noteId) {
+        const targetNote = notes.find((n) => n.id === targetTask.noteId);
+        if (targetNote && targetNote.blocks) {
+          let hasChanged = false;
+          const updatedBlocks = targetNote.blocks.map((b) => {
+            if (b.type === 'checklist' && Array.isArray(b.metadata?.items)) {
+              const updatedItems = b.metadata.items.map((item: any) => {
+                if (item.id === taskId) {
+                  hasChanged = true;
+                  return { ...item, reminderAt: triggerAt };
+                }
+                return item;
+              });
+              return { ...b, metadata: { ...b.metadata, items: updatedItems } };
+            }
+            return b;
+          });
+          if (hasChanged) {
+            const nextContent = serializeBlocksToMarkdown(updatedBlocks);
+            await notesRepo.updateNote(targetTask.noteId, {
+              blocks: updatedBlocks,
+              contentMarkdown: nextContent,
+            });
+            updateNote({
+              ...targetNote,
+              blocks: updatedBlocks,
+              contentMarkdown: nextContent,
+            });
+          }
+        }
+      }
+    }
+  };
+
+  const setNoteReminder = async (noteId: string, triggerAt: string | null) => {
+    const targetNote = notes.find((n) => n.id === noteId);
+    if (!targetNote) return;
+
+    if (!triggerAt) {
+      const existing = await remindersRepo.getActiveReminderByTarget('note', noteId);
+      if (existing?.notificationId) {
+        await notificationService.cancelReminder(existing.notificationId);
+      }
+      await remindersRepo.dismissReminderByTarget('note', noteId);
+      await notesRepo.updateNote(noteId, { reminderAt: null });
+      setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, reminderAt: undefined } : n)));
+      setReminders((prev) => prev.filter((r) => !(r.targetType === 'note' && r.targetId === noteId)));
+    } else {
+      const reminder = await remindersRepo.createReminder({
+        targetType: 'note',
+        targetId: noteId,
+        noteId,
+        triggerAt,
+        title: 'Note Reminder',
+        body: targetNote.title || 'Review Note',
+      });
+
+      const notificationId = await notificationService.scheduleReminder({
+        reminderId: reminder.id,
+        title: 'Note Reminder',
+        body: targetNote.title || 'Review Note',
+        triggerDate: new Date(triggerAt),
+        payload: {
+          targetType: 'note',
+          targetId: noteId,
+          noteId,
+          title: 'Note Reminder',
+          body: targetNote.title || 'Review Note',
+        },
+      });
+
+      if (notificationId) {
+        await remindersRepo.updateNotificationId(reminder.id, notificationId);
+        reminder.notificationId = notificationId;
+      }
+
+      await notesRepo.updateNote(noteId, { reminderAt: triggerAt });
+      setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, reminderAt: triggerAt } : n)));
+      setReminders((prev) => [
+        ...prev.filter((r) => !(r.targetType === 'note' && r.targetId === noteId)),
+        reminder,
+      ]);
+    }
+  };
+
+  const cancelReminder = async (reminderId: string) => {
+    const rem = await remindersRepo.getReminderById(reminderId);
+    if (!rem) return;
+    if (rem.notificationId) {
+      await notificationService.cancelReminder(rem.notificationId);
+    }
+    await remindersRepo.dismissReminder(reminderId);
+    if (rem.targetType === 'task') {
+      await tasksRepo.updateTaskReminder(rem.targetId, null);
+      setTasks((prev) => prev.map((t) => (t.id === rem.targetId ? { ...t, reminderAt: undefined } : t)));
+    } else if (rem.targetType === 'note') {
+      await notesRepo.updateNote(rem.targetId, { reminderAt: null });
+      setNotes((prev) => prev.map((n) => (n.id === rem.targetId ? { ...n, reminderAt: undefined } : n)));
+    }
+    setReminders((prev) => prev.filter((r) => r.id !== reminderId));
   };
 
   return (
@@ -1150,6 +1389,10 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         updateTaskPriority,
         updateTaskDueDate,
         deleteTask,
+        reminders,
+        setTaskReminder,
+        setNoteReminder,
+        cancelReminder,
         isEditingNote,
         setIsEditingNote,
         refreshFromDB,

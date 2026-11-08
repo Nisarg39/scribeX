@@ -12,8 +12,12 @@ import {
   Calendar,
   FileText,
   Flag,
-  Filter
+  Filter,
+  Bell,
+  BellRing
 } from 'lucide-react-native';
+import { ReminderPickerModal } from './common/ReminderPickerModal';
+import { TaskItem } from '../types/note';
 
 const PRIORITY_FILTERS: Array<{ key: 'all' | TaskPriority; label: string; color?: string }> = [
   { key: 'all', label: 'All' },
@@ -39,14 +43,34 @@ const PRIORITY_CONFIG: Record<TaskPriority, { color: string; label: string }> = 
   urgent: { color: '#EF4444', label: 'Urgent' },
 };
 
+function formatReminderChip(isoString?: string): string {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '';
+    const now = new Date();
+    const isToday =
+      d.getDate() === now.getDate() &&
+      d.getMonth() === now.getMonth() &&
+      d.getFullYear() === now.getFullYear();
+
+    const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    if (isToday) return `Today ${timeStr}`;
+    return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${timeStr}`;
+  } catch {
+    return '';
+  }
+}
+
 export const TasksView: React.FC = () => {
   const router = useRouter();
   const { isDark } = useTheme();
-  const { tasks, addTask, toggleTask, updateTaskPriority, updateTaskDueDate, deleteTask } = useNotesStore();
+  const { tasks, addTask, toggleTask, updateTaskPriority, updateTaskDueDate, deleteTask, setTaskReminder } = useNotesStore();
 
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedPriority, setSelectedPriority] = useState<TaskPriority>('none');
   const [selectedDueDate, setSelectedDueDate] = useState('Today');
+  const [reminderModalTask, setReminderModalTask] = useState<TaskItem | null>(null);
 
   const [activePriorityFilter, setActivePriorityFilter] = useState<'all' | TaskPriority>('all');
   const [activeDateFilter, setActiveDateFilter] = useState<string>('all');
@@ -331,17 +355,52 @@ export const TasksView: React.FC = () => {
                           </Text>
                         </Pressable>
                       )}
+
+                      {/* Scheduled Reminder Chip */}
+                      {task.reminderAt && (
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setReminderModalTask(task);
+                          }}
+                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                          className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-lime-500/10 active:scale-95"
+                        >
+                          <BellRing size={11} color="#84CC16" />
+                          <Text className="text-[10px] font-bold text-lime-600 dark:text-lime-400">
+                            {formatReminderChip(task.reminderAt)}
+                          </Text>
+                        </Pressable>
+                      )}
                     </View>
                   </View>
                 </Pressable>
 
-                <Pressable
-                  onPress={() => deleteTask(task.id)}
-                  accessibilityLabel="Delete Task"
-                  className="w-8 h-8 rounded-full items-center justify-center opacity-40 hover:opacity-100 active:scale-90"
-                >
-                  <Trash2 size={16} color={isDark ? '#B5B5B5' : '#626262'} />
-                </Pressable>
+                <View className="flex-row items-center gap-1">
+                  <Pressable
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() => setReminderModalTask(task)}
+                    accessibilityLabel="Set Reminder"
+                    className={`w-8 h-8 rounded-full items-center justify-center active:scale-90 ${
+                      task.reminderAt ? 'opacity-100 bg-lime-500/15' : 'opacity-40 hover:opacity-100'
+                    }`}
+                  >
+                    {task.reminderAt ? (
+                      <BellRing size={15} color="#84CC16" strokeWidth={2.2} />
+                    ) : (
+                      <Bell size={15} color={isDark ? '#B5B5B5' : '#626262'} />
+                    )}
+                  </Pressable>
+
+                  <Pressable
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() => deleteTask(task.id)}
+                    accessibilityLabel="Delete Task"
+                    className="w-8 h-8 rounded-full items-center justify-center opacity-40 hover:opacity-100 active:scale-90"
+                  >
+                    <Trash2 size={16} color={isDark ? '#B5B5B5' : '#626262'} />
+                  </Pressable>
+                </View>
               </View>
             );
           })}
@@ -387,6 +446,7 @@ export const TasksView: React.FC = () => {
                 </Pressable>
 
                 <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   onPress={() => deleteTask(task.id)}
                   accessibilityLabel="Delete Task"
                   className="w-8 h-8 rounded-full items-center justify-center opacity-40 hover:opacity-100 active:scale-90"
@@ -397,6 +457,21 @@ export const TasksView: React.FC = () => {
             ))}
           </View>
         </View>
+      )}
+
+      {/* Reminder Picker Modal */}
+      {reminderModalTask && (
+        <ReminderPickerModal
+          visible={Boolean(reminderModalTask)}
+          targetTitle={reminderModalTask.title}
+          currentReminderAt={reminderModalTask.reminderAt}
+          onClose={() => setReminderModalTask(null)}
+          onSave={(triggerAt) => {
+            if (reminderModalTask) {
+              setTaskReminder(reminderModalTask.id, triggerAt);
+            }
+          }}
+        />
       )}
     </ScrollView>
   );

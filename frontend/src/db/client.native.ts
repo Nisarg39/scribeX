@@ -30,6 +30,16 @@ export class NativeDatabaseClient {
       }
 
       await db.execAsync(SCHEMA_SQL);
+      try {
+        await db.execAsync('ALTER TABLE tasks ADD COLUMN reminder_at TEXT;');
+      } catch {
+        // column already exists
+      }
+      try {
+        await db.execAsync('ALTER TABLE notes ADD COLUMN reminder_at TEXT;');
+      } catch {
+        // column already exists
+      }
       await this.ensureWebDataSync(db);
 
       return db;

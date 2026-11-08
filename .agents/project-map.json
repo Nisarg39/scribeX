@@ -43,8 +43,11 @@
       "noteTemplates": "frontend/src/core/templates/noteTemplates.ts",
       "notesRepo": "frontend/src/db/notesRepo.ts",
       "tasksRepo": "frontend/src/db/tasksRepo.ts",
+      "remindersRepo": "frontend/src/db/remindersRepo.ts",
       "searchHistoryRepo": "frontend/src/db/searchHistoryRepo.ts",
       "types": "frontend/src/types/note.ts",
+      "reminderTypes": "frontend/src/types/reminder.ts",
+      "notificationService": "frontend/src/services/notifications/NotificationService.ts",
       "theme": "frontend/src/theme/index.ts"
     },
     "docsAndReports": {
@@ -56,11 +59,13 @@
       "blockSearchabilityAudit": "docs/Block_Storage_and_Searchability_Audit.md",
       "blocksAuditReport": "docs/Cross_Platform_Input_Blocks_Audit_Report.md",
       "uiUxAuditReport": "docs/UI_UX_Cross_Platform_Inconsistencies_Report.md",
-      "futureIdeas": "docs/future_ideas.md"
+      "futureIdeas": "docs/future_ideas.md",
+      "reminderPlan": "docs/Local_Serverless_Reminder_Implementation_Plan.md"
     }
   },
   "validationCommands": {
     "typecheck": "cd frontend && npx tsc --noEmit",
+    "remindersAudit": "node scripts/test_headless_reminders_and_notifications.mjs",
     "uiUxAudit": "node scripts/test_cross_platform_ui_ux.mjs",
     "blocksAndAstAudit": "npm --prefix frontend run audit:all",
     "interactionsAndUndoAudit": "npm --prefix frontend run test:interactions",

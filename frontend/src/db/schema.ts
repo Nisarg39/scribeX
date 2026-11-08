@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS notes (
   is_pinned BOOLEAN NOT NULL DEFAULT 0,
   status TEXT CHECK(status IN ('active', 'archived', 'trashed')) NOT NULL DEFAULT 'active',
   priority_score REAL DEFAULT 0.0,
+  reminder_at TEXT,
   sync_rev INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -71,6 +72,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   is_completed BOOLEAN NOT NULL DEFAULT 0,
   priority TEXT CHECK(priority IN ('none', 'low', 'medium', 'high', 'urgent')) NOT NULL DEFAULT 'none',
   due_date TEXT,
+  reminder_at TEXT,
   sync_rev INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -130,6 +132,24 @@ CREATE TABLE IF NOT EXISTS search_history (
   UNIQUE (user_id, query_text)
 );
 
+-- 10. Hardware & Cloud-Ready Reminders Ledger
+CREATE TABLE IF NOT EXISTS reminders (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  target_type TEXT CHECK(target_type IN ('task', 'note', 'event', 'checklist_point')) NOT NULL,
+  target_id TEXT NOT NULL,
+  note_id TEXT,
+  trigger_at TEXT NOT NULL,
+  notification_id TEXT,
+  channel_id TEXT NOT NULL DEFAULT 'scribex_reminders',
+  is_dismissed BOOLEAN NOT NULL DEFAULT 0,
+  dismissed_at DATETIME,
+  device_id TEXT NOT NULL DEFAULT 'local_client',
+  sync_rev INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Sub-5ms Performance Query Indexes
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status);
@@ -141,4 +161,7 @@ CREATE INDEX IF NOT EXISTS idx_relations_source ON entity_relations(source_id);
 CREATE INDEX IF NOT EXISTS idx_relations_target ON entity_relations(target_id);
 CREATE INDEX IF NOT EXISTS idx_changelog_rev ON sync_changelog(sync_rev);
 CREATE INDEX IF NOT EXISTS idx_search_history_recent ON search_history(user_id, last_used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reminders_target ON reminders(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON reminders(trigger_at, is_dismissed);
+CREATE INDEX IF NOT EXISTS idx_reminders_sync ON reminders(sync_rev);
 `;

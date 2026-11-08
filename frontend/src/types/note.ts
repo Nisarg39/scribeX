@@ -23,6 +23,7 @@ export interface ChecklistPoint {
   indent?: number; // 0 = root, 1 = nested sub-task, 2 = deep sub-task
   priority?: TaskPriority;
   dueDate?: string;
+  reminderAt?: string;
   style?: ChecklistPointStyle;
 }
 
@@ -37,6 +38,7 @@ export interface TaskItem {
   isCompleted: boolean;
   priority: TaskPriority;
   dueDate?: string;
+  reminderAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -98,6 +100,7 @@ export interface NoteItem {
   isPinned: boolean;
   status: 'active' | 'archived' | 'trashed';
   tags: string[];
+  reminderAt?: string;
   createdAt: string;
   updatedAt: string;
 }

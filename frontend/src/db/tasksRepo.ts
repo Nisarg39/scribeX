@@ -23,6 +23,7 @@ export class TasksRepository {
       isCompleted: dbTask.is_completed === 1,
       priority: dbTask.priority,
       dueDate: dbTask.due_date || undefined,
+      reminderAt: dbTask.reminder_at || undefined,
       createdAt: dbTask.created_at,
       updatedAt: dbTask.updated_at,
     };
@@ -37,8 +38,8 @@ export class TasksRepository {
 
     const insertSql = `
       INSERT INTO tasks (
-        id, user_id, note_id, note_title, note_color_token, block_id, title, is_completed, priority, due_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        id, user_id, note_id, note_title, note_color_token, block_id, title, is_completed, priority, due_date, reminder_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `;
 
     await dbClient.run(insertSql, [
@@ -52,6 +53,7 @@ export class TasksRepository {
       dto.isCompleted ? 1 : 0,
       priority,
       dueDate,
+      dto.reminderAt || null,
     ]);
 
     await dbClient.run(
@@ -142,6 +144,10 @@ export class TasksRepository {
       clauses.push('due_date = ?');
       params.push(updates.dueDate);
     }
+    if (updates.reminderAt !== undefined) {
+      clauses.push('reminder_at = ?');
+      params.push(updates.reminderAt);
+    }
 
     clauses.push('updated_at = CURRENT_TIMESTAMP');
     params.push(id);
@@ -157,6 +163,10 @@ export class TasksRepository {
 
   public async updateTaskDueDate(id: string, dueDate: string): Promise<TaskItem> {
     return this.updateTask(id, { dueDate });
+  }
+
+  public async updateTaskReminder(id: string, reminderAt: string | null): Promise<TaskItem> {
+    return this.updateTask(id, { reminderAt });
   }
 
   public async deleteTask(id: string): Promise<void> {
@@ -180,7 +190,7 @@ export class TasksRepository {
     noteId: string,
     noteTitle: string,
     noteColorToken: NoteColorToken | undefined,
-    checklistItems: Array<{ id: string; text: string; checked: boolean; priority?: any; dueDate?: string }>
+    checklistItems: Array<{ id: string; text: string; checked: boolean; priority?: any; dueDate?: string; reminderAt?: string }>
   ): Promise<void> {
     const existing = await this.getTasksByNoteId(noteId);
     const existingIds = new Set(existing.map((t) => t.id));
@@ -203,6 +213,7 @@ export class TasksRepository {
           isCompleted: item.checked,
           priority: item.priority || 'none',
           dueDate: item.dueDate || 'Today',
+          reminderAt: item.reminderAt,
         });
       } else {
         await this.createTask({
@@ -214,6 +225,7 @@ export class TasksRepository {
           isCompleted: item.checked,
           priority: item.priority || 'none',
           dueDate: item.dueDate || 'Today',
+          reminderAt: item.reminderAt,
         });
       }
     }

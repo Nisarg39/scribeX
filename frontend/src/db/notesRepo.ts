@@ -33,6 +33,7 @@ export class NotesRepository {
       isPinned: dbNote.is_pinned === 1,
       status: dbNote.status,
       tags,
+      reminderAt: dbNote.reminder_at || undefined,
       createdAt: dbNote.created_at,
       updatedAt: dbNote.updated_at,
     };
@@ -52,8 +53,8 @@ export class NotesRepository {
 
     const insertSql = `
       INSERT INTO notes (
-        id, user_id, folder_id, folder_path, group_name, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active');
+        id, user_id, folder_id, folder_path, group_name, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, reminder_at, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active');
     `;
 
     await dbClient.run(insertSql, [
@@ -68,6 +69,7 @@ export class NotesRepository {
       colorToken,
       dto.isFavorite ? 1 : 0,
       dto.isPinned ? 1 : 0,
+      dto.reminderAt || null,
     ]);
 
     // Handle tags if provided
@@ -205,6 +207,10 @@ export class NotesRepository {
     if (dto.status !== undefined) {
       updates.push('status = ?');
       params.push(dto.status);
+    }
+    if (dto.reminderAt !== undefined) {
+      updates.push('reminder_at = ?');
+      params.push(dto.reminderAt);
     }
 
     updates.push("updated_at = CURRENT_TIMESTAMP");
