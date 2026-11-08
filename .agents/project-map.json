@@ -60,7 +60,8 @@
       "blocksAuditReport": "docs/Cross_Platform_Input_Blocks_Audit_Report.md",
       "uiUxAuditReport": "docs/UI_UX_Cross_Platform_Inconsistencies_Report.md",
       "futureIdeas": "docs/future_ideas.md",
-      "reminderPlan": "docs/Local_Serverless_Reminder_Implementation_Plan.md"
+      "reminderPlan": "docs/Local_Serverless_Reminder_Implementation_Plan.md",
+      "universalAiConnector": "docs/Universal_AI_Connector_and_MCP_Architecture.md"
     }
   },
   "validationCommands": {
