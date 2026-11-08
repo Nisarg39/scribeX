@@ -12,7 +12,8 @@ import {
   ChevronDown,
   Type,
   ListIndentIncrease,
-  ListIndentDecrease
+  ListIndentDecrease,
+  Bell
 } from 'lucide-react-native';
 
 interface ChecklistBlockProps {
@@ -173,6 +174,38 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
     const nextDue = item.dueDate === 'Today' ? 'Tomorrow' : item.dueDate === 'Tomorrow' ? 'This Week' : 'Today';
     const next = checklistItems.map((it, i) =>
       i === index ? { ...it, dueDate: nextDue } : it
+    );
+    handleCommitItems(next);
+  };
+
+  const handleCycleReminder = (index: number) => {
+    onFocus?.();
+    const item = checklistItems[index];
+    if (!item) return;
+
+    let nextReminderAt: string | undefined = undefined;
+    const now = new Date();
+
+    if (!item.reminderAt) {
+      const today18 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 18, 0, 0);
+      if (today18.getTime() > now.getTime()) {
+        nextReminderAt = today18.toISOString();
+      } else {
+        nextReminderAt = new Date(now.getTime() + 3 * 3600 * 1000).toISOString();
+      }
+    } else {
+      const curDate = new Date(item.reminderAt);
+      const isToday = curDate.getDate() === now.getDate() && curDate.getMonth() === now.getMonth();
+      if (isToday) {
+        const tomorrow9 = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 9, 0, 0);
+        nextReminderAt = tomorrow9.toISOString();
+      } else {
+        nextReminderAt = undefined;
+      }
+    }
+
+    const next = checklistItems.map((it, i) =>
+      i === index ? { ...it, reminderAt: nextReminderAt } : it
     );
     handleCommitItems(next);
   };
@@ -564,6 +597,22 @@ export const ChecklistBlock: React.FC<ChecklistBlockProps> = ({
                       <Calendar size={10} color={isDark ? '#858585' : '#929292'} />
                       <Text className="text-[10px] font-semibold text-light-textSecondary dark:text-dark-textSecondary">
                         {item.dueDate || 'Today'}
+                      </Text>
+                    </Pressable>
+
+                    {/* Reminder Chip */}
+                    <Pressable
+                      onPress={() => handleCycleReminder(idx)}
+                      className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised border border-light-border/60 dark:border-white/5"
+                      style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
+                      accessibilityLabel="Cycle Reminder"
+                    >
+                      <Bell size={10} color={item.reminderAt ? '#F59E0B' : (isDark ? '#858585' : '#929292')} />
+                      <Text
+                        style={{ color: item.reminderAt ? '#F59E0B' : (isDark ? '#858585' : '#929292') }}
+                        className="text-[10px] font-semibold"
+                      >
+                        {item.reminderAt ? 'Remind set' : 'Remind'}
                       </Text>
                     </Pressable>
                   </View>
