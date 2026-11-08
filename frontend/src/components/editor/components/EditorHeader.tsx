@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, useWindowDimensions } from 'react-native';
-import { ArrowLeft, Check, Pin, Star, Trash2, Download, Upload, FileText, Archive, MoreHorizontal } from 'lucide-react-native';
+import { ArrowLeft, Check, Pin, Star, Trash2, Download, Upload, FileText, Archive, MoreHorizontal, Bell } from 'lucide-react-native';
 import { useTheme, NoteColors, NoteColorToken } from '../../../theme';
 
 export const PASTEL_PALETTE: NoteColorToken[] = [
@@ -28,6 +28,8 @@ interface EditorHeaderProps {
   isPinned: boolean;
   isFavorite: boolean;
   isArchived?: boolean;
+  reminderAt?: string;
+  onSetReminder?: () => void;
   onClose: () => void;
   onColorChange: (color: NoteColorToken) => void;
   onTogglePin: () => void;
@@ -44,6 +46,8 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   isPinned,
   isFavorite,
   isArchived = false,
+  reminderAt,
+  onSetReminder,
   onClose,
   onColorChange,
   onTogglePin,
@@ -172,6 +176,7 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
             style={{ position: 'absolute', top: 60, right: 12, zIndex: 100, backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
             className="rounded-2xl border p-1.5 min-w-[220px]"
           >
+            {onSetReminder && menuItem(reminderAt ? 'Edit Reminder' : 'Set Reminder', Bell, reminderAt ? '#F59E0B' : iconColor, onSetReminder)}
             {menuItem('Import File (.md, .json, .csv)', Upload, iconColor, onImportFile)}
             {menuItem('Export as Markdown (.md)', FileText, NoteColors.cyan, onExportMarkdown)}
             {menuItem('Export as JSON (.json)', Download, NoteColors.lavender, onExportJSON)}
@@ -326,6 +331,22 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
             fill={isFavorite ? '#FFD43B' : 'transparent'}
           />
         </Pressable>
+
+        {onSetReminder && (
+          <Pressable
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={onSetReminder}
+            accessibilityLabel={reminderAt ? 'Edit Note Reminder' : 'Set Note Reminder'}
+            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
+            style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
+          >
+            <Bell
+              size={18}
+              color={reminderAt ? '#F59E0B' : isDark ? '#B5B5B5' : '#626262'}
+              fill={reminderAt ? '#F59E0B' : 'transparent'}
+            />
+          </Pressable>
+        )}
 
         {onToggleArchive && (
           <Pressable

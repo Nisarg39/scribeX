@@ -4,6 +4,7 @@ import { NoteItem } from '../../types/note';
 import { useTheme, NoteColors } from '../../theme';
 import { Folder, Upload, Tag, Plus, X, ChevronDown } from 'lucide-react-native';
 import { useNotesStore } from '../../state/useNotesStore';
+import { ReminderPickerModal } from '../common/ReminderPickerModal';
 import { BlockRenderer } from './BlockRenderer';
 import {
   EditorHeader,
@@ -33,7 +34,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   onNoteDeleted,
 }) => {
   const { isDark } = useTheme();
-  const { folders, createFolder, archiveNote, unarchiveNote } = useNotesStore();
+  const { folders, createFolder, archiveNote, unarchiveNote, setNoteReminder } = useNotesStore();
+  const [isReminderModalVisible, setIsReminderModalVisible] = useState(false);
   const [isInsertPaletteOpen, setIsInsertPaletteOpen] = useState(false);
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
   const [newFolderInput, setNewFolderInput] = useState('');
@@ -253,6 +255,8 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         isPinned={isPinned}
         isFavorite={isFavorite}
         isArchived={isArchived}
+        reminderAt={note.reminderAt}
+        onSetReminder={() => setIsReminderModalVisible(true)}
         onClose={onClose}
         onColorChange={handleColorChange}
         onTogglePin={handleTogglePin}
@@ -657,6 +661,18 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
           </View>
         </View>
       )}
+
+      {/* Note Revisit Reminder Modal */}
+      <ReminderPickerModal
+        visible={isReminderModalVisible}
+        onClose={() => setIsReminderModalVisible(false)}
+        initialReminderAt={note.reminderAt}
+        targetTitle={title || 'Untitled Note'}
+        onSaveReminder={async (isoDate) => {
+          await setNoteReminder(note.id, isoDate);
+          onNoteUpdated({ ...note, reminderAt: isoDate || undefined });
+        }}
+      />
     </KeyboardAvoidingView>
   );
 };

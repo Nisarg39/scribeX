@@ -12,6 +12,22 @@ export interface EventBlockMetadata {
   isAllDay?: boolean;
   location?: string;
   reminder?: string;
+  reminderAt?: string;
+}
+
+export function computeEventReminderTrigger(startDate: string, startTime: string, reminderOption: string): string | null {
+  if (!startDate || !startTime || reminderOption === 'None') return null;
+  const eventDateTime = new Date(`${startDate}T${startTime}:00`);
+  if (isNaN(eventDateTime.getTime())) return null;
+
+  let offsetMs = 0;
+  if (reminderOption === '15m before') offsetMs = 15 * 60 * 1000;
+  else if (reminderOption === '1h before') offsetMs = 60 * 60 * 1000;
+  else if (reminderOption === '1d before') offsetMs = 24 * 60 * 60 * 1000;
+
+  const triggerDate = new Date(eventDateTime.getTime() - offsetMs);
+  if (triggerDate.getTime() <= Date.now()) return null;
+  return triggerDate.toISOString();
 }
 
 interface EventBlockProps {
