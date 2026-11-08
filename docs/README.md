@@ -1,7 +1,8 @@
 # ScribeX Documentation Index & Navigation Map
 
 > **Purpose:** Central catalog of all technical specifications, requirements, architecture blueprints, audit reports, and roadmap plans for the ScribeX project.  
-> **Last Updated:** November 8, 2026
+> **Status:** 100% Harmonized & Aligned Single Source of Truth  
+> **Last Updated:** November 9, 2026
 
 ---
 
@@ -9,22 +10,26 @@
 
 | Document | Description |
 | :--- | :--- |
-| **[Product_Requirements.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Product_Requirements.md)** | Product vision, core user journey (Manual Notes First, Friday AI Second), and functional requirements. |
-| **[Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md)** | Comprehensive 9-pillar technical architecture (Expo client, SQLite, Supabase Realtime, Next.js Serverless AI on Vercel, Google Drive Vault, Friday Memory, PC Bridge). |
-| **[Universal_Note_Input_Structure_and_Relations.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md)** | Definitive specification for all 42 input blocks, AST schema, bidirectional knowledge graph relations, and smart collections. |
-| **[ScribeX-Pastel-Tile-UI-Design-System.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/ScribeX-Pastel-Tile-UI-Design-System.md)** | Design tokens, color palette, typography, spacing, and guidelines strictly enforcing non-generic canvas design. |
-| **[Learning_Storing_Retrieval_Strategy.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Learning_Storing_Retrieval_Strategy.md)** | 4-layer cognitive memory model and adaptive learning strategy for Friday AI. |
-| **[SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md)** | Multi-tenancy, commercial billing, token quotas, and cloud infrastructure scaling. |
+| **[Unified_Backend_and_AI_Master_Specification.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md)** | **Authoritative Single Source of Truth (SSOT)** for Backend & AI. Unifies Zero-Cost Cloud Sync (Supabase + Next.js Vercel + Google Drive), 4-Layer Memory, Dual-Surface AI (In-App Friday + Universal MCP Connector), and Remote PC Agent Execution. |
+| **[Product_Requirements.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Product_Requirements.md)** | Product vision, core user journey (Manual Notes First, Friday AI Second), functional requirements, and Dual-Surface AI workflows. |
+| **[Technical_System_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Technical_System_Architecture.md)** | Comprehensive 9-pillar technical architecture (Expo client, SQLite, Supabase Realtime, Next.js Serverless AI on Vercel, Google Drive Vault, Dual-Surface AI Engine, PC Bridge). |
+| **[Universal_AI_Connector_and_MCP_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_AI_Connector_and_MCP_Architecture.md)** | Universal AI Connector & Model Context Protocol (MCP) server architecture providing identical 4-layer context and agentic tools to Claude Desktop, Gemini CLI, Cursor, and ChatGPT. |
+| **[Universal_Note_Input_Structure_and_Relations.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md)** | Definitive specification for all 42 input blocks, AST schema, bidirectional knowledge graph relations, and smart collections. |
+| **[ScribeX-Pastel-Tile-UI-Design-System.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/ScribeX-Pastel-Tile-UI-Design-System.md)** | Design tokens, color palette, typography, spacing, and guidelines strictly enforcing non-generic canvas design. |
+| **[Learning_Storing_Retrieval_Strategy.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Learning_Storing_Retrieval_Strategy.md)** | 4-layer cognitive memory model, adaptive learning strategy, and dual-surface context delivery. |
+| **[SaaS_Architecture_and_Integration_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md)** | Multi-tenancy, commercial billing, token quotas, and cloud infrastructure scaling. |
 
 ---
 
-## 2. Roadmaps & Phase Trackers
+## 2. Active Phase Implementation Blueprints
 
-| Document | Status | Description |
-| :--- | :---: | :--- |
-| **[Master_Tasks_Tracker.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Master_Tasks_Tracker.md)** | `ACTIVE` | Master multi-phase tracker detailing completed Phase 1 milestones and pending phases. |
-| **[Phase_2_Cloud_Sync_and_Backend_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Phase_2_Cloud_Sync_and_Backend_Plan.md)** | `NEXT IN QUEUE` | Implementation plan for Supabase Realtime Sync, Next.js AI (Vercel), and Google Drive Vault. |
-| **[future_ideas.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/future_ideas.md)** | `ACTIVE` | Feature wishlist, bugfix backlog, and long-term architectural ideas. |
+| Document | Phase | Status | Description |
+| :--- | :---: | :---: | :--- |
+| **[Master_Tasks_Tracker.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Master_Tasks_Tracker.md)** | Master | `ACTIVE` | Master multi-phase tracker detailing completed Phase 1 milestones and pending phases. |
+| **[Local_Serverless_Reminder_Implementation_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Local_Serverless_Reminder_Implementation_Plan.md)** | Phase 1.5 | `COMPLETED` | Serverless local push notification & hardware alarm engine for mobile and web with monotonic `sync_changelog` delta tracking. |
+| **[Phase_2_Implementation_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Phase_2_Implementation_Plan.md)** | Phase 2 | `NEXT IN QUEUE` | Step-by-step implementation blueprint for Supabase Realtime Sync, Next.js AI (Vercel), and Google Drive Media Vault. |
+| **[Phase_3_Implementation_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Phase_3_Implementation_Plan.md)** | Phase 3 | `PENDING` | Cognitive Memory, Friday AI Assistant, and Universal MCP Connector integration. |
+| **[future_ideas.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/future_ideas.md)** | Backlog | `ACTIVE` | Feature wishlist, bugfix backlog, and long-term architectural ideas. |
 
 ---
 
@@ -32,17 +37,18 @@
 
 | Document | Description |
 | :--- | :--- |
-| **[Cross_Platform_Input_Blocks_Audit_Report.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Cross_Platform_Input_Blocks_Audit_Report.md)** | Live automated ledger tracking TypeScript compilation, 36/36 block AST roundtrips, platform guards, and 30/30 headless interaction tests. |
-| **[UI_UX_Cross_Platform_Inconsistencies_Report.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/UI_UX_Cross_Platform_Inconsistencies_Report.md)** | Static analysis report covering full-bleed layouts, touch targets, and React Native flex hazard protections (13/13 passing). |
-| **[Block_Storage_and_Searchability_Audit.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Block_Storage_and_Searchability_Audit.md)** | Deep dive audit verifying dual-persistence (`blocks_json` + `content_markdown`) and SQLite FTS5 index coverage. |
+| **[Cross_Platform_Input_Blocks_Audit_Report.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Cross_Platform_Input_Blocks_Audit_Report.md)** | Live automated ledger tracking TypeScript compilation, 36/36 block AST roundtrips, platform guards, and 30/30 headless interaction tests. |
+| **[UI_UX_Cross_Platform_Inconsistencies_Report.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/UI_UX_Cross_Platform_Inconsistencies_Report.md)** | Static analysis report covering full-bleed layouts, touch targets, and React Native flex hazard protections (13/13 passing). |
+| **[Block_Storage_and_Searchability_Audit.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Block_Storage_and_Searchability_Audit.md)** | Deep dive audit verifying dual-persistence (`blocks_json` + `content_markdown`) and SQLite FTS5 index coverage. |
 
 ---
 
-## 4. Completed Feature Plans (Archived)
+## 4. Archived Blueprints (`docs/archive/`)
 
-Historical implementation blueprints for features that have been 100% completed and merged into the main codebase are stored in [`docs/archive/`](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/archive/):
+Historical implementation blueprints and superseded drafts are preserved in [`docs/archive/`](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/archive/):
 
-- `Folder_Actions_Feature_Plan.md`: Folder rename, delete cascades, reparenting, and subfolder creation.
-- `Manual_Notes_Final_Gaps_Implementation_Plan.md`: Note sorting UI, workspace backup/restore, and storage purge modal.
-- `Search_Implementation_Plan.md`: SQLite FTS5 search engine and search history repo.
-
+* `legacy_python_vps/Phase_2_FastAPI_VPS_Implementation_Plan.md`: Superseded Python FastAPI VPS backend blueprint (replaced by zero-cost Supabase + Next.js Serverless architecture).
+* `project-first-ai-orchestration-blueprint.md`: Generic orchestration framework blueprint (condensed into `AGENTS.md` and `.agents/skills/task-worker/SKILL.md`).
+* `Folder_Actions_Feature_Plan.md`: Phase 1 folder rename, delete cascades, reparenting, and subfolder creation.
+* `Manual_Notes_Final_Gaps_Implementation_Plan.md`: Phase 1 note sorting UI, workspace backup/restore, and storage purge modal.
+* `Search_Implementation_Plan.md`: Phase 1 SQLite FTS5 search engine and search history repo.

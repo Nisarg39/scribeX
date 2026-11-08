@@ -41,24 +41,21 @@ CREATE TABLE IF NOT EXISTS sync_changelog (
 CREATE INDEX IF NOT EXISTS idx_sync_user_rev ON sync_changelog(user_id, sync_rev);
 ```
 
-### 2.2. Rule 2: Tenant-Partitioned Filesystem Paths
-The Git-backed Markdown Vault and LanceDB vector tables must never hardcode a single root folder. They must always resolve paths dynamically through a tenant path resolver:
+### 2.2. Rule 2: Tenant-Partitioned Storage & Google Drive Vault Paths
+The Google Drive media vault and Supabase storage buckets must never commingle binary assets. They must always resolve paths dynamically through tenant-scoped identifiers and Supabase Row Level Security (RLS):
 
-```python
-# backend/app/storage/paths.py
-from pathlib import Path
+```typescript
+// backend/lib/storage/paths.ts
+export function getUserMediaVaultFolder(userId: string): string {
+  return `ScribeX_Vault/${userId}/assets`;
+}
 
-DATA_ROOT = Path("/data")
-
-def get_user_vault_path(user_id: str = "default_user") -> Path:
-    vault_dir = DATA_ROOT / "tenants" / user_id / "vault"
-    vault_dir.mkdir(parents=True, exist_ok=True)
-    return vault_dir
-
-def get_user_lancedb_path(user_id: str = "default_user") -> Path:
-    lancedb_dir = DATA_ROOT / "tenants" / user_id / "lancedb"
-    lancedb_dir.mkdir(parents=True, exist_ok=True)
-    return lancedb_dir
+export function getUserDriveQuery(userId: string, fileName?: string): string {
+  const folder = getUserMediaVaultFolder(userId);
+  return fileName 
+    ? `name = '${fileName}' and '${folder}' in parents and trashed = false`
+    : `'${folder}' in parents and trashed = false`;
+}
 ```
 
 ### 2.3. Rule 3: Injected Request Context (`get_current_user_id`)
@@ -137,15 +134,15 @@ ScribeX enforces multi-tenancy at the database and storage level:
 When a new user signs up:
 1. `POST /api/v1/auth/provision`:
    * Creates the tenant record in the billing ledger.
-   * Initializes `/data/tenants/{user_id}/vault` as a clean Git repository (`git init`).
+   * Seeds the tenant profile and initializes default folders in Supabase.
    * Writes the baseline `_core/identity.md` template.
    * Generates the user's encrypted Ed25519 machine pairing key for their PC agent bridge.
 2. The user is guided through the conversational **Interactive Onboarding Interview** to establish Layer 1 (Identity) and Layer 2 (Initial Goals).
 
 ### 4.3. Data Ownership & 1-Click GDPR Export
-Because every tenant's notes are stored as physical Markdown files with Git history:
-* **Instant Export:** User clicks *"Export My Vault"*; the backend creates a `.zip` archive of `/data/tenants/{user_id}/vault` and delivers it immediately.
-* **Instant Deletion:** If a user cancels, deleting `/data/tenants/{user_id}/` wipes all notes, vector embeddings, and history cleanly.
+Because every tenant's notes are stored in standardized formats:
+* **Instant Export:** User clicks *"Export My Vault"*; the backend packages all notes into standard Markdown (`.md`) files and JSON metadata in a `.zip` archive and delivers it immediately.
+* **Instant Deletion:** If a user cancels, deleting the tenant account wipes all Supabase records, vector embeddings, and links cleanly with zero orphan data.
 
 ---
 
