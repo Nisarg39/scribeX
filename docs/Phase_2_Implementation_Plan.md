@@ -1,7 +1,7 @@
 # ScribeX Phase 2: Supabase Realtime Sync, Next.js AI & Google Drive Media Vault
 
 > **Status:** Next in Queue (Pending Kickoff)  
-> **Source of Truth:** Section 4 of [Technical_System_Architecture.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Technical_System_Architecture.md) & [SaaS_Architecture_and_Integration_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md)  
+> **Source of Truth:** [Unified_Backend_and_AI_Master_Specification.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md)  
 > **Prerequisite:** Phase 1 (Universal Manual Note Engine & Local SQLite) 100% completed and certified.
 
 ---
@@ -60,14 +60,14 @@ flowchart TD
 
 ### Step 1: Supabase Infrastructure & Database Migrations
 - Define PostgreSQL migration matching the local SQLite schema:
-  - `folders`, `tags`, `notes`, `note_tags`, `tasks`, `assets`, `entity_relations`, `sync_changelog`.
+  - `folders`, `tags`, `notes`, `note_tags`, `tasks`, `reminders`, `assets`, `entity_relations`, `sync_changelog`.
 - Configure Row Level Security (RLS) policies on all tables:
   ```sql
   CREATE POLICY "Users can only access their own notes" 
   ON notes FOR ALL 
   USING (auth.uid() = user_id);
   ```
-- Enable Supabase Realtime publication on `notes`, `folders`, `tasks`, `tags`, and `sync_changelog`.
+- Enable Supabase Realtime publication on `notes`, `folders`, `tasks`, `tags`, `reminders`, and `sync_changelog`.
 
 ### Step 2: Client Delta Sync Protocol & Reconciliation Service
 - Create `frontend/src/services/syncEngine.ts`:

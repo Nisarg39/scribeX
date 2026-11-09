@@ -6,34 +6,43 @@
 
 ---
 
-## 1. System Vision & Architecture (Source of Truth)
+## 1. Authoritative Core Specifications (Root `docs/`)
 
 | Document | Description |
 | :--- | :--- |
 | **[Unified_Backend_and_AI_Master_Specification.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md)** | **Authoritative Single Source of Truth (SSOT)** for Backend & AI. Unifies Zero-Cost Cloud Sync (Supabase + Next.js Vercel + Google Drive), 4-Layer Memory, Dual-Surface AI (In-App Friday + Universal MCP Connector), and Remote PC Agent Execution. |
+| **[Universal_Note_Input_Structure_and_Relations.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md)** | **Authoritative Single Source of Truth (SSOT)** for Frontend: All 42 input blocks, AST schema, bidirectional knowledge graph relations, and smart collections. |
 | **[Product_Requirements.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Product_Requirements.md)** | Product vision, core user journey (Manual Notes First, Friday AI Second), functional requirements, and Dual-Surface AI workflows. |
-| **[Technical_System_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Technical_System_Architecture.md)** | Comprehensive 9-pillar technical architecture (Expo client, SQLite, Supabase Realtime, Next.js Serverless AI on Vercel, Google Drive Vault, Dual-Surface AI Engine, PC Bridge). |
-| **[Universal_AI_Connector_and_MCP_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_AI_Connector_and_MCP_Architecture.md)** | Universal AI Connector & Model Context Protocol (MCP) server architecture providing identical 4-layer context and agentic tools to Claude Desktop, Gemini CLI, Cursor, and ChatGPT. |
-| **[Universal_Note_Input_Structure_and_Relations.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Universal_Note_Input_Structure_and_Relations.md)** | Definitive specification for all 42 input blocks, AST schema, bidirectional knowledge graph relations, and smart collections. |
 | **[ScribeX-Pastel-Tile-UI-Design-System.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/ScribeX-Pastel-Tile-UI-Design-System.md)** | Design tokens, color palette, typography, spacing, and guidelines strictly enforcing non-generic canvas design. |
-| **[Learning_Storing_Retrieval_Strategy.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Learning_Storing_Retrieval_Strategy.md)** | 4-layer cognitive memory model, adaptive learning strategy, and dual-surface context delivery. |
-| **[SaaS_Architecture_and_Integration_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/SaaS_Architecture_and_Integration_Plan.md)** | Multi-tenancy, commercial billing, token quotas, and cloud infrastructure scaling. |
 
 ---
 
-## 2. Active Phase Implementation Blueprints
+## 2. Active Phase Implementation Blueprints (Root `docs/`)
 
 | Document | Phase | Status | Description |
 | :--- | :---: | :---: | :--- |
 | **[Master_Tasks_Tracker.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Master_Tasks_Tracker.md)** | Master | `ACTIVE` | Master multi-phase tracker detailing completed Phase 1 milestones and pending phases. |
-| **[Local_Serverless_Reminder_Implementation_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Local_Serverless_Reminder_Implementation_Plan.md)** | Phase 1.5 | `COMPLETED` | Serverless local push notification & hardware alarm engine for mobile and web with monotonic `sync_changelog` delta tracking. |
 | **[Phase_2_Implementation_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Phase_2_Implementation_Plan.md)** | Phase 2 | `NEXT IN QUEUE` | Step-by-step implementation blueprint for Supabase Realtime Sync, Next.js AI (Vercel), and Google Drive Media Vault. |
 | **[Phase_3_Implementation_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Phase_3_Implementation_Plan.md)** | Phase 3 | `PENDING` | Cognitive Memory, Friday AI Assistant, and Universal MCP Connector integration. |
 | **[future_ideas.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/future_ideas.md)** | Backlog | `ACTIVE` | Feature wishlist, bugfix backlog, and long-term architectural ideas. |
 
 ---
 
-## 3. Audits & Verification Reports
+## 3. Technical Deep-Dive References (`docs/references/`)
+
+Comprehensive technical deep-dives absorbed into the Master Specification, retained for detailed implementation guidance:
+
+| Document | Description |
+| :--- | :--- |
+| **[Technical_System_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/references/Technical_System_Architecture.md)** | The comprehensive 9-pillar technical architecture (Expo client, SQLite, Supabase Realtime, Next.js Serverless AI, PC Bridge). |
+| **[Universal_AI_Connector_and_MCP_Architecture.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/references/Universal_AI_Connector_and_MCP_Architecture.md)** | Detailed specification of MCP resources, tool JSON schemas, stdio/SSE transports, and OpenAI REST bridge. |
+| **[Local_Serverless_Reminder_Implementation_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/references/Local_Serverless_Reminder_Implementation_Plan.md)** | Implementation details for hardware OS push notifications (`AlarmManager` / iOS) and `sync_changelog` delta tracking. |
+| **[Learning_Storing_Retrieval_Strategy.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/references/Learning_Storing_Retrieval_Strategy.md)** | In-depth exploration of the 4-layer cognitive memory and multi-step contextual retrieval pipeline. |
+| **[SaaS_Architecture_and_Integration_Plan.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/references/SaaS_Architecture_and_Integration_Plan.md)** | Multi-tenancy isolation models, Supabase RLS, Stripe subscriptions, and LiteLLM token metering. |
+
+---
+
+## 4. Audits & Verification Reports (Root `docs/`)
 
 | Document | Description |
 | :--- | :--- |
@@ -43,7 +52,7 @@
 
 ---
 
-## 4. Archived Blueprints (`docs/archive/`)
+## 5. Archived Blueprints (`docs/archive/`)
 
 Historical implementation blueprints and superseded drafts are preserved in [`docs/archive/`](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/archive/):
 
