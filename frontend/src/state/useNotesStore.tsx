@@ -9,6 +9,7 @@ import { tagsRepo } from '../db/tagsRepo';
 import { searchHistoryRepo } from '../db/searchHistoryRepo';
 import { remindersRepo } from '../db/remindersRepo';
 import { notificationService } from '../services/notifications/NotificationService';
+import { syncEngine } from '../services/sync/syncEngine';
 import { ReminderRecord } from '../types/reminder';
 import {
   DBFolder,
@@ -462,6 +463,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     refreshFromDB();
+    syncEngine.initialize().catch((err) => console.warn('Failed to init syncEngine:', err));
+    const unsubscribeSync = syncEngine.subscribe(() => {
+      refreshFromDB();
+    });
+
     AsyncStorage.getItem('scribex_sort_preference')
       .then((savedSort) => {
         if (savedSort) {
@@ -472,6 +478,10 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       })
       .catch(() => {});
+
+    return () => {
+      unsubscribeSync();
+    };
   }, []);
 
   const addNote = async (

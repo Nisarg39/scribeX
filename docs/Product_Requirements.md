@@ -6,7 +6,7 @@ The platform, **ScribeX**, is a modern, high-performance universal note-taking s
 
 ### Foundational User Journey Axiom: Manual Notes First, AI Assistant Second
 The system is built from the **user's immediate journey first**:
-1. **The Instant Manual Canvas:** When the user opens ScribeX, their initial experience is entering an uncluttered, fluid, non-generic personal knowledge canvas. They can immediately capture notes, format code, record audio, sketch ideas, embed documents, manage nested folders, tag items, and track tasks across all **42 planned input methods** (detailed in `Universal_Note_Input_Structure_and_Relations.md`) with sub-5ms local-first speed (`expo-sqlite`). There is zero forced onboarding friction or AI gating.
+1. **The Instant Manual Canvas:** When the user opens ScribeX, their initial experience is entering an uncluttered, fluid, non-generic personal knowledge canvas. They can immediately capture notes, format code, record audio, sketch ideas, embed documents, manage nested folders, tag items, and track tasks across all **42 planned input methods** (detailed in `Unified_Frontend_Master_Specification.md`) with sub-5ms local-first speed (`expo-sqlite`). There is zero forced onboarding friction or AI gating.
 2. **The Intelligent Force Multiplier (Friday):** Once the user's manual note foundation is active, the AI assistant ("Friday") seamlessly connects to this living knowledge base. Friday acts as an autonomous force multiplier: handling proactive organization, cross-note connections, goal alignment, task tracking, daily briefings, and Remote PC CLI agent execution—all while strictly respecting the user's manual control and learning from every user edit.
 
 ---
