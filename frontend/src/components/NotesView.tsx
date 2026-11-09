@@ -31,12 +31,14 @@ import {
   FolderTree,
   ArrowDownUp,
   SlidersHorizontal,
+  ChevronDown,
 } from 'lucide-react-native';
 import { FolderActionSheet, renderFolderIcon } from './folders/FolderActionSheet';
 import { DeleteFolderModal } from './folders/DeleteFolderModal';
 import { RenameFolderModal } from './folders/RenameFolderModal';
 import { MoveFolderModal } from './folders/MoveFolderModal';
 import { FolderExplorerModal } from './folders/FolderExplorerModal';
+import { FolderDropdownModal } from './folders/FolderDropdownModal';
 import { SortOrderModal } from './notes/SortOrderModal';
 import { NotesFilterModal } from './notes/NotesFilterModal';
 import { NoteColors, NoteColorToken } from '../theme/tokens';
@@ -118,6 +120,7 @@ export const NotesView: React.FC = () => {
   const [actionSheetFolder, setActionSheetFolder] = useState<{ path: string; id?: string; colorToken?: string; icon?: string | null } | null>(null);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isFolderExplorerOpen, setIsFolderExplorerOpen] = useState(false);
+  const [isFolderDropdownOpen, setIsFolderDropdownOpen] = useState(false);
   const [isRenameModalOpen, setIsRenameModalOpen] = useState(false);
   const [isMoveFolderReparentModalOpen, setIsMoveFolderReparentModalOpen] = useState(false);
   const [isDeleteFolderModalOpen, setIsDeleteFolderModalOpen] = useState(false);
@@ -373,6 +376,16 @@ export const NotesView: React.FC = () => {
       path: parts.slice(0, idx + 1).join('/'),
     }));
   }, [selectedParentPath]);
+
+  const activeFolderObj = React.useMemo(() => {
+    if (!queryRequest.folderPath) return null;
+    return folders.find((f) => (f.path || f.name) === queryRequest.folderPath) || null;
+  }, [folders, queryRequest.folderPath]);
+
+  const activeFolderColor = React.useMemo(() => {
+    if (!activeFolderObj?.color_token) return undefined;
+    return NoteColors[activeFolderObj.color_token as NoteColorToken];
+  }, [activeFolderObj]);
 
   const formattedDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -1073,110 +1086,74 @@ export const NotesView: React.FC = () => {
           {/* Divider */}
           <View className="h-5 w-[1px] bg-light-border dark:bg-dark-border mx-1 self-center" />
 
-          {/* Dynamic Folder Pills */}
-          {allFolderNames.map((folderName) => {
-            const isSelected = queryRequest.folderPath === folderName;
-            const folderObj = folders.find((f) => (f.path || f.name) === folderName);
-            const customColorHex = folderObj?.color_token
-              ? NoteColors[folderObj.color_token as NoteColorToken]
-              : undefined;
-
-            return (
-              <Pressable
-                key={folderName}
-                onPress={() => setFolderFilter(isSelected ? null : folderName)}
-                onLongPress={() => handleOpenFolderActions(folderName)}
-                delayLongPress={350}
-                accessibilityLabel={`Folder ${folderName}. Long press for options.`}
-                className={`flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border ${isSelected
-                    ? 'bg-light-iconBg dark:bg-white border-transparent'
-                    : 'bg-transparent border-light-border dark:border-dark-border'
-                  }`}
-              >
-                <View className="flex-row items-center gap-1">
-                  {customColorHex && (
-                    <View
-                      style={{ backgroundColor: customColorHex }}
-                      className="w-2 h-2 rounded-full mr-0.5"
-                    />
-                  )}
-                  {renderFolderIcon(
-                    folderObj?.icon,
-                    11,
-                    isSelected
-                      ? isDark
-                        ? '#111111'
-                        : '#FFFFFF'
-                      : customColorHex || (isDark ? '#B5B5B5' : '#626262')
-                  )}
-                </View>
-
-                <Text
-                  className={`text-xs font-semibold ${isSelected
-                      ? 'text-white dark:text-[#111111]'
-                      : 'text-light-textSecondary dark:text-dark-textSecondary'
-                    }`}
-                >
-                  {folderName}
-                </Text>
-
-                {isSelected && (
-                  <Pressable
-                    hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}
-                    onPress={(e) => {
-                      e.stopPropagation?.();
-                      handleOpenFolderActions(folderName);
-                    }}
-                    accessibilityLabel={`Manage folder ${folderName}`}
-                    className="ml-1 -mr-1 p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 active:opacity-60"
-                  >
-                    <MoreVertical size={12} color={isDark ? '#111111' : '#FFFFFF'} />
-                  </Pressable>
+          {/* Single Folder Dropdown Selector */}
+          {!queryRequest.folderPath ? (
+            <Pressable
+              onPress={() => setIsFolderDropdownOpen(true)}
+              accessibilityLabel="Open folder selector dropdown"
+              className="flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10 hover:border-cyan-500/50 active:scale-95"
+            >
+              <Folder size={12} color="#06B6D4" />
+              <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+                Folders
+              </Text>
+              <ChevronDown size={11} color={isDark ? '#A1A1AA' : '#71717A'} />
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={() => setIsFolderDropdownOpen(true)}
+              onLongPress={() => handleOpenFolderActions(queryRequest.folderPath!)}
+              delayLongPress={350}
+              accessibilityLabel={`Folder ${queryRequest.folderPath}. Tap to change, long press for options.`}
+              className="flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border bg-light-iconBg dark:bg-white border-transparent active:scale-95"
+            >
+              <View className="flex-row items-center gap-1">
+                {activeFolderColor && (
+                  <View
+                    style={{ backgroundColor: activeFolderColor }}
+                    className="w-2 h-2 rounded-full mr-0.5"
+                  />
                 )}
+                {renderFolderIcon(
+                  activeFolderObj?.icon,
+                  11,
+                  isDark ? '#111111' : '#FFFFFF'
+                )}
+              </View>
+
+              <Text className="text-xs font-semibold text-white dark:text-[#111111]">
+                {queryRequest.folderPath}
+              </Text>
+
+              <ChevronDown size={11} color={isDark ? '#111111' : '#FFFFFF'} />
+
+              {/* Manage folder actions button */}
+              <Pressable
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  handleOpenFolderActions(queryRequest.folderPath!);
+                }}
+                accessibilityLabel={`Manage folder ${queryRequest.folderPath}`}
+                className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 active:opacity-60"
+              >
+                <MoreVertical size={11} color={isDark ? '#111111' : '#FFFFFF'} />
               </Pressable>
-            );
-          })}
 
-          {/* + New Folder Button */}
-          <Pressable
-            onPress={handleOpenFolderModal}
-            accessibilityLabel="Create New Folder"
-            className="flex-row items-center gap-1 px-3 py-1.5 rounded-full bg-light-surface/60 dark:bg-white/5 border border-dashed border-light-border dark:border-white/20 hover:border-cyan-500/50 active:scale-95"
-          >
-            <Plus size={11} color={isDark ? '#A1A1AA' : '#71717A'} />
-            <Text className="text-xs text-light-textMuted dark:text-dark-textMuted font-medium">Folder</Text>
-          </Pressable>
-
-        {/* Sort Notes Button */}
-        <Pressable
-          onPress={() => setIsSortModalOpen(true)}
-          accessibilityLabel="Sort Notes"
-          className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border active:scale-95 ${
-            queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
-              ? 'bg-cyan-500/15 border-cyan-500/40'
-              : 'bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10 hover:border-cyan-500/50'
-          }`}
-        >
-          <ArrowDownUp
-            size={12}
-            color={
-              queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
-                ? '#06B6D4'
-                : isDark
-                ? '#A1A1AA'
-                : '#71717A'
-            }
-          />
-          <Text
-            className={`text-xs font-semibold ${
-              queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
-                ? 'text-cyan-500 font-bold'
-                : 'text-light-textPrimary dark:text-dark-textPrimary'
-            }`}
-          >
-            {getSortLabel(queryRequest.sortBy)}
-          </Text>
-        </Pressable>
+              {/* Quick clear button */}
+              <Pressable
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 8 }}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  setFolderFilter(null);
+                }}
+                accessibilityLabel="Clear folder filter"
+                className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 active:opacity-60"
+              >
+                <X size={11} color={isDark ? '#111111' : '#FFFFFF'} />
+              </Pressable>
+            </Pressable>
+          )}
 
           {/* Folder Explorer Tree Button */}
           <Pressable
@@ -1186,35 +1163,6 @@ export const NotesView: React.FC = () => {
           >
             <FolderTree size={12} color="#06B6D4" />
             <Text className="text-xs text-light-textPrimary dark:text-dark-textPrimary font-semibold">Tree</Text>
-          </Pressable>
-
-          {/* Sort Notes Button */}
-          <Pressable
-            onPress={() => setIsSortModalOpen(true)}
-            accessibilityLabel="Sort Notes"
-            className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border active:scale-95 ${queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
-                ? 'bg-cyan-500/15 border-cyan-500/40'
-                : 'bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10 hover:border-cyan-500/50'
-              }`}
-          >
-            <ArrowDownUp
-              size={12}
-              color={
-                queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
-                  ? '#06B6D4'
-                  : isDark
-                    ? '#A1A1AA'
-                    : '#71717A'
-              }
-            />
-            <Text
-              className={`text-xs font-semibold ${queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
-                  ? 'text-cyan-500 font-bold'
-                  : 'text-light-textPrimary dark:text-dark-textPrimary'
-                }`}
-            >
-              {getSortLabel(queryRequest.sortBy)}
-            </Text>
           </Pressable>
 
           {/* Dynamic Tag Pills */}
@@ -1900,6 +1848,20 @@ export const NotesView: React.FC = () => {
           setIsFolderExplorerOpen(false);
           handleOpenCreateSubfolderFromSheet(parentPath);
         }}
+      />
+
+      {/* Folder Dropdown Selector Modal */}
+      <FolderDropdownModal
+        visible={isFolderDropdownOpen}
+        folders={folders}
+        allFolderNames={allFolderNames}
+        selectedFolderPath={queryRequest.folderPath}
+        notes={notes}
+        onClose={() => setIsFolderDropdownOpen(false)}
+        onSelectFolder={(folderPath) => setFolderFilter(folderPath)}
+        onOpenFolderActions={(folderPath) => handleOpenFolderActions(folderPath)}
+        onOpenCreateFolder={handleOpenFolderModal}
+        onOpenFolderTree={() => setIsFolderExplorerOpen(true)}
       />
 
       {/* Sort Order Selection Sheet / Modal */}
