@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme, NoteColors } from '../theme';
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react-native';
 import { ReminderPickerModal } from './common/ReminderPickerModal';
 import { TaskItem } from '../types/note';
+import { parseReminderString, formatRecurrenceLabel, formatReminderChip } from '../types/reminder';
 
 const PRIORITY_FILTERS: Array<{ key: 'all' | TaskPriority; label: string; color?: string }> = [
   { key: 'all', label: 'All' },
@@ -43,29 +44,19 @@ const PRIORITY_CONFIG: Record<TaskPriority, { color: string; label: string }> = 
   urgent: { color: '#EF4444', label: 'Urgent' },
 };
 
-function formatReminderChip(isoString?: string): string {
-  if (!isoString) return '';
-  try {
-    const d = new Date(isoString);
-    if (isNaN(d.getTime())) return '';
-    const now = new Date();
-    const isToday =
-      d.getDate() === now.getDate() &&
-      d.getMonth() === now.getMonth() &&
-      d.getFullYear() === now.getFullYear();
-
-    const timeStr = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-    if (isToday) return `Today ${timeStr}`;
-    return `${d.toLocaleDateString([], { month: 'short', day: 'numeric' })} ${timeStr}`;
-  } catch {
-    return '';
-  }
+export interface TasksViewProps {
+  focusedTaskId?: string | null;
+  onClearFocusedTask?: () => void;
 }
 
-export const TasksView: React.FC = () => {
+export const TasksView: React.FC<TasksViewProps> = ({ focusedTaskId, onClearFocusedTask }) => {
   const router = useRouter();
   const { isDark } = useTheme();
   const { tasks, addTask, toggleTask, updateTaskPriority, updateTaskDueDate, deleteTask, setTaskReminder } = useNotesStore();
+
+  const scrollViewRef = useRef<ScrollView>(null);
+  const taskYPositions = useRef<Record<string, number>>({});
+  const [highlightedTaskId, setHighlightedTaskId] = useState<string | null>(null);
 
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [selectedPriority, setSelectedPriority] = useState<TaskPriority>('none');
@@ -74,6 +65,40 @@ export const TasksView: React.FC = () => {
 
   const [activePriorityFilter, setActivePriorityFilter] = useState<'all' | TaskPriority>('all');
   const [activeDateFilter, setActiveDateFilter] = useState<string>('all');
+
+  useEffect(() => {
+    if (focusedTaskId) {
+      setHighlightedTaskId(focusedTaskId);
+
+      // Auto-reset filters if the focused task would otherwise be hidden
+      const targetTask = tasks.find((t) => t.id === focusedTaskId);
+      if (targetTask) {
+        if (activePriorityFilter !== 'all' && activePriorityFilter !== targetTask.priority) {
+          setActivePriorityFilter('all');
+        }
+        if (activeDateFilter !== 'all') {
+          setActiveDateFilter('all');
+        }
+      }
+
+      const scrollTimer = setTimeout(() => {
+        const y = taskYPositions.current[focusedTaskId];
+        if (typeof y === 'number' && scrollViewRef.current) {
+          scrollViewRef.current.scrollTo({ y: Math.max(0, y - 60), animated: true });
+        }
+      }, 120);
+
+      const clearTimer = setTimeout(() => {
+        setHighlightedTaskId(null);
+        onClearFocusedTask?.();
+      }, 3500);
+
+      return () => {
+        clearTimeout(scrollTimer);
+        clearTimeout(clearTimer);
+      };
+    }
+  }, [focusedTaskId, tasks]);
 
   const handleAddTask = () => {
     if (!newTaskTitle.trim()) return;
@@ -113,6 +138,7 @@ export const TasksView: React.FC = () => {
 
   return (
     <ScrollView 
+      ref={scrollViewRef}
       className="flex-1"
       contentContainerStyle={{ paddingBottom: 120 }}
       showsVerticalScrollIndicator={false}
@@ -269,11 +295,19 @@ export const TasksView: React.FC = () => {
           {pendingTasks.map((task) => {
             const originColor = task.noteColorToken ? NoteColors[task.noteColorToken] : undefined;
             const pConf = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.none;
+            const isHighlighted = highlightedTaskId === task.id;
 
             return (
               <View 
                 key={task.id}
-                className="flex-row items-center justify-between p-4 rounded-2xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border"
+                onLayout={(e) => {
+                  taskYPositions.current[task.id] = e.nativeEvent.layout.y;
+                }}
+                className={`flex-row items-center justify-between p-4 rounded-2xl border transition-all ${
+                  isHighlighted
+                    ? 'bg-lime-500/15 dark:bg-lime-500/20 border-lime-500 dark:border-lime-400 shadow-lg ring-2 ring-lime-500/30'
+                    : 'bg-light-surface dark:bg-dark-surface border-light-border dark:border-dark-border'
+                }`}
               >
                 <Pressable
                   onPress={() => toggleTask(task.id)}
@@ -423,11 +457,21 @@ export const TasksView: React.FC = () => {
           </Text>
 
           <View className="gap-2 opacity-60">
-            {completedTasks.map((task) => (
-              <View 
-                key={task.id}
-                className="flex-row items-center justify-between p-4 rounded-2xl bg-light-surface dark:bg-dark-surface border border-light-border dark:border-dark-border"
-              >
+            {completedTasks.map((task) => {
+              const isHighlighted = highlightedTaskId === task.id;
+
+              return (
+                <View 
+                  key={task.id}
+                  onLayout={(e) => {
+                    taskYPositions.current[task.id] = e.nativeEvent.layout.y;
+                  }}
+                  className={`flex-row items-center justify-between p-4 rounded-2xl border transition-all ${
+                    isHighlighted
+                      ? 'bg-lime-500/15 dark:bg-lime-500/20 border-lime-500 dark:border-lime-400 shadow-lg ring-2 ring-lime-500/30'
+                      : 'bg-light-surface dark:bg-dark-surface border-light-border dark:border-dark-border'
+                  }`}
+                >
                 <Pressable
                   onPress={() => toggleTask(task.id)}
                   accessibilityRole="checkbox"
@@ -453,8 +497,9 @@ export const TasksView: React.FC = () => {
                 >
                   <Trash2 size={16} color={isDark ? '#B5B5B5' : '#626262'} />
                 </Pressable>
-              </View>
-            ))}
+                </View>
+              );
+            })}
           </View>
         </View>
       )}

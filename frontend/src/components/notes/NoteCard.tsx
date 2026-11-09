@@ -3,6 +3,7 @@ import { View, Text, Pressable, Platform } from 'react-native';
 import { NoteColors } from '../../theme';
 import { NoteCardViewModel } from '../../core/noteQueryEngine';
 import { NoteItem } from '../../types/note';
+import { formatNoteCardDate, formatReminderChip } from '../../types/reminder';
 import {
   Star,
   Pencil,
@@ -23,6 +24,7 @@ import {
   Calendar,
   Folder,
   Tag,
+  BellRing,
 } from 'lucide-react-native';
 
 export interface NoteCardProps {
@@ -273,9 +275,19 @@ export const NoteCard: React.FC<NoteCardProps> = ({
 
         {/* Bottom Row Actions */}
         <View className="flex-row items-center justify-between pt-2">
-          <Text className="text-xs font-medium text-[#191919]/60">
-            {note.createdAt}
-          </Text>
+          <View className="flex-row items-center gap-2 flex-wrap flex-1 pr-2">
+            <Text className="text-xs font-medium text-[#191919]/60">
+              {formatNoteCardDate(note.createdAt)}
+            </Text>
+            {note.reminderAt && (
+              <View className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-black/10">
+                <BellRing size={10} color="#191919" />
+                <Text className="text-[10px] font-bold text-[#191919]">
+                  {formatReminderChip(note.reminderAt)}
+                </Text>
+              </View>
+            )}
+          </View>
 
           {isTrashed ? (
             <View className="flex-row items-center gap-1.5">

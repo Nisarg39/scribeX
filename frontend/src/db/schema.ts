@@ -150,6 +150,27 @@ CREATE TABLE IF NOT EXISTS reminders (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 11. In-App Notification Center Ledger
+CREATE TABLE IF NOT EXISTS in_app_notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  reminder_id TEXT,
+  target_type TEXT CHECK(target_type IN ('task', 'note', 'system')) NOT NULL,
+  target_id TEXT NOT NULL,
+  note_id TEXT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  trigger_at TEXT NOT NULL,
+  recurrence_rule TEXT,
+  is_read BOOLEAN NOT NULL DEFAULT 0,
+  read_at DATETIME,
+  is_cleared BOOLEAN NOT NULL DEFAULT 0,
+  cleared_at DATETIME,
+  sync_rev INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Sub-5ms Performance Query Indexes
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status);
@@ -164,4 +185,6 @@ CREATE INDEX IF NOT EXISTS idx_search_history_recent ON search_history(user_id, 
 CREATE INDEX IF NOT EXISTS idx_reminders_target ON reminders(target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON reminders(trigger_at, is_dismissed);
 CREATE INDEX IF NOT EXISTS idx_reminders_sync ON reminders(sync_rev);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON in_app_notifications(user_id, is_read, is_cleared);
+CREATE INDEX IF NOT EXISTS idx_notifications_trigger ON in_app_notifications(trigger_at);
 `;

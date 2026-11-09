@@ -8,15 +8,19 @@ import { foldersRepo } from '../db/foldersRepo';
 import { tagsRepo } from '../db/tagsRepo';
 import { searchHistoryRepo } from '../db/searchHistoryRepo';
 import { remindersRepo } from '../db/remindersRepo';
+import { notificationsRepo } from '../db/notificationsRepo';
 import { notificationService } from '../services/notifications/NotificationService';
 import { syncEngine } from '../services/sync/syncEngine';
-import { ReminderRecord } from '../types/reminder';
+import { ReminderRecord, parseReminderString, getNextOccurrence } from '../types/reminder';
 import {
   DBFolder,
   SearchHistorySource,
   FolderNoteStats,
   DBSyncChangelog,
   FolderSyncResult,
+  InAppNotificationItem,
+  NotificationTargetType,
+  NotificationCounts,
 } from '../db/types';
 import { serializeBlocksToMarkdown } from '../core/astSerializer';
 import { NoteSearchDocument, buildNoteSearchDocument } from '../core/searchIndexer';
@@ -134,6 +138,14 @@ interface NotesContextValue {
   setTaskReminder: (taskId: string, triggerAt: string | null) => Promise<void>;
   setNoteReminder: (noteId: string, triggerAt: string | null) => Promise<void>;
   cancelReminder: (reminderId: string) => Promise<void>;
+  notifications: InAppNotificationItem[];
+  unreadNotificationsCount: number;
+  notificationCounts: NotificationCounts;
+  markNotificationAsRead: (id: string, isRead?: boolean) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<void>;
+  clearNotification: (id: string) => Promise<void>;
+  clearAllNotifications: () => Promise<void>;
+  refreshNotifications: () => Promise<void>;
   refreshFromDB: () => Promise<void>;
 }
 
@@ -234,6 +246,14 @@ const NotesContext = createContext<NotesContextValue>({
   setTaskReminder: async () => {},
   setNoteReminder: async () => {},
   cancelReminder: async () => {},
+  notifications: [],
+  unreadNotificationsCount: 0,
+  notificationCounts: { all: 0, unread: 0, tasks: 0, notes: 0 },
+  markNotificationAsRead: async () => {},
+  markAllNotificationsAsRead: async () => {},
+  clearNotification: async () => {},
+  clearAllNotifications: async () => {},
+  refreshNotifications: async () => {},
   refreshFromDB: async () => {},
 });
 
@@ -249,6 +269,9 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isEditingNote, setIsEditingNote] = useState<boolean>(false);
   const [reminders, setReminders] = useState<ReminderRecord[]>([]);
+  const [notifications, setNotifications] = useState<InAppNotificationItem[]>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+  const [notificationCounts, setNotificationCounts] = useState<NotificationCounts>({ all: 0, unread: 0, tasks: 0, notes: 0 });
 
   const logWorkspaceActivity = (
     category: WorkspaceActivityEntry['category'],
@@ -422,15 +445,154 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [notes, searchIndexMap, queryRequest]
   );
 
+  const refreshNotifications = async () => {
+    try {
+      const [list, counts] = await Promise.all([
+        notificationsRepo.listNotifications(),
+        notificationsRepo.getNotificationCounts(),
+      ]);
+      setNotifications(list);
+      setUnreadNotificationsCount(counts.unread);
+      setNotificationCounts(counts);
+    } catch (err) {
+      console.warn('Failed to load in-app notifications:', err);
+    }
+  };
+
+  const markNotificationAsRead = async (id: string, isRead: boolean = true) => {
+    try {
+      await notificationsRepo.markAsRead(id, isRead);
+      await refreshNotifications();
+    } catch (err) {
+      console.warn('Failed to mark notification as read:', err);
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    try {
+      await notificationsRepo.markAllAsRead();
+      await refreshNotifications();
+    } catch (err) {
+      console.warn('Failed to mark all notifications as read:', err);
+    }
+  };
+
+  const clearNotification = async (id: string) => {
+    try {
+      await notificationsRepo.clearNotification(id);
+      await refreshNotifications();
+    } catch (err) {
+      console.warn('Failed to clear notification:', err);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    try {
+      await notificationsRepo.clearAll();
+      await refreshNotifications();
+    } catch (err) {
+      console.warn('Failed to clear all notifications:', err);
+    }
+  };
+
+  const reconcileFiredReminders = async () => {
+    try {
+      await notificationsRepo.purgePrematureNotifications().catch(() => {});
+
+      const activeReminders = await remindersRepo.listActiveReminders().catch(() => []);
+      const now = Date.now();
+
+      for (const rem of activeReminders) {
+        if (!rem.triggerAt) continue;
+        const isTask = rem.targetType === 'task';
+        const taskItem = isTask ? tasks.find((t) => t.id === rem.targetId) : undefined;
+        const noteItem = !isTask ? notes.find((n) => n.id === rem.targetId) : undefined;
+        const notifTitle = isTask 
+          ? (taskItem?.title || 'Task') 
+          : (noteItem?.title || 'Untitled Note');
+        const notifBody = isTask 
+          ? (taskItem?.noteTitle ? `From note: ${taskItem.noteTitle}` : '') 
+          : (noteItem?.contentMarkdown ? noteItem.contentMarkdown.trim().slice(0, 100) : '');
+
+        const parsed = parseReminderString(rem.triggerAt);
+        if (parsed?.type === 'repeat' && parsed.repeatRule) {
+          const [hStr, mStr] = (parsed.repeatRule.time || '12:00').split(':');
+          const targetH = parseInt(hStr, 10) || 0;
+          const targetM = parseInt(mStr, 10) || 0;
+          const nowDate = new Date(now);
+          const currentDay = nowDate.getDay();
+          const validDays = Array.isArray(parsed.repeatRule.days) && parsed.repeatRule.days.length > 0
+            ? parsed.repeatRule.days
+            : [0, 1, 2, 3, 4, 5, 6];
+
+          if (validDays.includes(currentDay)) {
+            const todayOccurrence = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate(), targetH, targetM, 0, 0);
+            if (todayOccurrence.getTime() <= now) {
+              const occurrenceKey = `notif-${rem.id}-${nowDate.toISOString().slice(0, 10)}`;
+              const existing = await notificationsRepo.getNotificationById(occurrenceKey);
+              if (!existing) {
+                await notificationsRepo.createNotification({
+                  id: occurrenceKey,
+                  reminderId: rem.id,
+                  targetType: rem.targetType as NotificationTargetType,
+                  targetId: rem.targetId,
+                  noteId: rem.noteId,
+                  title: notifTitle,
+                  body: notifBody,
+                  triggerAt: todayOccurrence.toISOString(),
+                  recurrenceRule: JSON.stringify(parsed.repeatRule),
+                });
+              }
+            }
+          }
+        } else {
+          const triggerTime = new Date(rem.triggerAt).getTime();
+          if (triggerTime <= now) {
+            const firedId = `notif-${rem.id}`;
+            const existing = await notificationsRepo.getNotificationById(firedId);
+            if (!existing) {
+              await notificationsRepo.createNotification({
+                id: firedId,
+                reminderId: rem.id,
+                targetType: rem.targetType as NotificationTargetType,
+                targetId: rem.targetId,
+                noteId: rem.noteId,
+                title: notifTitle,
+                body: notifBody,
+                triggerAt: rem.triggerAt,
+              });
+            }
+          }
+        }
+      }
+
+      await refreshNotifications();
+    } catch (err) {
+      console.warn('Failed to reconcile fired reminders:', err);
+    }
+  };
+
   const refreshFromDB = async () => {
     try {
-      const [allNotes, allTasks, fetchedFolders, fetchedTags, savedSearchHistory, activeReminders] = await Promise.all([
+      await notificationsRepo.purgePrematureNotifications().catch(() => {});
+      const [
+        allNotes,
+        allTasks,
+        fetchedFolders,
+        fetchedTags,
+        savedSearchHistory,
+        activeReminders,
+        fetchedNotifs,
+        notifCounts,
+      ] = await Promise.all([
         notesRepo.listNotes(), // Active + Archived notes (non-trashed)
         tasksRepo.listTasks(),
         foldersRepo.listFolders(),
         tagsRepo.listTags(),
         searchHistoryRepo.loadRecentSearches(8).catch(() => []),
         remindersRepo.listActiveReminders().catch(() => []),
+        notificationsRepo.listNotifications().catch(() => []),
+        notificationsRepo.getNotificationCounts().catch(() => ({ all: 0, unread: 0, tasks: 0, notes: 0 })),
       ]);
 
       // Also fetch trashed notes so trash bin view can inspect them
@@ -445,6 +607,9 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setTasks(allTasks);
       setFolders(fetchedFolders);
       setReminders(activeReminders);
+      setNotifications(fetchedNotifs);
+      setUnreadNotificationsCount(notifCounts.unread);
+      setNotificationCounts(notifCounts);
       if (Array.isArray(savedSearchHistory) && savedSearchHistory.length > 0) {
         setRecentSearches(savedSearchHistory.map((item) => item.queryText));
       }
@@ -468,6 +633,14 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       refreshFromDB();
     });
 
+    const unsubscribeDelivery = notificationService.subscribeDelivery(() => {
+      refreshNotifications();
+    });
+
+    const reminderCheckTimer = setInterval(() => {
+      reconcileFiredReminders();
+    }, 10000);
+
     AsyncStorage.getItem('scribex_sort_preference')
       .then((savedSort) => {
         if (savedSort) {
@@ -481,6 +654,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     return () => {
       unsubscribeSync();
+      unsubscribeDelivery();
+      clearInterval(reminderCheckTimer);
     };
   }, []);
 
@@ -1138,8 +1313,10 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await notificationService.cancelReminder(activeReminder.notificationId);
       }
       await remindersRepo.deleteRemindersByTarget('task', taskId);
+      await notificationsRepo.deleteNotificationByTarget('task', taskId);
       setReminders((prev) => prev.filter((r) => !(r.targetType === 'task' && r.targetId === taskId)));
       await tasksRepo.deleteTask(taskId);
+      await refreshNotifications();
     } catch (err) {
       console.warn('Failed to delete task via tasksRepo:', err);
     }
@@ -1155,9 +1332,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await notificationService.cancelReminder(existing.notificationId);
       }
       await remindersRepo.dismissReminderByTarget('task', taskId);
+      await notificationsRepo.deleteNotificationByTarget('task', taskId);
       await tasksRepo.updateTaskReminder(taskId, null);
       setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, reminderAt: undefined } : t)));
       setReminders((prev) => prev.filter((r) => !(r.targetType === 'task' && r.targetId === taskId)));
+      await refreshNotifications();
 
       if (targetTask.noteId) {
         const targetNote = notes.find((n) => n.id === targetTask.noteId);
@@ -1191,26 +1370,32 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       }
     } else {
+      const parsedConfig = parseReminderString(triggerAt);
+      const computedTriggerDate = parsedConfig?.type === 'repeat' && parsedConfig.repeatRule
+        ? getNextOccurrence(parsedConfig.repeatRule)
+        : new Date(triggerAt);
+
       const reminder = await remindersRepo.createReminder({
         targetType: 'task',
         targetId: taskId,
         noteId: targetTask.noteId,
         triggerAt,
-        title: 'Task Reminder',
-        body: targetTask.title,
+        title: targetTask.title,
+        body: targetTask.noteTitle ? `From note: ${targetTask.noteTitle}` : '',
       });
 
       const notificationId = await notificationService.scheduleReminder({
         reminderId: reminder.id,
-        title: 'Task Reminder',
-        body: targetTask.title,
-        triggerDate: new Date(triggerAt),
+        title: targetTask.title,
+        body: targetTask.noteTitle ? `From note: ${targetTask.noteTitle}` : '',
+        triggerDate: computedTriggerDate,
+        repeatRule: parsedConfig?.type === 'repeat' ? parsedConfig.repeatRule : undefined,
         payload: {
           targetType: 'task',
           targetId: taskId,
           noteId: targetTask.noteId,
-          title: 'Task Reminder',
-          body: targetTask.title,
+          title: targetTask.title,
+          body: targetTask.noteTitle ? `From note: ${targetTask.noteTitle}` : '',
         },
       });
 
@@ -1225,6 +1410,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ...prev.filter((r) => !(r.targetType === 'task' && r.targetId === taskId)),
         reminder,
       ]);
+      await refreshNotifications();
 
       if (targetTask.noteId) {
         const targetNote = notes.find((n) => n.id === targetTask.noteId);
@@ -1270,30 +1456,41 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         await notificationService.cancelReminder(existing.notificationId);
       }
       await remindersRepo.dismissReminderByTarget('note', noteId);
+      await notificationsRepo.deleteNotificationByTarget('note', noteId);
       await notesRepo.updateNote(noteId, { reminderAt: null });
       setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, reminderAt: undefined } : n)));
       setReminders((prev) => prev.filter((r) => !(r.targetType === 'note' && r.targetId === noteId)));
+      await refreshNotifications();
     } else {
+      const parsedConfig = parseReminderString(triggerAt);
+      const computedTriggerDate = parsedConfig?.type === 'repeat' && parsedConfig.repeatRule
+        ? getNextOccurrence(parsedConfig.repeatRule)
+        : new Date(triggerAt);
+
+      const noteTitle = targetNote.title || 'Untitled Note';
+      const noteBody = targetNote.contentMarkdown ? targetNote.contentMarkdown.trim().slice(0, 100) : '';
+
       const reminder = await remindersRepo.createReminder({
         targetType: 'note',
         targetId: noteId,
         noteId,
         triggerAt,
-        title: 'Note Reminder',
-        body: targetNote.title || 'Review Note',
+        title: noteTitle,
+        body: noteBody,
       });
 
       const notificationId = await notificationService.scheduleReminder({
         reminderId: reminder.id,
-        title: 'Note Reminder',
-        body: targetNote.title || 'Review Note',
-        triggerDate: new Date(triggerAt),
+        title: noteTitle,
+        body: noteBody,
+        triggerDate: computedTriggerDate,
+        repeatRule: parsedConfig?.type === 'repeat' ? parsedConfig.repeatRule : undefined,
         payload: {
           targetType: 'note',
           targetId: noteId,
           noteId,
-          title: 'Note Reminder',
-          body: targetNote.title || 'Review Note',
+          title: noteTitle,
+          body: noteBody,
         },
       });
 
@@ -1308,6 +1505,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         ...prev.filter((r) => !(r.targetType === 'note' && r.targetId === noteId)),
         reminder,
       ]);
+      await refreshNotifications();
     }
   };
 
@@ -1318,6 +1516,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       await notificationService.cancelReminder(rem.notificationId);
     }
     await remindersRepo.dismissReminder(reminderId);
+    await notificationsRepo.deleteNotificationByTarget(rem.targetType, rem.targetId);
     if (rem.targetType === 'task') {
       await tasksRepo.updateTaskReminder(rem.targetId, null);
       setTasks((prev) => prev.map((t) => (t.id === rem.targetId ? { ...t, reminderAt: undefined } : t)));
@@ -1326,6 +1525,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setNotes((prev) => prev.map((n) => (n.id === rem.targetId ? { ...n, reminderAt: undefined } : n)));
     }
     setReminders((prev) => prev.filter((r) => r.id !== reminderId));
+    await refreshNotifications();
   };
 
   return (
@@ -1403,6 +1603,14 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setTaskReminder,
         setNoteReminder,
         cancelReminder,
+        notifications,
+        unreadNotificationsCount,
+        notificationCounts,
+        markNotificationAsRead,
+        markAllNotificationsAsRead,
+        clearNotification,
+        clearAllNotifications,
+        refreshNotifications,
         isEditingNote,
         setIsEditingNote,
         refreshFromDB,

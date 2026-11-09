@@ -166,7 +166,7 @@ export class TasksRepository {
   }
 
   public async updateTaskReminder(id: string, reminderAt: string | null): Promise<TaskItem> {
-    return this.updateTask(id, { reminderAt });
+    return this.updateTask(id, { reminderAt: reminderAt ?? undefined });
   }
 
   public async deleteTask(id: string): Promise<void> {

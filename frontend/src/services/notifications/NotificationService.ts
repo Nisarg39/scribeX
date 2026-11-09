@@ -9,22 +9,67 @@ import { nativeNotificationProvider } from './providers/NativeNotificationProvid
 import { webNotificationProvider } from './providers/WebNotificationProvider';
 import { ReminderRecord } from '../../types/reminder';
 import { remindersRepo } from '../../db/remindersRepo';
+import { notificationsRepo } from '../../db/notificationsRepo';
+import { NotificationTargetType } from '../../db/types';
 
 export class NotificationServiceManager {
   private provider: INotificationProvider;
+  private deliveryListeners = new Set<(payload: any) => void>();
 
   constructor(customProvider?: INotificationProvider) {
     this.provider =
       customProvider ||
       (Platform.OS === 'web' ? webNotificationProvider : nativeNotificationProvider);
+    this.attachDeliveryListener();
   }
 
   public setProvider(provider: INotificationProvider): void {
     this.provider = provider;
+    this.attachDeliveryListener();
   }
 
   public getProvider(): INotificationProvider {
     return this.provider;
+  }
+
+  private attachDeliveryListener(): void {
+    if ('onDelivered' in this.provider) {
+      (this.provider as any).onDelivered = (options: ScheduleNotificationOptions) => {
+        this.onNotificationDelivered(options);
+      };
+    }
+  }
+
+  public async onNotificationDelivered(options: ScheduleNotificationOptions): Promise<void> {
+    try {
+      const payload = options.payload || {};
+      const targetType = (payload.targetType as NotificationTargetType) || 'task';
+      const targetId = (payload.targetId as string) || options.reminderId;
+
+      await notificationsRepo.recordFiredNotification({
+        reminderId: options.reminderId,
+        targetType,
+        targetId,
+        noteId: payload.noteId as string | undefined,
+        title: options.title,
+        body: options.body,
+        triggerAt: new Date().toISOString(),
+        recurrenceRule: options.repeatRule ? JSON.stringify(options.repeatRule) : undefined,
+      });
+
+      for (const listener of this.deliveryListeners) {
+        listener(options);
+      }
+    } catch (err) {
+      console.warn('Failed to record fired notification:', err);
+    }
+  }
+
+  public subscribeDelivery(listener: (payload: any) => void): () => void {
+    this.deliveryListeners.add(listener);
+    return () => {
+      this.deliveryListeners.delete(listener);
+    };
   }
 
   public async scheduleReminder(options: ScheduleNotificationOptions): Promise<string | null> {

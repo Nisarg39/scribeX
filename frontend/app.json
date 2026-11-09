@@ -25,7 +25,12 @@
         "RECORD_AUDIO",
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_AUDIO",
-        "READ_MEDIA_VIDEO"
+        "READ_MEDIA_VIDEO",
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM",
+        "RECEIVE_BOOT_COMPLETED",
+        "WAKE_LOCK",
+        "POST_NOTIFICATIONS"
       ]
     },
     "ios": {

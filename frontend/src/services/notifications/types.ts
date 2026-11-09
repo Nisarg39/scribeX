@@ -3,7 +3,7 @@
  * Source of Truth: docs/Local_Serverless_Reminder_Implementation_Plan.md
  */
 
-import { ReminderPayload } from '../../types/reminder';
+import { ReminderPayload, RecurringRule } from '../../types/reminder';
 
 export interface ScheduleNotificationOptions {
   reminderId: string;
@@ -11,6 +11,7 @@ export interface ScheduleNotificationOptions {
   body: string;
   triggerDate: Date;
   payload: ReminderPayload;
+  repeatRule?: RecurringRule;
 }
 
 /**

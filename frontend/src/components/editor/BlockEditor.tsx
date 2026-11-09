@@ -668,7 +668,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         onClose={() => setIsReminderModalVisible(false)}
         initialReminderAt={note.reminderAt}
         targetTitle={title || 'Untitled Note'}
-        onSaveReminder={async (isoDate) => {
+        onSaveReminder={async (isoDate: string | null) => {
           await setNoteReminder(note.id, isoDate);
           onNoteUpdated({ ...note, reminderAt: isoDate || undefined });
         }}

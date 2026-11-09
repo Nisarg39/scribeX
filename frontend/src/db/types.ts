@@ -265,3 +265,65 @@ export interface FolderNoteStats {
   subfoldersCount: number;
 }
 
+export type NotificationTargetType = 'task' | 'note' | 'event' | 'checklist_point' | 'system';
+
+export interface DBInAppNotification {
+  id: string;
+  user_id: string;
+  reminder_id: string | null;
+  target_type: NotificationTargetType;
+  target_id: string;
+  note_id: string | null;
+  title: string;
+  body: string;
+  trigger_at: string;
+  recurrence_rule: string | null;
+  is_read: number;
+  read_at: string | null;
+  is_cleared: number;
+  cleared_at: string | null;
+  sync_rev: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InAppNotificationItem {
+  id: string;
+  userId: string;
+  reminderId?: string;
+  targetType: NotificationTargetType;
+  targetId: string;
+  noteId?: string;
+  title: string;
+  body: string;
+  triggerAt: string;
+  recurrenceRule?: string;
+  isRead: boolean;
+  readAt?: string;
+  isCleared: boolean;
+  clearedAt?: string;
+  syncRev: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface NotificationCounts {
+  all: number;
+  unread: number;
+  tasks: number;
+  notes: number;
+}
+
+export interface CreateInAppNotificationDTO {
+  id?: string;
+  userId?: string;
+  reminderId?: string;
+  targetType: NotificationTargetType;
+  targetId: string;
+  noteId?: string;
+  title: string;
+  body: string;
+  triggerAt: string;
+  recurrenceRule?: string;
+}
+

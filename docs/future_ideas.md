@@ -38,13 +38,21 @@ Remaining Tasks to fix
 29 - [x] Note Sorting & Ordering UI: Implement sort action button / menu in NotesView allowing users to sort notes by Recently Updated (Newest/Oldest), Date Created (Newest/Oldest), and Title (A-Z / Z-A) with visual active sort indicator and persistent preference (COMPLETED)
 30 - [x] Full Workspace Backup & Restore (JSON / SQLite Dump): Implement complete notebook snapshot export (all tables: notes, folders, tasks, tags, entity_relations) into a timestamped JSON backup file, and full workspace restore / import mechanism with schema validation ensuring zero data loss before cloud sync (COMPLETED)
 31 - [x] Workspace Storage & Settings Modal + "Empty Trash" Purge: Implement accessible settings modal in home screen top bar (triggerable via "Local SQLite Active" badge or settings action) displaying database health, storage stats, 1-tap backup/restore triggers, and a one-click "Empty Trash" action with cascade orphan media cleanup (COMPLETED)
+32 - [] Add favourites , pinned and archieve feature for folders as well 
+33 - [x] Add Offline Notifications and InApp Notification Center as specified in docs/Offline_Notifications_and_InApp_Notification_Center_Plan.md (COMPLETED)
+34 - [x] Add Reminder & Recurrence Support for Tasks as specified in docs/Reminder_and_Recurrence_Specs.md (COMPLETED)
+
 
 Long term Ideas
 
-1 - [x] Use Supabase SDK for realtime database update and backup / cloud sync for the user data, use Next.js for AI API calls hosted on Vercel for maintaining free hosting, and use Google Drive API for zero-cost media storage on Google Drive (Supabase/SQLite stores metadata & links). (ADOPTED AS OFFICIAL BACKEND SPECIFICATION & ALIGNED ACROSS ALL ARCHITECTURE DOCS FOR PHASE 2)
+1 - [] Use Supabase SDK for realtime database update and backup / cloud sync for the user data, use Next.js for AI API calls hosted on Vercel for maintaining free hosting, and use Google Drive API for zero-cost media storage on Google Drive (Supabase/SQLite stores metadata & links). (ADOPTED AS OFFICIAL BACKEND SPECIFICATION )
 
-2 - [ ] AI assistant inside the note editor where we can give prompt and it starts editing the existing note (Phase 3 AI Assistant)
+2 - [ ] AI assistant inside the note editor where we can give prompt and it starts editing the existing note.
 
-3 - [ ] Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes. These multi agents will be added using the help of the main agent (Friday) that has all the context of the user and the system, with scoped access to context. (Phase 4 Multi-Agent)
+3 - [ ] Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes. These multi agents will be added using the help of the main agent (Friday) that has all the context of the user and the system, with scoped access to context.
 
-4 - [x] ScribeX Universal AI Connector & MCP Server: Dual-surface unified cognitive engine providing identical 4-layer context, agentic tools (search, create/update note, task toggle, reminder alarm scheduling), and Ask-Before-Write safety gates to both the In-App Friday assistant and external AI apps (Claude Desktop, Gemini CLI, ChatGPT, Cursor, local Ollama) via MCP and OpenAI/Anthropic REST proxy. (ADOPTED & SPECIFIED IN docs/Universal_AI_Connector_and_MCP_Architecture.md) 
+4 - [] ScribeX Universal AI Connector & MCP Server: Dual-surface unified cognitive engine providing identical 4-layer context, agentic tools (search, create/update note, task toggle, reminder alarm scheduling), and Ask-Before-Write safety gates to both the In-App Friday assistant and external AI apps (Claude Desktop, Gemini CLI, ChatGPT, Cursor, local Ollama) via MCP and OpenAI/Anthropic REST proxy. (ADOPTED & SPECIFIED IN docs/Universal_AI_Connector_and_MCP_Architecture.md) 
+
+5 - [] Adding github connector so that i can manage repo's from the app itslef .
+
+6 - [] Adding a section of connector in the system where the app can connect to various apps and services to fetch or send data to them, using APIs.

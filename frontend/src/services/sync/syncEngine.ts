@@ -228,7 +228,7 @@ export class SyncEngine {
         const triggerAt = payload.trigger_at || payload.triggerAt;
         const triggerDate = new Date(triggerAt);
         if (triggerDate.getTime() > Date.now()) {
-          await notificationService.scheduleReminder({
+          await notificationService.handleRemoteSyncDelta('insert', {
             id: delta.entityId,
             userId: delta.userId || this.config.userId,
             targetType: payload.target_type || payload.targetType || 'task',
