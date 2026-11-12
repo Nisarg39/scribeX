@@ -38,7 +38,7 @@ Remaining Tasks to fix
 29 - [x] Note Sorting & Ordering UI: Implement sort action button / menu in NotesView allowing users to sort notes by Recently Updated (Newest/Oldest), Date Created (Newest/Oldest), and Title (A-Z / Z-A) with visual active sort indicator and persistent preference (COMPLETED)
 30 - [x] Full Workspace Backup & Restore (JSON / SQLite Dump): Implement complete notebook snapshot export (all tables: notes, folders, tasks, tags, entity_relations) into a timestamped JSON backup file, and full workspace restore / import mechanism with schema validation ensuring zero data loss before cloud sync (COMPLETED)
 31 - [x] Workspace Storage & Settings Modal + "Empty Trash" Purge: Implement accessible settings modal in home screen top bar (triggerable via "Local SQLite Active" badge or settings action) displaying database health, storage stats, 1-tap backup/restore triggers, and a one-click "Empty Trash" action with cascade orphan media cleanup (COMPLETED)
-32 - [] Add favourites , pinned and archieve feature for folders as well 
+32 - [x] Add favourites, pinned and archive feature for folders as well as specified in docs/Folder_Favourites_Pinned_Archive_Plan.md (COMPLETED)
 33 - [x] Add Offline Notifications and InApp Notification Center as specified in docs/Offline_Notifications_and_InApp_Notification_Center_Plan.md (COMPLETED)
 34 - [x] Add Reminder & Recurrence Support for Tasks as specified in docs/Reminder_and_Recurrence_Specs.md (COMPLETED)
 

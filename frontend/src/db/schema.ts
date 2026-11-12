@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS folders (
   path TEXT NOT NULL,
   color_token TEXT DEFAULT 'apricot',
   icon TEXT,
+  is_favorite BOOLEAN NOT NULL DEFAULT 0,
+  is_pinned BOOLEAN NOT NULL DEFAULT 0,
+  is_archived BOOLEAN NOT NULL DEFAULT 0,
   sync_rev INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -187,4 +190,5 @@ CREATE INDEX IF NOT EXISTS idx_reminders_trigger ON reminders(trigger_at, is_dis
 CREATE INDEX IF NOT EXISTS idx_reminders_sync ON reminders(sync_rev);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON in_app_notifications(user_id, is_read, is_cleared);
 CREATE INDEX IF NOT EXISTS idx_notifications_trigger ON in_app_notifications(trigger_at);
+CREATE INDEX IF NOT EXISTS idx_folders_flags ON folders(is_favorite, is_pinned, is_archived);
 `;

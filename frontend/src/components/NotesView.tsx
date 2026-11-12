@@ -50,6 +50,10 @@ export const NotesView: React.FC = () => {
   const {
     notes,
     folders,
+    activeFolders,
+    favoriteFolders,
+    pinnedFolders,
+    archivedFolders,
     tags,
     activeFilter,
     setActiveFilter,
@@ -85,6 +89,10 @@ export const NotesView: React.FC = () => {
     duplicateFolder,
     updateFolderColor,
     updateFolderIcon,
+    toggleFolderFavorite,
+    toggleFolderPin,
+    archiveFolder,
+    unarchiveFolder,
     getFolderStats,
     batchDeleteNotes,
     batchMoveNotesToFolder,
@@ -117,7 +125,15 @@ export const NotesView: React.FC = () => {
   const [selectedParentPath, setSelectedParentPath] = useState<string>('');
 
   // Folder Actions Management State
-  const [actionSheetFolder, setActionSheetFolder] = useState<{ path: string; id?: string; colorToken?: string; icon?: string | null } | null>(null);
+  const [actionSheetFolder, setActionSheetFolder] = useState<{
+    path: string;
+    id?: string;
+    colorToken?: string;
+    icon?: string | null;
+    isFavorite?: boolean;
+    isPinned?: boolean;
+    isArchived?: boolean;
+  } | null>(null);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isFolderExplorerOpen, setIsFolderExplorerOpen] = useState(false);
   const [isFolderDropdownOpen, setIsFolderDropdownOpen] = useState(false);
@@ -258,7 +274,18 @@ export const NotesView: React.FC = () => {
     }
     const colorToken = existingFolder?.color_token || 'cyan';
     const icon = existingFolder?.icon || null;
-    setActionSheetFolder({ path: folderPath, id: folderId, colorToken, icon });
+    const isFavorite = Boolean(existingFolder?.is_favorite);
+    const isPinned = Boolean(existingFolder?.is_pinned);
+    const isArchived = Boolean(existingFolder?.is_archived);
+    setActionSheetFolder({
+      path: folderPath,
+      id: folderId,
+      colorToken,
+      icon,
+      isFavorite,
+      isPinned,
+      isArchived,
+    });
     try {
       const stats = await getFolderStats(folderPath, folderId);
       setActiveFolderStats(stats);
@@ -333,14 +360,33 @@ export const NotesView: React.FC = () => {
     } catch (_) { }
   };
 
-  // Derive all active folders from repository and notes (including intermediate parent paths)
-  const rawFolderPaths = Array.from(
-    new Set([
-      'General',
-      ...folders.map((f) => f.path || f.name),
-      ...notes.filter((n) => n.status !== 'trashed' && n.status !== 'archived').map((n) => n.folderPath).filter(Boolean) as string[],
-    ])
-  );
+  // Derive folders matching current status scope (active vs archived)
+  const visibleFolders = React.useMemo(() => {
+    if (queryRequest.statusScope === 'archived') {
+      return folders.filter((f) => Boolean(f.is_archived));
+    }
+    return folders.filter((f) => !f.is_archived);
+  }, [folders, queryRequest.statusScope]);
+
+  const rawFolderPaths = React.useMemo(() => {
+    if (queryRequest.statusScope === 'archived') {
+      const archivedNotesFolders = notes
+        .filter((n) => n.status === 'archived')
+        .map((n) => n.folderPath)
+        .filter(Boolean) as string[];
+      return Array.from(new Set([...visibleFolders.map((f) => f.path || f.name), ...archivedNotesFolders]));
+    }
+    return Array.from(
+      new Set([
+        'General',
+        ...visibleFolders.map((f) => f.path || f.name),
+        ...notes
+          .filter((n) => n.status !== 'trashed' && n.status !== 'archived')
+          .map((n) => n.folderPath)
+          .filter(Boolean) as string[],
+      ])
+    );
+  }, [visibleFolders, notes, queryRequest.statusScope]);
 
   const allFolderNames = React.useMemo(() => {
     const expanded = new Set<string>();
@@ -354,7 +400,7 @@ export const NotesView: React.FC = () => {
       });
     });
     return Array.from(expanded);
-  }, [folders, notes]);
+  }, [rawFolderPaths]);
 
   // Direct child folders of the currently selected parent directory in the modal
   const currentLevelSubfolders = React.useMemo(() => {
@@ -804,11 +850,10 @@ export const NotesView: React.FC = () => {
                 hitSlop={10}
                 onPress={handleToggleVoiceSearch}
                 accessibilityLabel="Voice to Text Search"
-                className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95 ${
-                  isVoiceSearching
-                    ? 'bg-rose-500'
-                    : 'bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15'
-                }`}
+                className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full transition-all active:scale-95 ${isVoiceSearching
+                  ? 'bg-rose-500'
+                  : 'bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/15'
+                  }`}
               >
                 <Mic
                   size={15}
@@ -825,22 +870,20 @@ export const NotesView: React.FC = () => {
               onPress={() => setIsFilterModalOpen(true)}
               accessibilityRole="button"
               accessibilityLabel="Filter Notes"
-              className={`flex-row items-center justify-center gap-1.5 h-[44px] px-3.5 rounded-2xl border active:scale-95 shadow-sm ${
-                activeFiltersCount > 0
-                  ? 'bg-cyan-500/15 border-cyan-500/50'
-                  : 'bg-light-surface dark:bg-dark-raised border-light-border/60 dark:border-white/10'
-              }`}
+              className={`flex-row items-center justify-center gap-1.5 h-[44px] px-3.5 rounded-2xl border active:scale-95 shadow-sm ${activeFiltersCount > 0
+                ? 'bg-cyan-500/15 border-cyan-500/50'
+                : 'bg-light-surface dark:bg-dark-raised border-light-border/60 dark:border-white/10'
+                }`}
             >
               <SlidersHorizontal
                 size={15}
                 color={activeFiltersCount > 0 ? '#06B6D4' : isDark ? '#E4E4E7' : '#27272A'}
               />
               <Text
-                className={`text-xs font-semibold ${
-                  activeFiltersCount > 0
-                    ? 'text-cyan-500 font-bold'
-                    : 'text-light-textPrimary dark:text-dark-textPrimary'
-                }`}
+                className={`text-xs font-semibold ${activeFiltersCount > 0
+                  ? 'text-cyan-500 font-bold'
+                  : 'text-light-textPrimary dark:text-dark-textPrimary'
+                  }`}
               >
                 Filter
               </Text>
@@ -858,11 +901,10 @@ export const NotesView: React.FC = () => {
               onPress={() => setIsSortModalOpen(true)}
               accessibilityRole="button"
               accessibilityLabel="Sort Notes"
-              className={`flex-row items-center justify-center gap-1.5 h-[44px] px-3.5 rounded-2xl border active:scale-95 shadow-sm ${
-                queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
-                  ? 'bg-cyan-500/15 border-cyan-500/50'
-                  : 'bg-light-surface dark:bg-dark-raised border-light-border/60 dark:border-white/10'
-              }`}
+              className={`flex-row items-center justify-center gap-1.5 h-[44px] px-3.5 rounded-2xl border active:scale-95 shadow-sm ${queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
+                ? 'bg-cyan-500/15 border-cyan-500/50'
+                : 'bg-light-surface dark:bg-dark-raised border-light-border/60 dark:border-white/10'
+                }`}
             >
               <ArrowDownUp
                 size={15}
@@ -870,16 +912,15 @@ export const NotesView: React.FC = () => {
                   queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
                     ? '#06B6D4'
                     : isDark
-                    ? '#E4E4E7'
-                    : '#27272A'
+                      ? '#E4E4E7'
+                      : '#27272A'
                 }
               />
               <Text
-                className={`text-xs font-semibold hidden md:flex ${
-                  queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
-                    ? 'text-cyan-500 font-bold'
-                    : 'text-light-textPrimary dark:text-dark-textPrimary'
-                }`}
+                className={`text-xs font-semibold hidden md:flex ${queryRequest.sortBy && queryRequest.sortBy !== 'updated_desc'
+                  ? 'text-cyan-500 font-bold'
+                  : 'text-light-textPrimary dark:text-dark-textPrimary'
+                  }`}
               >
                 {getSortLabel(queryRequest.sortBy)}
               </Text>
@@ -988,19 +1029,19 @@ export const NotesView: React.FC = () => {
           <Pressable
             onPress={() => setStatusScopeFilter('active')}
             className={`flex-row items-center gap-1.5 px-4 py-1.5 rounded-full border transition-all ${queryRequest.statusScope === 'active' && !queryRequest.folderPath && (!queryRequest.tags || queryRequest.tags.length === 0)
-                ? 'bg-light-iconBg dark:bg-white border-transparent'
-                : 'bg-transparent border-light-border dark:border-dark-border'
+              ? 'bg-light-iconBg dark:bg-white border-transparent'
+              : 'bg-transparent border-light-border dark:border-dark-border'
               }`}
           >
             <Text className={`text-xs font-semibold ${queryRequest.statusScope === 'active' && !queryRequest.folderPath && (!queryRequest.tags || queryRequest.tags.length === 0)
-                ? 'text-white dark:text-[#111111]'
-                : 'text-light-textSecondary dark:text-dark-textSecondary'
+              ? 'text-white dark:text-[#111111]'
+              : 'text-light-textSecondary dark:text-dark-textSecondary'
               }`}>
               All Notes
             </Text>
             <Text className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${queryRequest.statusScope === 'active' && !queryRequest.folderPath && (!queryRequest.tags || queryRequest.tags.length === 0)
-                ? 'bg-white/20 dark:bg-black/20 text-white dark:text-[#111111]'
-                : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
+              ? 'bg-white/20 dark:bg-black/20 text-white dark:text-[#111111]'
+              : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
               }`}>
               {partitionCounts.allActive}
             </Text>
@@ -1010,8 +1051,8 @@ export const NotesView: React.FC = () => {
           <Pressable
             onPress={() => setStatusScopeFilter('favorites')}
             className={`flex-row items-center gap-1.5 px-4 py-1.5 rounded-full border transition-all ${queryRequest.statusScope === 'favorites'
-                ? 'bg-light-iconBg dark:bg-white border-transparent'
-                : 'bg-transparent border-light-border dark:border-dark-border'
+              ? 'bg-light-iconBg dark:bg-white border-transparent'
+              : 'bg-transparent border-light-border dark:border-dark-border'
               }`}
           >
             <Star
@@ -1020,14 +1061,14 @@ export const NotesView: React.FC = () => {
               fill={queryRequest.statusScope === 'favorites' ? '#FFD43B' : 'transparent'}
             />
             <Text className={`text-xs font-semibold ${queryRequest.statusScope === 'favorites'
-                ? 'text-white dark:text-[#111111]'
-                : 'text-light-textSecondary dark:text-dark-textSecondary'
+              ? 'text-white dark:text-[#111111]'
+              : 'text-light-textSecondary dark:text-dark-textSecondary'
               }`}>
               Favorites
             </Text>
             <Text className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${queryRequest.statusScope === 'favorites'
-                ? 'bg-white/20 dark:bg-black/20 text-white dark:text-[#111111]'
-                : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
+              ? 'bg-white/20 dark:bg-black/20 text-white dark:text-[#111111]'
+              : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
               }`}>
               {partitionCounts.favorites}
             </Text>
@@ -1037,21 +1078,21 @@ export const NotesView: React.FC = () => {
           <Pressable
             onPress={() => setStatusScopeFilter('archived')}
             className={`flex-row items-center gap-1.5 px-4 py-1.5 rounded-full border transition-all ${queryRequest.statusScope === 'archived'
-                ? 'bg-cyan-500 border-transparent'
-                : 'bg-transparent border-light-border dark:border-dark-border'
+              ? 'bg-cyan-500 border-transparent'
+              : 'bg-transparent border-light-border dark:border-dark-border'
               }`}
           >
             <Archive size={12} color={queryRequest.statusScope === 'archived' ? '#FFFFFF' : (isDark ? '#B5B5B5' : '#626262')} />
             <Text className={`text-xs font-semibold ${queryRequest.statusScope === 'archived'
-                ? 'text-white'
-                : 'text-light-textSecondary dark:text-dark-textSecondary'
+              ? 'text-white'
+              : 'text-light-textSecondary dark:text-dark-textSecondary'
               }`}>
               Archive
             </Text>
             {partitionCounts.archived > 0 && (
               <Text className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${queryRequest.statusScope === 'archived'
-                  ? 'bg-white/20 text-white'
-                  : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
+                ? 'bg-white/20 text-white'
+                : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
                 }`}>
                 {partitionCounts.archived}
               </Text>
@@ -1062,21 +1103,21 @@ export const NotesView: React.FC = () => {
           <Pressable
             onPress={() => setStatusScopeFilter('trashed')}
             className={`flex-row items-center gap-1.5 px-4 py-1.5 rounded-full border transition-all ${queryRequest.statusScope === 'trashed'
-                ? 'bg-red-500 border-transparent'
-                : 'bg-transparent border-light-border dark:border-dark-border'
+              ? 'bg-red-500 border-transparent'
+              : 'bg-transparent border-light-border dark:border-dark-border'
               }`}
           >
             <Trash2 size={12} color={queryRequest.statusScope === 'trashed' ? '#FFFFFF' : (isDark ? '#B5B5B5' : '#626262')} />
             <Text className={`text-xs font-semibold ${queryRequest.statusScope === 'trashed'
-                ? 'text-white'
-                : 'text-light-textSecondary dark:text-dark-textSecondary'
+              ? 'text-white'
+              : 'text-light-textSecondary dark:text-dark-textSecondary'
               }`}>
               Trash
             </Text>
             {partitionCounts.trashed > 0 && (
               <Text className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full ${queryRequest.statusScope === 'trashed'
-                  ? 'bg-white/20 text-white'
-                  : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
+                ? 'bg-white/20 text-white'
+                : 'bg-black/5 dark:bg-white/10 text-light-textMuted dark:text-dark-textMuted'
                 }`}>
                 {partitionCounts.trashed}
               </Text>
@@ -1124,6 +1165,25 @@ export const NotesView: React.FC = () => {
               <Text className="text-xs font-semibold text-white dark:text-[#111111]">
                 {queryRequest.folderPath}
               </Text>
+
+              {/* Status Badges on Active Folder Pill */}
+              {Boolean(activeFolderObj?.is_favorite) && (
+                <Star
+                  size={10}
+                  color={isDark ? '#111111' : '#FFD43B'}
+                  fill={isDark ? '#111111' : '#FFD43B'}
+                />
+              )}
+              {Boolean(activeFolderObj?.is_pinned) && (
+                <Pin
+                  size={10}
+                  color={isDark ? '#111111' : '#FFC96F'}
+                  fill={isDark ? '#111111' : '#FFC96F'}
+                />
+              )}
+              {Boolean(activeFolderObj?.is_archived) && (
+                <Archive size={10} color={isDark ? '#111111' : '#06B6D4'} />
+              )}
 
               <ChevronDown size={11} color={isDark ? '#111111' : '#FFFFFF'} />
 
@@ -1177,8 +1237,8 @@ export const NotesView: React.FC = () => {
                 key={tag}
                 onPress={() => toggleTagFilter(tag)}
                 className={`flex-row items-center gap-1 px-3 py-1.5 rounded-full border transition-all ${isSelected
-                    ? 'bg-cyan-500/20 border-cyan-500/50'
-                    : 'bg-transparent border-light-border dark:border-dark-border'
+                  ? 'bg-cyan-500/20 border-cyan-500/50'
+                  : 'bg-transparent border-light-border dark:border-dark-border'
                   }`}
               >
                 <Tag size={10} color="#06B6D4" />
@@ -1272,6 +1332,125 @@ export const NotesView: React.FC = () => {
                 <X size={15} color={isDark ? '#A1A1AA' : '#71717A'} />
               </Pressable>
             </View>
+          </View>
+        )}
+
+        {/* Archived Folder Filter Banner with 1-Tap Unarchive Folder Action */}
+        {queryRequest.folderPath && queryRequest.statusScope === 'archived' && (
+          <View className="flex-row items-center justify-between mb-6 p-4 rounded-2xl bg-cyan-500/15 border border-cyan-500/30">
+            <View className="flex-row items-center gap-3 flex-1 mr-2">
+              <View className="w-9 h-9 rounded-xl bg-cyan-500/25 items-center justify-center">
+                <Archive size={18} color="#06B6D4" />
+              </View>
+              <View className="flex-1">
+                <View className="flex-row items-center gap-2">
+                  <Text className="text-sm font-bold text-light-textPrimary dark:text-dark-textPrimary" numberOfLines={1}>
+                    /{queryRequest.folderPath}
+                  </Text>
+                  <Text className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/25 text-cyan-400">
+                    Archived Folder • {feedCards.length + pinnedCards.length} notes
+                  </Text>
+                </View>
+                <Text className="text-xs text-light-textMuted dark:text-dark-textMuted" numberOfLines={1}>
+                  Archived directory and notes preserved offline
+                </Text>
+              </View>
+            </View>
+
+            <View className="flex-row items-center gap-1.5">
+              {activeFolderObj?.id && (
+                <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={async () => {
+                    await unarchiveFolder(activeFolderObj.id);
+                  }}
+                  accessibilityLabel="Unarchive Folder"
+                  className="px-3 py-1.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 flex-row items-center gap-1 active:scale-95"
+                >
+                  <Archive size={13} color="#06B6D4" />
+                  <Text className="text-xs font-bold text-cyan-400">
+                    Unarchive
+                  </Text>
+                </Pressable>
+              )}
+
+              <Pressable
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => handleOpenFolderActions(queryRequest.folderPath!)}
+                accessibilityLabel="Manage Folder Actions"
+                className="px-3 py-1.5 rounded-full bg-light-surface dark:bg-white/10 border border-light-border dark:border-white/10 flex-row items-center gap-1 active:scale-95"
+              >
+                <MoreVertical size={13} color={isDark ? '#E5E7EB' : '#1F2937'} />
+                <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                  Manage
+                </Text>
+              </Pressable>
+
+              <Pressable
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => setFolderFilter(null)}
+                accessibilityLabel="Clear Folder Filter"
+                className="p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 active:opacity-60"
+              >
+                <X size={15} color={isDark ? '#A1A1AA' : '#71717A'} />
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* Favorite Folders Shelf (When viewing Favorites and favorite folders exist) */}
+        {queryRequest.statusScope === 'favorites' && favoriteFolders.length > 0 && (
+          <View className="mb-6">
+            <View className="flex-row items-center gap-2 mb-2.5">
+              <Star size={13} color="#FFD43B" fill="#FFD43B" />
+              <Text className="text-xs font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted">
+                Favorite Folders ({favoriteFolders.length})
+              </Text>
+            </View>
+
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ flexGrow: 0, flexShrink: 0 }}
+              contentContainerStyle={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2 }}
+            >
+              {favoriteFolders.map((favFolder) => {
+                const folderPath = favFolder.path || favFolder.name;
+                const isSelected = queryRequest.folderPath === folderPath;
+                const colorHex = favFolder.color_token ? NoteColors[favFolder.color_token as NoteColorToken] : undefined;
+
+                return (
+                  <Pressable
+                    key={favFolder.id}
+                    onPress={() => setFolderFilter(isSelected ? null : folderPath)}
+                    onLongPress={() => handleOpenFolderActions(folderPath)}
+                    delayLongPress={350}
+                    accessibilityLabel={`Favorite folder ${folderPath}`}
+                    className={`flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border active:scale-95 transition-all ${
+                      isSelected
+                        ? 'bg-amber-500/20 border-amber-500/50'
+                        : 'bg-light-surface/70 dark:bg-white/5 border-light-border dark:border-white/10 hover:border-amber-500/40'
+                    }`}
+                  >
+                    <View className="flex-row items-center gap-1">
+                      {colorHex && (
+                        <View style={{ backgroundColor: colorHex }} className="w-2 h-2 rounded-full mr-0.5" />
+                      )}
+                      {renderFolderIcon(favFolder.icon, 12, isSelected ? '#FFD43B' : (colorHex || (isDark ? '#D4D4D8' : '#71717A')))}
+                    </View>
+                    <Text
+                      className={`text-xs font-semibold ${
+                        isSelected
+                          ? 'text-amber-500 font-bold'
+                          : 'text-light-textPrimary dark:text-dark-textPrimary'
+                      }`}
+                    >
+                      {favFolder.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           </View>
         )}
 
@@ -1468,15 +1647,15 @@ export const NotesView: React.FC = () => {
                   <Pressable
                     onPress={() => setSelectedParentPath('')}
                     className={`flex-row items-center gap-1 px-2.5 py-1 rounded-lg border ${selectedParentPath === ''
-                        ? 'bg-cyan-500/20 border-cyan-500/50'
-                        : 'bg-light-surface dark:bg-white/5 border-light-border dark:border-white/10 active:scale-95'
+                      ? 'bg-cyan-500/20 border-cyan-500/50'
+                      : 'bg-light-surface dark:bg-white/5 border-light-border dark:border-white/10 active:scale-95'
                       }`}
                   >
                     <Folder size={11} color="#06B6D4" />
                     <Text
                       className={`text-xs font-bold ${selectedParentPath === ''
-                          ? 'text-cyan-400'
-                          : 'text-light-textSecondary dark:text-dark-textSecondary'
+                        ? 'text-cyan-400'
+                        : 'text-light-textSecondary dark:text-dark-textSecondary'
                         }`}
                     >
                       Root (/)
@@ -1491,15 +1670,15 @@ export const NotesView: React.FC = () => {
                         <Pressable
                           onPress={() => setSelectedParentPath(seg.path)}
                           className={`flex-row items-center gap-1 px-2.5 py-1 rounded-lg border ${isCurrent
-                              ? 'bg-cyan-500/20 border-cyan-500/50'
-                              : 'bg-light-surface dark:bg-white/5 border-light-border dark:border-white/10 active:scale-95'
+                            ? 'bg-cyan-500/20 border-cyan-500/50'
+                            : 'bg-light-surface dark:bg-white/5 border-light-border dark:border-white/10 active:scale-95'
                             }`}
                         >
                           <Folder size={11} color="#06B6D4" />
                           <Text
                             className={`text-xs font-bold ${isCurrent
-                                ? 'text-cyan-400'
-                                : 'text-light-textSecondary dark:text-dark-textSecondary'
+                              ? 'text-cyan-400'
+                              : 'text-light-textSecondary dark:text-dark-textSecondary'
                               }`}
                           >
                             {seg.name}
@@ -1625,8 +1804,8 @@ export const NotesView: React.FC = () => {
                   onPress={handleCreateFolder}
                   disabled={!newFolderName.trim()}
                   className={`flex-row items-center gap-1 px-3.5 py-2 rounded-full border ${newFolderName.trim()
-                      ? 'border-cyan-500/50 bg-cyan-500/15 active:scale-95'
-                      : 'border-white/10 bg-white/5 opacity-40'
+                    ? 'border-cyan-500/50 bg-cyan-500/15 active:scale-95'
+                    : 'border-white/10 bg-white/5 opacity-40'
                     }`}
                 >
                   <FolderPlus size={13} color="#06B6D4" />
@@ -1748,8 +1927,8 @@ export const NotesView: React.FC = () => {
                   onPress={handleCreateAndMove}
                   disabled={!quickNewFolderName.trim()}
                   className={`px-3.5 py-2 rounded-xl border ${quickNewFolderName.trim()
-                      ? 'border-cyan-500/50 bg-cyan-500/20 active:scale-95'
-                      : 'border-white/10 bg-white/5 opacity-40'
+                    ? 'border-cyan-500/50 bg-cyan-500/20 active:scale-95'
+                    : 'border-white/10 bg-white/5 opacity-40'
                     }`}
                 >
                   <Text className="text-xs font-bold text-cyan-400">Create & Move</Text>
@@ -1772,7 +1951,7 @@ export const NotesView: React.FC = () => {
         </Modal>
       )}
 
-      {/* Folder Action Sheet (Rename, Move, Duplicate, Subfolder, Delete, Colors, Icons, Select All, Export) */}
+      {/* Folder Action Sheet (Rename, Move, Duplicate, Subfolder, Delete, Colors, Icons, Select All, Export, Favorites, Pin, Archive) */}
       {actionSheetFolder && (
         <FolderActionSheet
           visible={isActionSheetOpen}
@@ -1780,6 +1959,9 @@ export const NotesView: React.FC = () => {
           folderPath={actionSheetFolder.path}
           currentColorToken={actionSheetFolder.colorToken}
           currentIcon={actionSheetFolder.icon}
+          isFavorite={actionSheetFolder.isFavorite}
+          isPinned={actionSheetFolder.isPinned}
+          isArchived={actionSheetFolder.isArchived}
           stats={activeFolderStats}
           onClose={() => setIsActionSheetOpen(false)}
           onOpenCreateSubfolder={(parent) => handleOpenCreateSubfolderFromSheet(parent)}
@@ -1787,6 +1969,29 @@ export const NotesView: React.FC = () => {
           onOpenMove={() => setIsMoveFolderReparentModalOpen(true)}
           onDuplicate={(p, id) => handleConfirmDuplicateFolder(p, id)}
           onOpenDelete={() => setIsDeleteFolderModalOpen(true)}
+          onToggleFavorite={async () => {
+            if (actionSheetFolder.id) {
+              const nextFav = await toggleFolderFavorite(actionSheetFolder.id);
+              setActionSheetFolder((prev) => (prev ? { ...prev, isFavorite: nextFav } : null));
+            }
+          }}
+          onTogglePin={async () => {
+            if (actionSheetFolder.id) {
+              const nextPin = await toggleFolderPin(actionSheetFolder.id);
+              setActionSheetFolder((prev) => (prev ? { ...prev, isPinned: nextPin } : null));
+            }
+          }}
+          onToggleArchive={async () => {
+            if (actionSheetFolder.id) {
+              if (actionSheetFolder.isArchived) {
+                await unarchiveFolder(actionSheetFolder.id);
+                setActionSheetFolder((prev) => (prev ? { ...prev, isArchived: false } : null));
+              } else {
+                await archiveFolder(actionSheetFolder.id);
+                setActionSheetFolder((prev) => (prev ? { ...prev, isArchived: true } : null));
+              }
+            }
+          }}
           onSelectAllNotes={(p) => handleSelectAllFolderNotes(p)}
           onExportFolder={(p) => handleExportFolderNotes(p)}
           onChangeColor={(col) => handleChangeFolderColor(col)}

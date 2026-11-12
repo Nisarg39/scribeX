@@ -16,6 +16,9 @@ export interface DBFolder {
   path: string;
   color_token: string;
   icon: string | null;
+  is_favorite: number; // 0 or 1
+  is_pinned: number; // 0 or 1
+  is_archived: number; // 0 or 1
   sync_rev: number;
   created_at: string;
   updated_at: string;
@@ -219,6 +222,9 @@ export interface CreateFolderDTO {
   path: string;
   colorToken?: string;
   icon?: string;
+  isFavorite?: boolean | number;
+  isPinned?: boolean | number;
+  isArchived?: boolean | number;
 }
 
 export interface CreateRelationDTO {
@@ -254,6 +260,9 @@ export interface FolderTreeNode {
   path: string;
   colorToken: string;
   icon?: string;
+  isFavorite?: boolean;
+  isPinned?: boolean;
+  isArchived?: boolean;
   children: FolderTreeNode[];
   noteCount?: number;
 }

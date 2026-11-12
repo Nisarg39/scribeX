@@ -20,6 +20,8 @@ import {
   Heart,
   Star,
   Sparkles,
+  Pin,
+  Archive,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { FolderNoteStats } from '../../db/types';
@@ -69,6 +71,9 @@ interface FolderActionSheetProps {
   folderPath: string;
   currentColorToken?: string;
   currentIcon?: string | null;
+  isFavorite?: boolean;
+  isPinned?: boolean;
+  isArchived?: boolean;
   stats: FolderNoteStats | null;
   onClose: () => void;
   onOpenCreateSubfolder: (parentPath: string) => void;
@@ -76,6 +81,9 @@ interface FolderActionSheetProps {
   onOpenMove: (folderPath: string, folderId?: string) => void;
   onDuplicate: (folderPath: string, folderId?: string) => void;
   onOpenDelete: (folderPath: string, folderId?: string) => void;
+  onToggleFavorite?: () => void;
+  onTogglePin?: () => void;
+  onToggleArchive?: () => void;
   onSelectAllNotes?: (folderPath: string) => void;
   onExportFolder?: (folderPath: string) => void;
   onChangeColor?: (colorToken: string) => void;
@@ -88,6 +96,9 @@ export const FolderActionSheet: React.FC<FolderActionSheetProps> = ({
   folderPath,
   currentColorToken = 'cyan',
   currentIcon = null,
+  isFavorite = false,
+  isPinned = false,
+  isArchived = false,
   stats,
   onClose,
   onOpenCreateSubfolder,
@@ -95,6 +106,9 @@ export const FolderActionSheet: React.FC<FolderActionSheetProps> = ({
   onOpenMove,
   onDuplicate,
   onOpenDelete,
+  onToggleFavorite,
+  onTogglePin,
+  onToggleArchive,
   onSelectAllNotes,
   onExportFolder,
   onChangeColor,
@@ -180,6 +194,88 @@ export const FolderActionSheet: React.FC<FolderActionSheetProps> = ({
             >
               <X size={16} color={isDark ? '#A1A1AA' : '#71717A'} />
             </Pressable>
+          </View>
+
+          {/* Quick Flags Row: Favorite, Pin, Archive */}
+          <View className="flex-row items-center gap-2 mb-3">
+            {/* 1. Favorite Toggle */}
+            <Pressable
+              onPress={() => onToggleFavorite?.()}
+              accessibilityLabel={isFavorite ? 'Unfavorite Folder' : 'Favorite Folder'}
+              className={`flex-1 flex-row items-center justify-center gap-1.5 py-2 px-3 rounded-2xl border active:scale-95 transition-all ${
+                isFavorite
+                  ? 'bg-amber-500/15 border-amber-500/40'
+                  : 'bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10'
+              }`}
+            >
+              <Star
+                size={13}
+                color={isFavorite ? '#FFD43B' : isDark ? '#A1A1AA' : '#71717A'}
+                fill={isFavorite ? '#FFD43B' : 'transparent'}
+              />
+              <Text
+                className={`text-xs font-semibold ${
+                  isFavorite
+                    ? 'text-amber-500 font-bold'
+                    : 'text-light-textPrimary dark:text-dark-textPrimary'
+                }`}
+              >
+                {isFavorite ? 'Favorited' : 'Favorite'}
+              </Text>
+            </Pressable>
+
+            {/* 2. Pin Toggle */}
+            <Pressable
+              onPress={() => onTogglePin?.()}
+              accessibilityLabel={isPinned ? 'Unpin Folder' : 'Pin Folder'}
+              className={`flex-1 flex-row items-center justify-center gap-1.5 py-2 px-3 rounded-2xl border active:scale-95 transition-all ${
+                isPinned
+                  ? 'bg-amber-500/15 border-amber-500/40'
+                  : 'bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10'
+              }`}
+            >
+              <Pin
+                size={13}
+                color={isPinned ? '#FFC96F' : isDark ? '#A1A1AA' : '#71717A'}
+                fill={isPinned ? '#FFC96F' : 'transparent'}
+              />
+              <Text
+                className={`text-xs font-semibold ${
+                  isPinned
+                    ? 'text-amber-500 font-bold'
+                    : 'text-light-textPrimary dark:text-dark-textPrimary'
+                }`}
+              >
+                {isPinned ? 'Pinned' : 'Pin'}
+              </Text>
+            </Pressable>
+
+            {/* 3. Archive / Unarchive Toggle */}
+            {!isRootGeneral && (
+              <Pressable
+                onPress={() => onToggleArchive?.()}
+                accessibilityLabel={isArchived ? 'Unarchive Folder' : 'Archive Folder'}
+                className={`flex-1 flex-row items-center justify-center gap-1.5 py-2 px-3 rounded-2xl border active:scale-95 transition-all ${
+                  isArchived
+                    ? 'bg-cyan-500/20 border-cyan-500/50'
+                    : 'bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10'
+                }`}
+              >
+                <Archive
+                  size={13}
+                  color={isArchived ? '#06B6D4' : isDark ? '#A1A1AA' : '#71717A'}
+                />
+                <Text
+                  className={`text-xs font-semibold ${
+                    isArchived
+                      ? 'text-cyan-500 font-bold'
+                      : 'text-light-textPrimary dark:text-dark-textPrimary'
+                  }`}
+                >
+                  {isArchived ? 'Archived' : 'Archive'}
+                </Text>
+              </Pressable>
+            )}
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
@@ -313,7 +409,31 @@ export const FolderActionSheet: React.FC<FolderActionSheetProps> = ({
                 </View>
               </Pressable>
 
-              {/* 7. Delete Folder (Disabled for General) */}
+              {/* 7. Archive / Unarchive Folder (Disabled for General) */}
+              {!isRootGeneral && onToggleArchive && (
+                <Pressable
+                  onPress={() => handleAction(() => onToggleArchive())}
+                  className="flex-row items-center justify-between p-3 rounded-2xl bg-light-surface dark:bg-white/[0.03] border border-light-border dark:border-white/10 active:bg-cyan-500/10 active:scale-[0.99]"
+                >
+                  <View className="flex-row items-center gap-3">
+                    <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center">
+                      <Archive size={16} color="#06B6D4" />
+                    </View>
+                    <View>
+                      <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                        {isArchived ? 'Unarchive Folder' : 'Archive Folder'}
+                      </Text>
+                      <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                        {isArchived
+                          ? `Restore folder and ${totalNotes} contained notes to active view`
+                          : `Archive folder and ${totalNotes} contained notes together`}
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              )}
+
+              {/* 8. Delete Folder (Disabled for General) */}
               {!isRootGeneral && (
                 <Pressable
                   onPress={() => handleAction(() => onOpenDelete(folderPath, folderId))}

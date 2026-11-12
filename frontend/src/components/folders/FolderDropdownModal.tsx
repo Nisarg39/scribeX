@@ -10,6 +10,9 @@ import {
   Search,
   ChevronRight,
   Layers,
+  Star,
+  Pin,
+  Archive,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { DBFolder } from '../../db/types';
@@ -64,12 +67,26 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
     return notes.filter((n) => n.status !== 'trashed').length;
   }, [notes]);
 
+  // Sorted and filtered folder list: Pinned folders anchored at top, then alphabetical
+  const sortedFolders = useMemo(() => {
+    return [...allFolderNames].sort((a, b) => {
+      const folderA = folders.find((f) => (f.path || f.name) === a);
+      const folderB = folders.find((f) => (f.path || f.name) === b);
+      const isPinnedA = folderA ? (folderA.is_pinned ? 1 : 0) : 0;
+      const isPinnedB = folderB ? (folderB.is_pinned ? 1 : 0) : 0;
+      if (isPinnedA !== isPinnedB) {
+        return isPinnedB - isPinnedA;
+      }
+      return a.localeCompare(b);
+    });
+  }, [allFolderNames, folders]);
+
   // Filtered folder list based on quick search
   const filteredFolders = useMemo(() => {
-    if (!searchQuery.trim()) return allFolderNames;
+    if (!searchQuery.trim()) return sortedFolders;
     const q = searchQuery.toLowerCase().trim();
-    return allFolderNames.filter((name) => name.toLowerCase().includes(q));
-  }, [allFolderNames, searchQuery]);
+    return sortedFolders.filter((name) => name.toLowerCase().includes(q));
+  }, [sortedFolders, searchQuery]);
 
   if (!visible) return null;
 
@@ -274,6 +291,21 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
                         >
                           {leafName}
                         </Text>
+
+                        {/* Favorite Star Badge */}
+                        {Boolean(folderObj?.is_favorite) && (
+                          <Star size={11} color="#FFD43B" fill="#FFD43B" />
+                        )}
+
+                        {/* Pinned Badge */}
+                        {Boolean(folderObj?.is_pinned) && (
+                          <Pin size={11} color="#FFC96F" fill="#FFC96F" />
+                        )}
+
+                        {/* Archived Badge */}
+                        {Boolean(folderObj?.is_archived) && (
+                          <Archive size={11} color="#06B6D4" />
+                        )}
                       </View>
 
                       {isNested && (

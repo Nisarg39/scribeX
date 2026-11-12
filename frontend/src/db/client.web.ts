@@ -166,6 +166,18 @@ export class WebDatabaseClient {
         try {
           db.run('ALTER TABLE notes ADD COLUMN reminder_at TEXT;');
         } catch {}
+        try {
+          db.run('ALTER TABLE folders ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0;');
+        } catch {}
+        try {
+          db.run('ALTER TABLE folders ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0;');
+        } catch {}
+        try {
+          db.run('ALTER TABLE folders ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0;');
+        } catch {}
+        try {
+          db.exec('CREATE INDEX IF NOT EXISTS idx_folders_flags ON folders(is_favorite, is_pinned, is_archived);');
+        } catch {}
       } else {
         db = new SQL.Database();
         // Initialize standard schema

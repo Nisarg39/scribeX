@@ -77,6 +77,10 @@ interface NotesContextValue {
   workspaceHistory: WorkspaceActivityEntry[];
   tasks: TaskItem[];
   folders: DBFolder[];
+  activeFolders: DBFolder[];
+  favoriteFolders: DBFolder[];
+  pinnedFolders: DBFolder[];
+  archivedFolders: DBFolder[];
   tags: string[];
   activeFilter: string;
   isLoading: boolean;
@@ -117,6 +121,10 @@ interface NotesContextValue {
   duplicateFolder: (id: string, folderPath: string, newName?: string) => Promise<DBFolder>;
   updateFolderColor: (id: string, colorToken: string) => Promise<void>;
   updateFolderIcon: (id: string, icon: string | null) => Promise<void>;
+  toggleFolderFavorite: (folderId: string) => Promise<boolean>;
+  toggleFolderPin: (folderId: string) => Promise<boolean>;
+  archiveFolder: (folderId: string) => Promise<{ affectedNotes: number; affectedFolders: number }>;
+  unarchiveFolder: (folderId: string) => Promise<{ affectedNotes: number; affectedFolders: number }>;
   getFolderStats: (folderPath: string, folderId?: string) => Promise<FolderNoteStats>;
   getPendingFolderChangelogs: (sinceRev?: number) => Promise<DBSyncChangelog[]>;
   applyRemoteFolderDelta: (entry: DBSyncChangelog) => Promise<FolderSyncResult>;
@@ -197,6 +205,10 @@ const NotesContext = createContext<NotesContextValue>({
   workspaceHistory: [],
   tasks: [],
   folders: [],
+  activeFolders: [],
+  favoriteFolders: [],
+  pinnedFolders: [],
+  archivedFolders: [],
   tags: [],
   activeFilter: 'all',
   isLoading: true,
@@ -227,6 +239,10 @@ const NotesContext = createContext<NotesContextValue>({
   duplicateFolder: async () => ({} as DBFolder),
   updateFolderColor: async () => {},
   updateFolderIcon: async () => {},
+  toggleFolderFavorite: async () => false,
+  toggleFolderPin: async () => false,
+  archiveFolder: async () => ({ affectedNotes: 0, affectedFolders: 0 }),
+  unarchiveFolder: async () => ({ affectedNotes: 0, affectedFolders: 0 }),
   getFolderStats: async () => ({
     directNotesCount: 0,
     nestedNotesCount: 0,
@@ -272,6 +288,17 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [notifications, setNotifications] = useState<InAppNotificationItem[]>([]);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
   const [notificationCounts, setNotificationCounts] = useState<NotificationCounts>({ all: 0, unread: 0, tasks: 0, notes: 0 });
+
+  const activeFolders = useMemo(() => folders.filter((f) => !f.is_archived), [folders]);
+  const favoriteFolders = useMemo(
+    () => folders.filter((f) => Boolean(f.is_favorite) && !f.is_archived),
+    [folders]
+  );
+  const pinnedFolders = useMemo(
+    () => folders.filter((f) => Boolean(f.is_pinned) && !f.is_archived),
+    [folders]
+  );
+  const archivedFolders = useMemo(() => folders.filter((f) => Boolean(f.is_archived)), [folders]);
 
   const logWorkspaceActivity = (
     category: WorkspaceActivityEntry['category'],
@@ -587,7 +614,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       ] = await Promise.all([
         notesRepo.listNotes(), // Active + Archived notes (non-trashed)
         tasksRepo.listTasks(),
-        foldersRepo.listFolders(),
+        foldersRepo.listFolders(true),
         tagsRepo.listTags(),
         searchHistoryRepo.loadRecentSearches(8).catch(() => []),
         remindersRepo.listActiveReminders().catch(() => []),
@@ -1114,6 +1141,124 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const toggleFolderFavorite = async (folderId: string): Promise<boolean> => {
+    try {
+      const isFav = await foldersRepo.toggleFolderFavorite(folderId);
+      setFolders((prev) =>
+        prev.map((f) => (f.id === folderId ? { ...f, is_favorite: isFav ? 1 : 0 } : f))
+      );
+      return isFav;
+    } catch (err) {
+      console.warn('Failed to toggle folder favorite:', err);
+      return false;
+    }
+  };
+
+  const toggleFolderPin = async (folderId: string): Promise<boolean> => {
+    try {
+      const isPinned = await foldersRepo.toggleFolderPin(folderId);
+      setFolders((prev) => {
+        const updated = prev.map((f) => (f.id === folderId ? { ...f, is_pinned: isPinned ? 1 : 0 } : f));
+        return updated.sort((a, b) => (b.is_pinned - a.is_pinned) || a.path.localeCompare(b.path));
+      });
+      return isPinned;
+    } catch (err) {
+      console.warn('Failed to toggle folder pin:', err);
+      return false;
+    }
+  };
+
+  const archiveFolder = async (
+    folderId: string
+  ): Promise<{ affectedNotes: number; affectedFolders: number }> => {
+    try {
+      const folder = folders.find((f) => f.id === folderId);
+      const res = await foldersRepo.archiveFolderContained(folderId);
+      const cleanPath = folder ? (folder.path || folder.name).trim().replace(/^\/+|\/+$/g, '') : '';
+
+      setFolders((prev) =>
+        prev.map((f) => {
+          if (f.id === folderId || (cleanPath && f.path.startsWith(`${cleanPath}/`))) {
+            return { ...f, is_archived: 1 };
+          }
+          return f;
+        })
+      );
+
+      setNotes((prev) =>
+        prev.map((n) => {
+          if (
+            n.status === 'active' &&
+            (n.folderId === folderId ||
+              (cleanPath && (n.folderPath === cleanPath || n.folderPath?.startsWith(`${cleanPath}/`))))
+          ) {
+            return { ...n, status: 'archived', updatedAt: new Date().toISOString() };
+          }
+          return n;
+        })
+      );
+
+      // If currently filtering by this folder, clear when not in archive scope
+      if (
+        queryRequest.folderPath &&
+        cleanPath &&
+        (queryRequest.folderPath === cleanPath || queryRequest.folderPath.startsWith(`${cleanPath}/`))
+      ) {
+        if (queryRequest.statusScope !== 'archived') {
+          setFolderFilter(null);
+        }
+      }
+
+      return res;
+    } catch (err) {
+      console.warn('Failed to archive folder:', err);
+      return { affectedNotes: 0, affectedFolders: 0 };
+    }
+  };
+
+  const unarchiveFolder = async (
+    folderId: string
+  ): Promise<{ affectedNotes: number; affectedFolders: number }> => {
+    try {
+      const folder = folders.find((f) => f.id === folderId);
+      const res = await foldersRepo.unarchiveFolderContained(folderId);
+      const cleanPath = folder ? (folder.path || folder.name).trim().replace(/^\/+|\/+$/g, '') : '';
+      const segments = cleanPath.split('/').filter(Boolean);
+      const ancestorPaths = new Set(segments.map((_, i) => segments.slice(0, i + 1).join('/')));
+
+      setFolders((prev) =>
+        prev.map((f) => {
+          if (
+            f.id === folderId ||
+            (cleanPath && f.path.startsWith(`${cleanPath}/`)) ||
+            ancestorPaths.has(f.path)
+          ) {
+            return { ...f, is_archived: 0 };
+          }
+          return f;
+        })
+      );
+
+      setNotes((prev) =>
+        prev.map((n) => {
+          if (
+            n.status === 'archived' &&
+            (n.folderId === folderId ||
+              (cleanPath && (n.folderPath === cleanPath || n.folderPath?.startsWith(`${cleanPath}/`))))
+          ) {
+            return { ...n, status: 'active', updatedAt: new Date().toISOString() };
+          }
+          return n;
+        })
+      );
+
+      return res;
+    } catch (err) {
+      console.warn('Failed to unarchive folder:', err);
+      return { affectedNotes: 0, affectedFolders: 0 };
+    }
+  };
+
   const getFolderStats = async (folderPath: string, folderId?: string): Promise<FolderNoteStats> => {
     try {
       return await foldersRepo.getFolderNoteStats(folderPath, folderId);
@@ -1561,6 +1706,10 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         workspaceHistory,
         tasks,
         folders,
+        activeFolders,
+        favoriteFolders,
+        pinnedFolders,
+        archivedFolders,
         tags,
         activeFilter,
         isLoading,
@@ -1589,6 +1738,10 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         duplicateFolder,
         updateFolderColor,
         updateFolderIcon,
+        toggleFolderFavorite,
+        toggleFolderPin,
+        archiveFolder,
+        unarchiveFolder,
         getFolderStats,
         getPendingFolderChangelogs,
         applyRemoteFolderDelta,

@@ -20,10 +20,13 @@ export class FoldersRepository {
     const id = dto.id || `folder-${Date.now()}`;
     const userId = dto.userId || 'user-default';
     const colorToken = dto.colorToken || 'cyan';
+    const isFavorite = dto.isFavorite ? 1 : 0;
+    const isPinned = dto.isPinned ? 1 : 0;
+    const isArchived = dto.isArchived ? 1 : 0;
 
     const insertSql = `
-      INSERT INTO folders (id, user_id, name, parent_id, path, color_token, icon)
-      VALUES (?, ?, ?, ?, ?, ?, ?);
+      INSERT INTO folders (id, user_id, name, parent_id, path, color_token, icon, is_favorite, is_pinned, is_archived)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `;
 
     await dbClient.run(insertSql, [
@@ -34,6 +37,9 @@ export class FoldersRepository {
       dto.path,
       colorToken,
       dto.icon || null,
+      isFavorite,
+      isPinned,
+      isArchived,
     ]);
 
     await dbClient.run(
@@ -55,12 +61,15 @@ export class FoldersRepository {
     return dbClient.queryFirst<DBFolder>(`SELECT * FROM folders WHERE path = ?;`, [cleanPath]);
   }
 
-  public async listFolders(): Promise<DBFolder[]> {
-    return dbClient.query<DBFolder>(`SELECT * FROM folders ORDER BY path ASC;`);
+  public async listFolders(includeArchived: boolean = false): Promise<DBFolder[]> {
+    if (includeArchived) {
+      return dbClient.query<DBFolder>(`SELECT * FROM folders ORDER BY is_pinned DESC, path ASC;`);
+    }
+    return dbClient.query<DBFolder>(`SELECT * FROM folders WHERE is_archived = 0 ORDER BY is_pinned DESC, path ASC;`);
   }
 
-  public async getFolderHierarchy(): Promise<FolderTreeNode[]> {
-    const folders = await this.listFolders();
+  public async getFolderHierarchy(includeArchived: boolean = false): Promise<FolderTreeNode[]> {
+    const folders = await this.listFolders(includeArchived);
     const map = new Map<string, FolderTreeNode>();
     const roots: FolderTreeNode[] = [];
 
@@ -72,6 +81,9 @@ export class FoldersRepository {
         path: f.path,
         colorToken: f.color_token,
         icon: f.icon || undefined,
+        isFavorite: Boolean(f.is_favorite),
+        isPinned: Boolean(f.is_pinned),
+        isArchived: Boolean(f.is_archived),
         children: [],
       });
     }
@@ -511,6 +523,261 @@ export class FoldersRepository {
     }
   }
 
+  public async toggleFolderFavorite(id: string): Promise<boolean> {
+    const folder = await this.getFolderById(id);
+    if (!folder) {
+      throw new Error(`Folder with id ${id} not found.`);
+    }
+
+    const nextVal = folder.is_favorite ? 0 : 1;
+    await dbClient.run(
+      `UPDATE folders SET is_favorite = ?, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+      [nextVal, id]
+    );
+
+    await dbClient.run(
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+       VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
+      [
+        createLogId(),
+        folder.user_id,
+        folder.sync_rev + 1,
+        id,
+        JSON.stringify({ action: 'toggle_favorite', isFavorite: Boolean(nextVal) }),
+      ]
+    );
+
+    return Boolean(nextVal);
+  }
+
+  public async toggleFolderPin(id: string): Promise<boolean> {
+    const folder = await this.getFolderById(id);
+    if (!folder) {
+      throw new Error(`Folder with id ${id} not found.`);
+    }
+
+    const nextVal = folder.is_pinned ? 0 : 1;
+    await dbClient.run(
+      `UPDATE folders SET is_pinned = ?, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+      [nextVal, id]
+    );
+
+    await dbClient.run(
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+       VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
+      [
+        createLogId(),
+        folder.user_id,
+        folder.sync_rev + 1,
+        id,
+        JSON.stringify({ action: 'toggle_pin', isPinned: Boolean(nextVal) }),
+      ]
+    );
+
+    return Boolean(nextVal);
+  }
+
+  public async archiveFolderContained(
+    id: string
+  ): Promise<{ affectedNotes: number; affectedFolders: number }> {
+    const folder = await this.getFolderById(id);
+    if (!folder) {
+      throw new Error(`Folder with id ${id} not found.`);
+    }
+
+    const cleanPath = folder.path.trim().replace(/^\/+|\/+$/g, '');
+
+    // 1. Identify all folders to archive (the target folder + nested subfolders)
+    const foldersToArchive = await dbClient.query<DBFolder>(
+      `SELECT * FROM folders WHERE (id = ? OR path LIKE ?) AND is_archived = 0;`,
+      [id, `${cleanPath}/%`]
+    );
+
+    // 2. Identify all active notes to archive
+    const notesToArchive = await dbClient.query<{ id: string; user_id: string; sync_rev: number }>(
+      `SELECT id, user_id, sync_rev FROM notes 
+       WHERE status = 'active' 
+       AND (folder_path = ? OR folder_path LIKE ? OR folder_id = ?);`,
+      [cleanPath, `${cleanPath}/%`, id]
+    );
+
+    // 3. Update folders table
+    await dbClient.run(
+      `UPDATE folders SET is_archived = 1, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ? OR path LIKE ?;`,
+      [id, `${cleanPath}/%`]
+    );
+
+    // 4. Update notes table
+    if (notesToArchive.length > 0) {
+      await dbClient.run(
+        `UPDATE notes SET status = 'archived', sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
+         WHERE status = 'active' 
+         AND (folder_path = ? OR folder_path LIKE ? OR folder_id = ?);`,
+        [cleanPath, `${cleanPath}/%`, id]
+      );
+    }
+
+    // 5. Changelog delta tracking
+    for (const f of foldersToArchive) {
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
+        [
+          createLogId(),
+          f.user_id,
+          f.sync_rev + 1,
+          f.id,
+          JSON.stringify({
+            action: 'archive',
+            isArchived: true,
+            path: f.path,
+            timestamp: new Date().toISOString(),
+          }),
+        ]
+      );
+    }
+
+    for (const n of notesToArchive) {
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, 'note', ?, 'update', ?);`,
+        [
+          createLogId(),
+          n.user_id,
+          n.sync_rev + 1,
+          n.id,
+          JSON.stringify({
+            action: 'archive',
+            status: 'archived',
+            cascadedFromFolderId: id,
+            timestamp: new Date().toISOString(),
+          }),
+        ]
+      );
+    }
+
+    return {
+      affectedNotes: notesToArchive.length,
+      affectedFolders: foldersToArchive.length,
+    };
+  }
+
+  public async unarchiveFolderContained(
+    id: string
+  ): Promise<{ affectedNotes: number; affectedFolders: number }> {
+    const folder = await this.getFolderById(id);
+    if (!folder) {
+      throw new Error(`Folder with id ${id} not found.`);
+    }
+
+    const cleanPath = folder.path.trim().replace(/^\/+|\/+$/g, '');
+
+    // 1. Identify all archived folders in branch
+    const foldersToUnarchive = await dbClient.query<DBFolder>(
+      `SELECT * FROM folders WHERE (id = ? OR path LIKE ?) AND is_archived = 1;`,
+      [id, `${cleanPath}/%`]
+    );
+
+    // 2. Identify all archived notes in this folder branch
+    const notesToUnarchive = await dbClient.query<{ id: string; user_id: string; sync_rev: number }>(
+      `SELECT id, user_id, sync_rev FROM notes 
+       WHERE status = 'archived' 
+       AND (folder_path = ? OR folder_path LIKE ? OR folder_id = ?);`,
+      [cleanPath, `${cleanPath}/%`, id]
+    );
+
+    // 3. Ensure any ancestor folders are also unarchived so path isn't orphaned
+    const segments = cleanPath.split('/').filter(Boolean);
+    for (let i = 1; i < segments.length; i++) {
+      const ancestorPath = segments.slice(0, i).join('/');
+      await dbClient.run(
+        `UPDATE folders SET is_archived = 0, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
+         WHERE path = ? AND is_archived = 1;`,
+        [ancestorPath]
+      );
+    }
+
+    // 4. Update folders table for target and subfolders
+    await dbClient.run(
+      `UPDATE folders SET is_archived = 0, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
+       WHERE id = ? OR path LIKE ?;`,
+      [id, `${cleanPath}/%`]
+    );
+
+    // 5. Update notes table
+    if (notesToUnarchive.length > 0) {
+      await dbClient.run(
+        `UPDATE notes SET status = 'active', sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
+         WHERE status = 'archived' 
+         AND (folder_path = ? OR folder_path LIKE ? OR folder_id = ?);`,
+        [cleanPath, `${cleanPath}/%`, id]
+      );
+    }
+
+    // 6. Changelog delta tracking
+    for (const f of foldersToUnarchive) {
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
+        [
+          createLogId(),
+          f.user_id,
+          f.sync_rev + 1,
+          f.id,
+          JSON.stringify({
+            action: 'unarchive',
+            isArchived: false,
+            path: f.path,
+            timestamp: new Date().toISOString(),
+          }),
+        ]
+      );
+    }
+
+    for (const n of notesToUnarchive) {
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, 'note', ?, 'update', ?);`,
+        [
+          createLogId(),
+          n.user_id,
+          n.sync_rev + 1,
+          n.id,
+          JSON.stringify({
+            action: 'unarchive',
+            status: 'active',
+            cascadedFromFolderId: id,
+            timestamp: new Date().toISOString(),
+          }),
+        ]
+      );
+    }
+
+    return {
+      affectedNotes: notesToUnarchive.length,
+      affectedFolders: foldersToUnarchive.length,
+    };
+  }
+
+  public async getFavoriteFolders(): Promise<DBFolder[]> {
+    return dbClient.query<DBFolder>(
+      `SELECT * FROM folders WHERE is_favorite = 1 AND is_archived = 0 ORDER BY path ASC;`
+    );
+  }
+
+  public async getPinnedFolders(): Promise<DBFolder[]> {
+    return dbClient.query<DBFolder>(
+      `SELECT * FROM folders WHERE is_pinned = 1 AND is_archived = 0 ORDER BY path ASC;`
+    );
+  }
+
+  public async getArchivedFolders(): Promise<DBFolder[]> {
+    return dbClient.query<DBFolder>(
+      `SELECT * FROM folders WHERE is_archived = 1 ORDER BY path ASC;`
+    );
+  }
+
   public async getPendingFolderChangelogs(sinceRev = 0): Promise<DBSyncChangelog[]> {
     return dbClient.query<DBSyncChangelog>(
       `SELECT * FROM sync_changelog 
@@ -625,6 +892,20 @@ export class FoldersRepository {
           `UPDATE folders SET icon = ?, sync_rev = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
           [payload.icon || null, entry.sync_rev, entry.entity_id]
         );
+      } else if (payload.action === 'toggle_favorite') {
+        await dbClient.run(
+          `UPDATE folders SET is_favorite = ?, sync_rev = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+          [payload.isFavorite ? 1 : 0, entry.sync_rev, entry.entity_id]
+        );
+      } else if (payload.action === 'toggle_pin') {
+        await dbClient.run(
+          `UPDATE folders SET is_pinned = ?, sync_rev = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+          [payload.isPinned ? 1 : 0, entry.sync_rev, entry.entity_id]
+        );
+      } else if (payload.action === 'archive') {
+        await this.archiveFolderContained(entry.entity_id);
+      } else if (payload.action === 'unarchive') {
+        await this.unarchiveFolderContained(entry.entity_id);
       }
 
       return { status: 'applied', folderId: entry.entity_id, effectivePath: payload.newPath };

@@ -40,6 +40,26 @@ export class NativeDatabaseClient {
       } catch {
         // column already exists
       }
+      try {
+        await db.execAsync('ALTER TABLE folders ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0;');
+      } catch {
+        // column already exists
+      }
+      try {
+        await db.execAsync('ALTER TABLE folders ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0;');
+      } catch {
+        // column already exists
+      }
+      try {
+        await db.execAsync('ALTER TABLE folders ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0;');
+      } catch {
+        // column already exists
+      }
+      try {
+        await db.execAsync('CREATE INDEX IF NOT EXISTS idx_folders_flags ON folders(is_favorite, is_pinned, is_archived);');
+      } catch {
+        // index already exists
+      }
       await this.ensureWebDataSync(db);
 
       return db;

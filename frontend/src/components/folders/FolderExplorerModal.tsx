@@ -8,6 +8,9 @@ import {
   MoreVertical,
   X,
   Plus,
+  Star,
+  Pin,
+  Archive,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { DBFolder } from '../../db/types';
@@ -183,16 +186,27 @@ export const FolderExplorerModal: React.FC<FolderExplorerModalProps> = ({
             </View>
 
             <View className="flex-1">
-              <Text
-                className={`text-xs font-semibold ${
-                  isSelected
-                    ? 'text-cyan-400 font-bold'
-                    : 'text-light-textPrimary dark:text-dark-textPrimary'
-                }`}
-                numberOfLines={1}
-              >
-                {node.name}
-              </Text>
+              <View className="flex-row items-center gap-1.5">
+                <Text
+                  className={`text-xs font-semibold ${
+                    isSelected
+                      ? 'text-cyan-400 font-bold'
+                      : 'text-light-textPrimary dark:text-dark-textPrimary'
+                  }`}
+                  numberOfLines={1}
+                >
+                  {node.name}
+                </Text>
+                {Boolean(node.folderRecord?.is_favorite) && (
+                  <Star size={11} color="#FFD43B" fill="#FFD43B" />
+                )}
+                {Boolean(node.folderRecord?.is_pinned) && (
+                  <Pin size={11} color="#FFC96F" fill="#FFC96F" />
+                )}
+                {Boolean(node.folderRecord?.is_archived) && (
+                  <Archive size={11} color="#06B6D4" />
+                )}
+              </View>
               <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted" numberOfLines={1}>
                 {node.totalNotesCount} {node.totalNotesCount === 1 ? 'note' : 'notes'}
                 {hasChildren ? ` • ${node.children.size} subfolders` : ''}
