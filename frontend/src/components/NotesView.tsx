@@ -1127,20 +1127,24 @@ export const NotesView: React.FC = () => {
           {/* Divider */}
           <View className="h-5 w-[1px] bg-light-border dark:bg-dark-border mx-1 self-center" />
 
-          {/* Single Folder Dropdown Selector */}
-          {!queryRequest.folderPath ? (
-            <Pressable
-              onPress={() => setIsFolderDropdownOpen(true)}
-              accessibilityLabel="Open folder selector dropdown"
-              className="flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10 hover:border-cyan-500/50 active:scale-95"
-            >
-              <Folder size={12} color="#06B6D4" />
-              <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
-                Folders
-              </Text>
-              <ChevronDown size={11} color={isDark ? '#A1A1AA' : '#71717A'} />
-            </Pressable>
-          ) : (
+          {/* Main Folder Dropdown Selector - ALWAYS VISIBLE */}
+          <Pressable
+            onPress={() => setIsFolderDropdownOpen(true)}
+            accessibilityLabel="Open folder selector dropdown"
+            className="flex-row items-center gap-1.5 px-3.5 py-1.5 rounded-full border bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10 hover:border-cyan-500/50 active:scale-95"
+          >
+            <Folder size={12} color="#06B6D4" />
+            <Text className="text-xs font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+              Folders
+            </Text>
+            <ChevronDown size={11} color={isDark ? '#A1A1AA' : '#71717A'} />
+          </Pressable>
+
+          {/* Active Unpinned Folder Pill (shown when user filters by a non-pinned folder) */}
+          {Boolean(
+            queryRequest.folderPath &&
+              !pinnedFolders.some((f) => (f.path || f.name) === queryRequest.folderPath)
+          ) && (
             <Pressable
               onPress={() => setIsFolderDropdownOpen(true)}
               onLongPress={() => handleOpenFolderActions(queryRequest.folderPath!)}
@@ -1185,8 +1189,6 @@ export const NotesView: React.FC = () => {
                 <Archive size={10} color={isDark ? '#111111' : '#06B6D4'} />
               )}
 
-              <ChevronDown size={11} color={isDark ? '#111111' : '#FFFFFF'} />
-
               {/* Manage folder actions button */}
               <Pressable
                 hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
@@ -1214,6 +1216,102 @@ export const NotesView: React.FC = () => {
               </Pressable>
             </Pressable>
           )}
+
+          {/* Pinned Folders Quick-Access Badges */}
+          {pinnedFolders.map((folder) => {
+            const folderKey = folder.path || folder.name;
+            const isSelected = queryRequest.folderPath === folderKey;
+            const folderColor = folder.color_token
+              ? NoteColors[folder.color_token as NoteColorToken]
+              : null;
+
+            return (
+              <Pressable
+                key={folder.id || folderKey}
+                onPress={() => {
+                  if (isSelected) {
+                    setFolderFilter(null);
+                  } else {
+                    setFolderFilter(folderKey);
+                  }
+                }}
+                onLongPress={() => handleOpenFolderActions(folderKey)}
+                delayLongPress={350}
+                accessibilityLabel={`Pinned folder ${folderKey}${isSelected ? ' (active)' : ''}`}
+                className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border transition-all active:scale-95 ${
+                  isSelected
+                    ? 'bg-light-iconBg dark:bg-white border-transparent'
+                    : 'bg-light-surface/60 dark:bg-white/5 border-light-border dark:border-white/10 hover:border-amber-500/40'
+                }`}
+              >
+                <View className="flex-row items-center gap-1">
+                  {folderColor && (
+                    <View
+                      style={{ backgroundColor: folderColor }}
+                      className="w-2 h-2 rounded-full mr-0.5"
+                    />
+                  )}
+                  {renderFolderIcon(
+                    folder.icon,
+                    11,
+                    isSelected
+                      ? isDark
+                        ? '#111111'
+                        : '#FFFFFF'
+                      : isDark
+                      ? '#D4D4D8'
+                      : '#52525B'
+                  )}
+                </View>
+
+                <Text
+                  className={`text-xs font-semibold ${
+                    isSelected
+                      ? 'text-white dark:text-[#111111]'
+                      : 'text-light-textPrimary dark:text-dark-textPrimary'
+                  }`}
+                >
+                  {folder.name || folder.path}
+                </Text>
+
+                {/* Pin indicator */}
+                <Pin
+                  size={10}
+                  color={isSelected ? (isDark ? '#111111' : '#FFC96F') : '#FFC96F'}
+                  fill={isSelected ? (isDark ? '#111111' : '#FFC96F') : '#FFC96F'}
+                />
+
+                {/* If selected, show Manage & Clear buttons */}
+                {isSelected && (
+                  <>
+                    <Pressable
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        handleOpenFolderActions(folderKey);
+                      }}
+                      accessibilityLabel={`Manage folder ${folderKey}`}
+                      className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 active:opacity-60 ml-0.5"
+                    >
+                      <MoreVertical size={11} color={isDark ? '#111111' : '#FFFFFF'} />
+                    </Pressable>
+
+                    <Pressable
+                      hitSlop={{ top: 8, bottom: 8, left: 4, right: 6 }}
+                      onPress={(e) => {
+                        e.stopPropagation?.();
+                        setFolderFilter(null);
+                      }}
+                      accessibilityLabel="Clear folder filter"
+                      className="p-0.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 active:opacity-60"
+                    >
+                      <X size={11} color={isDark ? '#111111' : '#FFFFFF'} />
+                    </Pressable>
+                  </>
+                )}
+              </Pressable>
+            );
+          })}
 
           {/* Folder Explorer Tree Button */}
           <Pressable
