@@ -2,6 +2,12 @@
 
 > **Scope:** Strictly local to the `scribeX` repository. Does not affect other workspaces.
 
+## 0. Master Workflow Rule: Auto-Planning & Command Orchestration (Mandatory)
+Whenever the user assigns a task, feature, refactor, or change request (**including follow-up requests inside an existing conversation**), **DO NOT begin implementation immediately** unless the user explicitly commands you to execute an already-approved plan. You must automatically execute the following 3-step workflow first:
+1. **Draft the Plan (File):** Create or update [`implementation_plan.md`](implementation_plan.md) in the workspace root. Briefly outline the architecture, steps, and required files.
+2. **Command Analysis (File):** At the bottom of [`implementation_plan.md`](implementation_plan.md), evaluate the complexity of the task against all available Antigravity slash commands (e.g., `/swarm`, `/teamwork`, `/boost`, `/run-workflow`, `/plan`, `/grill-me`, `/goal`, etc.). Write a `## Recommended Execution` section stating exactly which command fits best and why.
+3. **Concise User Response (Chat):** Reply in the chat with a strictly short, 1–2 sentence summary of the approach. End the response by telling the user the exact slash command they should type next to trigger the execution efficiently.
+
 ## 1. Progressive 3-Layer Context Protocol (Token Protection)
 1. **Layer 1 (Core Memory - Always Loaded):** This file (`AGENTS.md`). Keep responses concise.
 2. **Layer 2 (Project Intelligence - On Demand):** Read `.agents/project-map.json` to locate files immediately. **Never** run broad directory scans (`grep`/`find` across the whole repo) when the path is already indexed in `.agents/project-map.json`.

@@ -17,8 +17,17 @@
     },
     "views": {
       "notesList": "frontend/src/components/NotesView.tsx",
+      "notesBatchBar": "frontend/src/components/notes/NotesBatchActionBar.tsx",
+      "notesSearchBar": "frontend/src/components/notes/NotesSearchBar.tsx",
+      "notesFilterTrack": "frontend/src/components/notes/NotesFilterTrack.tsx",
+      "folderContextBanners": "frontend/src/components/notes/FolderContextBanners.tsx",
+      "createFolderModal": "frontend/src/components/notes/CreateFolderModal.tsx",
       "noteCard": "frontend/src/components/notes/NoteCard.tsx",
       "tasksList": "frontend/src/components/TasksView.tsx",
+      "reminderPicker": "frontend/src/components/common/ReminderPickerModal.tsx",
+      "reminderDateTimeUtils": "frontend/src/components/common/reminder/reminderDateTimeUtils.ts",
+      "calendarMonthGrid": "frontend/src/components/common/reminder/CalendarMonthGrid.tsx",
+      "recurrenceSection": "frontend/src/components/common/reminder/RecurrenceSection.tsx",
       "bottomDock": "frontend/src/components/BottomDock.tsx"
     },
     "editorCore": {
@@ -32,11 +41,20 @@
       "templatePicker": "frontend/src/components/editor/components/TemplatePicker.tsx",
       "backlinksStrip": "frontend/src/components/editor/components/BacklinksStrip.tsx",
       "blocksDir": "frontend/src/components/editor/blocks/",
-      "hooksDir": "frontend/src/components/editor/hooks/"
+      "hooksDir": "frontend/src/components/editor/hooks/",
+      "editorBlockFactories": "frontend/src/components/editor/hooks/editorBlockFactories.ts",
+      "editorBlockMutations": "frontend/src/components/editor/hooks/useEditorBlockMutations.ts"
     },
     "stateAndData": {
       "notesStore": "frontend/src/state/useNotesStore.tsx",
+      "seedData": "frontend/src/state/seedData.ts",
+      "folderStoreActions": "frontend/src/state/slices/useFolderStoreActions.ts",
+      "reminderStoreActions": "frontend/src/state/slices/useReminderStoreActions.ts",
+      "workspaceBackupActions": "frontend/src/state/slices/useWorkspaceBackupActions.ts",
       "astSerializer": "frontend/src/core/astSerializer.ts",
+      "astHelpers": "frontend/src/core/ast/astHelpers.ts",
+      "parseMarkdown": "frontend/src/core/ast/parseMarkdown.ts",
+      "serializeBlocks": "frontend/src/core/ast/serializeBlocks.ts",
       "searchIndexer": "frontend/src/core/searchIndexer.ts",
       "noteQueryEngine": "frontend/src/core/noteQueryEngine.ts",
       "actionHistory": "frontend/src/core/actionTracker/ActionHistoryManager.ts",
@@ -50,7 +68,18 @@
       "notificationService": "frontend/src/services/notifications/NotificationService.ts",
       "theme": "frontend/src/theme/index.ts"
     },
+    "inboundShare": {
+      "shareTypes": "frontend/src/core/share/types.ts",
+      "whatsappParser": "frontend/src/core/share/whatsappChatParser.ts",
+      "synthesizer": "frontend/src/core/share/shareBlockSynthesizer.ts",
+      "shareBarrel": "frontend/src/core/share/index.ts",
+      "nativeShareBridge": "frontend/src/services/share/NativeShareBridge.ts",
+      "shareIngestService": "frontend/src/services/share/ShareIngestService.ts",
+      "androidShareModule": "frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentModule.kt",
+      "androidSharePackage": "frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentPackage.kt"
+    },
     "docsAndReports": {
+      "implementationPlan": "implementation_plan.md",
       "index": "docs/README.md",
       "masterTracker": "docs/Master_Tasks_Tracker.md",
       "masterFrontendSpec": "docs/Unified_Frontend_Master_Specification.md",
@@ -68,6 +97,7 @@
     "blocksAndAstAudit": "npm --prefix frontend run audit:all",
     "interactionsAndUndoAudit": "npm --prefix frontend run test:interactions",
     "maestroFlowsValidate": "npm --prefix frontend run test:e2e:validate",
+    "sharePipelineTest": "cd frontend && npx tsx ../scripts/test_inbound_share_pipeline.mjs",
     "allSuites": "npm --prefix frontend run test:all"
   }
 }

@@ -116,7 +116,13 @@ async function run() {
   });
 
   test('NotesView.tsx integrates Star/Pin badges on active folder pill, Favorite Folders shelf, and Archive banner', () => {
-    const notesViewContent = fs.readFileSync(path.join(feDir, 'src/components/NotesView.tsx'), 'utf8');
+    const filterTrackPath = path.join(feDir, 'src/components/notes/NotesFilterTrack.tsx');
+    const folderBannersPath = path.join(feDir, 'src/components/notes/FolderContextBanners.tsx');
+    const notesViewContent = [
+      fs.readFileSync(path.join(feDir, 'src/components/NotesView.tsx'), 'utf8'),
+      fs.existsSync(filterTrackPath) ? fs.readFileSync(filterTrackPath, 'utf8') : '',
+      fs.existsSync(folderBannersPath) ? fs.readFileSync(folderBannersPath, 'utf8') : '',
+    ].join('\n');
     assert(notesViewContent.includes('activeFolderObj?.is_favorite'));
     assert(notesViewContent.includes('activeFolderObj?.is_pinned'));
     assert(notesViewContent.includes('activeFolderObj?.is_archived'));

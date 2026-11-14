@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { NoteItem, TaskItem, ComposableBlock, TaskPriority, BlockType } from '../types/note';
+import { NoteItem, TaskItem, ComposableBlock, TaskPriority, BlockType, ChecklistPoint } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
 import { notesRepo } from '../db/notesRepo';
 import { tasksRepo } from '../db/tasksRepo';
@@ -36,6 +36,12 @@ import {
   deriveLegacyFilterFromQuery,
   buildCanonicalNoteQueryRequest,
 } from '../core/noteQueryEngine';
+import { PASTEL_PALETTE, INITIAL_NOTES, INITIAL_TASKS } from './seedData';
+import { useFolderStoreActions } from './slices/useFolderStoreActions';
+import { useReminderStoreActions } from './slices/useReminderStoreActions';
+import { useWorkspaceBackupActions } from './slices/useWorkspaceBackupActions';
+
+export { PASTEL_PALETTE, INITIAL_NOTES, INITIAL_TASKS };
 
 export interface WorkspaceActivityEntry {
   id: string;
@@ -94,6 +100,13 @@ interface NotesContextValue {
     folderPath?: string,
     tags?: string[]
   ) => Promise<NoteItem>;
+  addNoteWithBlocks: (params: {
+    title?: string;
+    blocks: ComposableBlock[];
+    colorToken?: NoteColorToken;
+    folderPath?: string;
+    tags?: string[];
+  }) => Promise<NoteItem>;
   updateNote: (updated: NoteItem) => void;
   deleteNote: (noteId: string) => Promise<void>;
   toggleFavorite: (noteId: string) => Promise<void>;
@@ -157,16 +170,6 @@ interface NotesContextValue {
   refreshFromDB: () => Promise<void>;
 }
 
-const PASTEL_PALETTE: NoteColorToken[] = [
-  'lime',
-  'apricot',
-  'cyan',
-  'coral',
-  'lavender',
-  'pink',
-  'sky',
-];
-
 const NotesContext = createContext<NotesContextValue>({
   notes: [],
   searchIndexMap: new Map(),
@@ -216,6 +219,7 @@ const NotesContext = createContext<NotesContextValue>({
   setIsEditingNote: () => {},
   setActiveFilter: () => {},
   addNote: async () => ({} as NoteItem),
+  addNoteWithBlocks: async () => ({} as NoteItem),
   updateNote: () => {},
   deleteNote: async () => {},
   toggleFavorite: async () => {},
@@ -472,132 +476,32 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     [notes, searchIndexMap, queryRequest]
   );
 
-  const refreshNotifications = async () => {
-    try {
-      const [list, counts] = await Promise.all([
-        notificationsRepo.listNotifications(),
-        notificationsRepo.getNotificationCounts(),
-      ]);
-      setNotifications(list);
-      setUnreadNotificationsCount(counts.unread);
-      setNotificationCounts(counts);
-    } catch (err) {
-      console.warn('Failed to load in-app notifications:', err);
-    }
+  const updateNote = (updated: NoteItem) => {
+    setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
   };
 
-  const markNotificationAsRead = async (id: string, isRead: boolean = true) => {
-    try {
-      await notificationsRepo.markAsRead(id, isRead);
-      await refreshNotifications();
-    } catch (err) {
-      console.warn('Failed to mark notification as read:', err);
-    }
-  };
-
-  const markAllNotificationsAsRead = async () => {
-    try {
-      await notificationsRepo.markAllAsRead();
-      await refreshNotifications();
-    } catch (err) {
-      console.warn('Failed to mark all notifications as read:', err);
-    }
-  };
-
-  const clearNotification = async (id: string) => {
-    try {
-      await notificationsRepo.clearNotification(id);
-      await refreshNotifications();
-    } catch (err) {
-      console.warn('Failed to clear notification:', err);
-    }
-  };
-
-  const clearAllNotifications = async () => {
-    try {
-      await notificationsRepo.clearAll();
-      await refreshNotifications();
-    } catch (err) {
-      console.warn('Failed to clear all notifications:', err);
-    }
-  };
-
-  const reconcileFiredReminders = async () => {
-    try {
-      await notificationsRepo.purgePrematureNotifications().catch(() => {});
-
-      const activeReminders = await remindersRepo.listActiveReminders().catch(() => []);
-      const now = Date.now();
-
-      for (const rem of activeReminders) {
-        if (!rem.triggerAt) continue;
-        const isTask = rem.targetType === 'task';
-        const taskItem = isTask ? tasks.find((t) => t.id === rem.targetId) : undefined;
-        const noteItem = !isTask ? notes.find((n) => n.id === rem.targetId) : undefined;
-        const notifTitle = isTask 
-          ? (taskItem?.title || 'Task') 
-          : (noteItem?.title || 'Untitled Note');
-        const notifBody = isTask 
-          ? (taskItem?.noteTitle ? `From note: ${taskItem.noteTitle}` : '') 
-          : (noteItem?.contentMarkdown ? noteItem.contentMarkdown.trim().slice(0, 100) : '');
-
-        const parsed = parseReminderString(rem.triggerAt);
-        if (parsed?.type === 'repeat' && parsed.repeatRule) {
-          const [hStr, mStr] = (parsed.repeatRule.time || '12:00').split(':');
-          const targetH = parseInt(hStr, 10) || 0;
-          const targetM = parseInt(mStr, 10) || 0;
-          const nowDate = new Date(now);
-          const currentDay = nowDate.getDay();
-          const validDays = Array.isArray(parsed.repeatRule.days) && parsed.repeatRule.days.length > 0
-            ? parsed.repeatRule.days
-            : [0, 1, 2, 3, 4, 5, 6];
-
-          if (validDays.includes(currentDay)) {
-            const todayOccurrence = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate(), targetH, targetM, 0, 0);
-            if (todayOccurrence.getTime() <= now) {
-              const occurrenceKey = `notif-${rem.id}-${nowDate.toISOString().slice(0, 10)}`;
-              const existing = await notificationsRepo.getNotificationById(occurrenceKey);
-              if (!existing) {
-                await notificationsRepo.createNotification({
-                  id: occurrenceKey,
-                  reminderId: rem.id,
-                  targetType: rem.targetType as NotificationTargetType,
-                  targetId: rem.targetId,
-                  noteId: rem.noteId,
-                  title: notifTitle,
-                  body: notifBody,
-                  triggerAt: todayOccurrence.toISOString(),
-                  recurrenceRule: JSON.stringify(parsed.repeatRule),
-                });
-              }
-            }
-          }
-        } else {
-          const triggerTime = new Date(rem.triggerAt).getTime();
-          if (triggerTime <= now) {
-            const firedId = `notif-${rem.id}`;
-            const existing = await notificationsRepo.getNotificationById(firedId);
-            if (!existing) {
-              await notificationsRepo.createNotification({
-                id: firedId,
-                reminderId: rem.id,
-                targetType: rem.targetType as NotificationTargetType,
-                targetId: rem.targetId,
-                noteId: rem.noteId,
-                title: notifTitle,
-                body: notifBody,
-                triggerAt: rem.triggerAt,
-              });
-            }
-          }
-        }
-      }
-
-      await refreshNotifications();
-    } catch (err) {
-      console.warn('Failed to reconcile fired reminders:', err);
-    }
-  };
+  const {
+    refreshNotifications,
+    markNotificationAsRead,
+    markAllNotificationsAsRead,
+    clearNotification,
+    clearAllNotifications,
+    reconcileFiredReminders,
+    setTaskReminder,
+    setNoteReminder,
+    cancelReminder,
+  } = useReminderStoreActions({
+    tasks,
+    setTasks,
+    notes,
+    setNotes,
+    reminders,
+    setReminders,
+    setNotifications,
+    setUnreadNotificationsCount,
+    setNotificationCounts,
+    updateNote,
+  });
 
   const refreshFromDB = async () => {
     try {
@@ -738,8 +642,87 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const updateNote = (updated: NoteItem) => {
-    setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+  const addNoteWithBlocks = async ({
+    title,
+    blocks,
+    colorToken,
+    folderPath = 'General',
+    tags = [],
+  }: {
+    title?: string;
+    blocks: ComposableBlock[];
+    colorToken?: NoteColorToken;
+    folderPath?: string;
+    tags?: string[];
+  }): Promise<NoteItem> => {
+    const nextColor = colorToken || PASTEL_PALETTE[notes.length % PASTEL_PALETTE.length];
+    const cleanTitle = (title && title.trim()) || 'Untitled Note';
+    const contentMarkdown = serializeBlocksToMarkdown(blocks);
+
+    const tempId = `note-${Date.now()}`;
+    const optimisticNote: NoteItem = {
+      id: tempId,
+      userId: 'user-default',
+      folderPath,
+      title: cleanTitle,
+      contentMarkdown,
+      blocks,
+      colorToken: nextColor,
+      isFavorite: false,
+      isPinned: false,
+      status: 'active',
+      tags,
+      createdAt: 'Just now',
+      updatedAt: 'Just now',
+    };
+
+    setNotes((prev) => [optimisticNote, ...prev]);
+
+    try {
+      const created = await notesRepo.createNote({
+        id: tempId,
+        title: cleanTitle,
+        contentMarkdown,
+        blocks,
+        folderPath,
+        colorToken: nextColor,
+        tags,
+      });
+
+      // If there are checklist blocks, sync them to tasksRepo
+      const checklistBlocks = blocks.filter((b) => b.type === 'checklist');
+      if (checklistBlocks.length > 0) {
+        try {
+          const checklistPoints: ChecklistPoint[] = checklistBlocks.flatMap((b) => {
+            if (Array.isArray(b.metadata?.items)) {
+              return b.metadata.items.map((item: any) => ({
+                id: item.id || `cp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                text: item.text || item.content || '',
+                checked: Boolean(item.checked),
+                isBullet: false,
+              }));
+            }
+            return [];
+          });
+          if (checklistPoints.length > 0) {
+            await tasksRepo.syncNoteChecklists(created.id, created.title, created.colorToken, checklistPoints);
+            const updatedTasks = await tasksRepo.listTasks();
+            setTasks(updatedTasks);
+          }
+        } catch (taskErr) {
+          console.warn('Failed to sync checklist tasks:', taskErr);
+        }
+      }
+
+      setNotes((prev) => prev.map((n) => (n.id === tempId ? created : n)));
+      if (tags.length > 0) {
+        setTags((prev) => Array.from(new Set([...prev, ...tags])));
+      }
+      return created;
+    } catch (err) {
+      console.warn('Failed to persist note with blocks via notesRepo:', err);
+      return optimisticNote;
+    }
   };
 
   const deleteNote = async (noteId: string) => {
@@ -839,452 +822,50 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const emptyTrash = async () => {
-    setNotes((prev) => prev.filter((n) => n.status !== 'trashed'));
-    try {
-      await notesRepo.emptyTrashCascade();
-      await refreshFromDB();
-    } catch (err) {
-      console.warn('Failed to empty trash via notesRepo:', err);
-    }
-  };
+  // Workspace Backup & Batch Actions Slice
+  const {
+    emptyTrash,
+    batchDeleteNotes,
+    batchMoveNotesToFolder,
+    batchTogglePin,
+    batchArchiveNotes,
+    batchRestoreNotes,
+    batchPermanentlyDeleteNotes,
+  } = useWorkspaceBackupActions({
+    notes,
+    setNotes,
+    tasks,
+    setTasks,
+    refreshFromDB,
+  });
 
-  const batchDeleteNotes = async (ids: string[]) => {
-    if (ids.length === 0) return;
-    const idSet = new Set(ids);
-    setNotes((prev) =>
-      prev.map((n) => (idSet.has(n.id) ? { ...n, status: 'trashed' } : n))
-    );
-    try {
-      await notesRepo.batchSoftDeleteNotes(ids);
-      await refreshFromDB();
-    } catch (err) {
-      console.warn('Failed to batch soft-delete notes:', err);
-    }
-  };
-
-  const batchMoveNotesToFolder = async (ids: string[], folderPath: string, folderId?: string) => {
-    if (ids.length === 0) return;
-    const idSet = new Set(ids);
-    setNotes((prev) =>
-      prev.map((n) => (idSet.has(n.id) ? { ...n, folderPath, folderId } : n))
-    );
-    try {
-      await notesRepo.batchMoveNotesToFolder(ids, folderPath, folderId);
-      await refreshFromDB();
-    } catch (err) {
-      console.warn('Failed to batch move notes to folder:', err);
-    }
-  };
-
-  const batchTogglePin = async (ids: string[], pin: boolean) => {
-    if (ids.length === 0) return;
-    const idSet = new Set(ids);
-    setNotes((prev) =>
-      prev.map((n) => (idSet.has(n.id) ? { ...n, isPinned: pin } : n))
-    );
-    try {
-      await notesRepo.batchTogglePinNotes(ids, pin);
-      await refreshFromDB();
-    } catch (err) {
-      console.warn('Failed to batch toggle pin:', err);
-    }
-  };
-
-  const batchArchiveNotes = async (ids: string[], archive: boolean) => {
-    if (ids.length === 0) return;
-    const idSet = new Set(ids);
-    const newStatus = archive ? 'archived' : 'active';
-    setNotes((prev) =>
-      prev.map((n) => (idSet.has(n.id) ? { ...n, status: newStatus } : n))
-    );
-    try {
-      await notesRepo.batchArchiveNotes(ids, archive);
-      await refreshFromDB();
-    } catch (err) {
-      console.warn('Failed to batch archive notes:', err);
-    }
-  };
-
-  const batchRestoreNotes = async (ids: string[]) => {
-    if (ids.length === 0) return;
-    const idSet = new Set(ids);
-    setNotes((prev) =>
-      prev.map((n) => (idSet.has(n.id) ? { ...n, status: 'active' } : n))
-    );
-    try {
-      await notesRepo.batchRestoreNotes(ids);
-      await refreshFromDB();
-    } catch (err) {
-      console.warn('Failed to batch restore notes:', err);
-    }
-  };
-
-  const batchPermanentlyDeleteNotes = async (ids: string[]) => {
-    if (ids.length === 0) return;
-    const idSet = new Set(ids);
-    setNotes((prev) => prev.filter((n) => !idSet.has(n.id)));
-    setTasks((prev) => prev.filter((t) => !t.noteId || !idSet.has(t.noteId)));
-    try {
-      await notesRepo.batchPermanentlyDeleteNotes(ids);
-      for (const id of ids) {
-        await tasksRepo.syncNoteChecklists(id, '', 'apricot', []);
-      }
-    } catch (err) {
-      console.warn('Failed to batch permanently delete notes:', err);
-    }
-  };
-
-  const createFolder = async (name: string, parentPath?: string): Promise<DBFolder> => {
-    const cleanName = name.trim().replace(/^\/+|\/+$/g, '');
-    const cleanParent = (parentPath || '').trim().replace(/^\/+|\/+$/g, '');
-    const fullPath = cleanParent ? `${cleanParent}/${cleanName}` : cleanName;
-    const segments = fullPath.split('/').map((s) => s.trim()).filter(Boolean);
-
-    let currentPath = '';
-    let parentId: string | undefined = undefined;
-    let lastCreated: DBFolder | null = null;
-    const newlyCreated: DBFolder[] = [];
-
-    for (const seg of segments) {
-      currentPath = currentPath ? `${currentPath}/${seg}` : seg;
-      const existing = [...folders, ...newlyCreated].find((f) => (f.path || f.name) === currentPath);
-      if (existing) {
-        parentId = existing.id;
-        lastCreated = existing;
-      } else {
-        const created = await foldersRepo.createFolder({
-          name: seg,
-          path: currentPath,
-          parentId,
-          colorToken: 'cyan',
-        });
-        newlyCreated.push(created);
-        parentId = created.id;
-        lastCreated = created;
-      }
-    }
-
-    if (newlyCreated.length > 0) {
-      setFolders((prev) => [...prev, ...newlyCreated]);
-    }
-    return lastCreated!;
-  };
-
-  const renameFolder = async (id: string, newName: string) => {
-    try {
-      const { oldPath, newPath } = await foldersRepo.renameFolderCascade(id, newName);
-      setFolders((prev) =>
-        prev.map((f) => {
-          if (f.id === id) {
-            return { ...f, name: newName, path: newPath };
-          }
-          if (f.path.startsWith(`${oldPath}/`)) {
-            return { ...f, path: `${newPath}${f.path.slice(oldPath.length)}` };
-          }
-          return f;
-        })
-      );
-      setNotes((prev) =>
-        prev.map((n) => {
-          if (n.folderPath === oldPath) {
-            return { ...n, folderPath: newPath };
-          }
-          if (n.folderPath?.startsWith(`${oldPath}/`)) {
-            return { ...n, folderPath: `${newPath}${n.folderPath.slice(oldPath.length)}` };
-          }
-          return n;
-        })
-      );
-      if (queryRequest.folderPath === oldPath) {
-        setFolderFilter(newPath);
-      } else if (queryRequest.folderPath?.startsWith(`${oldPath}/`)) {
-        setFolderFilter(`${newPath}${queryRequest.folderPath.slice(oldPath.length)}`);
-      }
-      logWorkspaceActivity('folder', 'rename', `Renamed folder "${oldPath}" to "${newPath}"`, id);
-      await refreshFromDB();
-    } catch (err) {
-      console.warn('Failed to rename folder:', err);
-      throw err;
-    }
-  };
-
-  const moveFolder = async (id: string, newParentPath: string | null) => {
-    try {
-      const { oldPath, newPath } = await foldersRepo.moveFolderCascade(id, newParentPath);
-      setFolders((prev) =>
-        prev.map((f) => {
-          if (f.id === id) {
-            return { ...f, path: newPath };
-          }
-          if (f.path.startsWith(`${oldPath}/`)) {
-            return { ...f, path: `${newPath}${f.path.slice(oldPath.length)}` };
-          }
-          return f;
-        })
-      );
-      setNotes((prev) =>
-        prev.map((n) => {
-          if (n.folderPath === oldPath) {
-            return { ...n, folderPath: newPath };
-          }
-          if (n.folderPath?.startsWith(`${oldPath}/`)) {
-            return { ...n, folderPath: `${newPath}${n.folderPath.slice(oldPath.length)}` };
-          }
-          return n;
-        })
-      );
-      if (queryRequest.folderPath === oldPath) {
-        setFolderFilter(newPath);
-      } else if (queryRequest.folderPath?.startsWith(`${oldPath}/`)) {
-        setFolderFilter(`${newPath}${queryRequest.folderPath.slice(oldPath.length)}`);
-      }
-      logWorkspaceActivity('folder', 'move', `Moved folder "${oldPath}" to "${newPath}"`, id);
-      await refreshFromDB();
-    } catch (err) {
-      console.warn('Failed to move folder:', err);
-      throw err;
-    }
-  };
-
-  const deleteFolderWithOptions = async (
-    id: string,
-    folderPath: string,
-    noteAction: 'moveToGeneral' | 'trash'
-  ) => {
-    try {
-      const cleanPath = folderPath.trim().replace(/^\/+|\/+$/g, '');
-      const res = await foldersRepo.deleteFolderCascade(id, cleanPath, noteAction);
-
-      setFolders((prev) =>
-        prev.filter((f) => f.id !== id && f.path !== cleanPath && !f.path.startsWith(`${cleanPath}/`))
-      );
-
-      if (noteAction === 'moveToGeneral') {
-        setNotes((prev) =>
-          prev.map((n) => {
-            if (n.folderId === id || n.folderPath === cleanPath || n.folderPath?.startsWith(`${cleanPath}/`)) {
-              return { ...n, folderPath: 'General', folderId: undefined };
-            }
-            return n;
-          })
-        );
-      } else {
-        const nowIso = new Date().toISOString();
-        setNotes((prev) =>
-          prev.map((n) => {
-            if (n.folderId === id || n.folderPath === cleanPath || n.folderPath?.startsWith(`${cleanPath}/`)) {
-              return { ...n, status: 'trashed', trashedAt: nowIso };
-            }
-            return n;
-          })
-        );
-      }
-
-      if (queryRequest.folderPath === cleanPath || queryRequest.folderPath?.startsWith(`${cleanPath}/`)) {
-        setFolderFilter(null);
-      }
-
-      logWorkspaceActivity(
-        'folder',
-        'delete',
-        `Deleted folder "${cleanPath}" (${res.affectedNotes} notes ${noteAction === 'moveToGeneral' ? 'moved to General' : 'trashed'})`,
-        id
-      );
-
-      await refreshFromDB();
-      return res;
-    } catch (err) {
-      console.warn('Failed to delete folder cascade:', err);
-      throw err;
-    }
-  };
-
-  const deleteFolder = async (id: string) => {
-    const folder = folders.find((f) => f.id === id);
-    const folderPath = folder?.path || folder?.name || '';
-    await deleteFolderWithOptions(id, folderPath, 'moveToGeneral');
-  };
-
-  const duplicateFolder = async (id: string, folderPath: string, newName?: string): Promise<DBFolder> => {
-    try {
-      const { newFolder, duplicatedNotesCount } = await foldersRepo.duplicateFolderCascade(id, folderPath, newName);
-      logWorkspaceActivity(
-        'folder',
-        'duplicate',
-        `Duplicated folder "${folderPath}" -> "${newFolder.path}" (${duplicatedNotesCount} notes copied)`,
-        newFolder.id
-      );
-      await refreshFromDB();
-      return newFolder;
-    } catch (err) {
-      console.warn('Failed to duplicate folder:', err);
-      throw err;
-    }
-  };
-
-  const updateFolderColor = async (id: string, colorToken: string): Promise<void> => {
-    try {
-      await foldersRepo.updateFolderColor(id, colorToken);
-      setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, color_token: colorToken } : f)));
-    } catch (err) {
-      console.warn('Failed to update folder color:', err);
-    }
-  };
-
-  const updateFolderIcon = async (id: string, icon: string | null): Promise<void> => {
-    try {
-      await foldersRepo.updateFolderIcon(id, icon);
-      setFolders((prev) => prev.map((f) => (f.id === id ? { ...f, icon } : f)));
-    } catch (err) {
-      console.warn('Failed to update folder icon:', err);
-    }
-  };
-
-  const toggleFolderFavorite = async (folderId: string): Promise<boolean> => {
-    try {
-      const isFav = await foldersRepo.toggleFolderFavorite(folderId);
-      setFolders((prev) =>
-        prev.map((f) => (f.id === folderId ? { ...f, is_favorite: isFav ? 1 : 0 } : f))
-      );
-      return isFav;
-    } catch (err) {
-      console.warn('Failed to toggle folder favorite:', err);
-      return false;
-    }
-  };
-
-  const toggleFolderPin = async (folderId: string): Promise<boolean> => {
-    try {
-      const isPinned = await foldersRepo.toggleFolderPin(folderId);
-      setFolders((prev) => {
-        const updated = prev.map((f) => (f.id === folderId ? { ...f, is_pinned: isPinned ? 1 : 0 } : f));
-        return updated.sort((a, b) => (b.is_pinned - a.is_pinned) || a.path.localeCompare(b.path));
-      });
-      return isPinned;
-    } catch (err) {
-      console.warn('Failed to toggle folder pin:', err);
-      return false;
-    }
-  };
-
-  const archiveFolder = async (
-    folderId: string
-  ): Promise<{ affectedNotes: number; affectedFolders: number }> => {
-    try {
-      const folder = folders.find((f) => f.id === folderId);
-      const res = await foldersRepo.archiveFolderContained(folderId);
-      const cleanPath = folder ? (folder.path || folder.name).trim().replace(/^\/+|\/+$/g, '') : '';
-
-      setFolders((prev) =>
-        prev.map((f) => {
-          if (f.id === folderId || (cleanPath && f.path.startsWith(`${cleanPath}/`))) {
-            return { ...f, is_archived: 1 };
-          }
-          return f;
-        })
-      );
-
-      setNotes((prev) =>
-        prev.map((n) => {
-          if (
-            n.status === 'active' &&
-            (n.folderId === folderId ||
-              (cleanPath && (n.folderPath === cleanPath || n.folderPath?.startsWith(`${cleanPath}/`))))
-          ) {
-            return { ...n, status: 'archived', updatedAt: new Date().toISOString() };
-          }
-          return n;
-        })
-      );
-
-      // If currently filtering by this folder, clear when not in archive scope
-      if (
-        queryRequest.folderPath &&
-        cleanPath &&
-        (queryRequest.folderPath === cleanPath || queryRequest.folderPath.startsWith(`${cleanPath}/`))
-      ) {
-        if (queryRequest.statusScope !== 'archived') {
-          setFolderFilter(null);
-        }
-      }
-
-      return res;
-    } catch (err) {
-      console.warn('Failed to archive folder:', err);
-      return { affectedNotes: 0, affectedFolders: 0 };
-    }
-  };
-
-  const unarchiveFolder = async (
-    folderId: string
-  ): Promise<{ affectedNotes: number; affectedFolders: number }> => {
-    try {
-      const folder = folders.find((f) => f.id === folderId);
-      const res = await foldersRepo.unarchiveFolderContained(folderId);
-      const cleanPath = folder ? (folder.path || folder.name).trim().replace(/^\/+|\/+$/g, '') : '';
-      const segments = cleanPath.split('/').filter(Boolean);
-      const ancestorPaths = new Set(segments.map((_, i) => segments.slice(0, i + 1).join('/')));
-
-      setFolders((prev) =>
-        prev.map((f) => {
-          if (
-            f.id === folderId ||
-            (cleanPath && f.path.startsWith(`${cleanPath}/`)) ||
-            ancestorPaths.has(f.path)
-          ) {
-            return { ...f, is_archived: 0 };
-          }
-          return f;
-        })
-      );
-
-      setNotes((prev) =>
-        prev.map((n) => {
-          if (
-            n.status === 'archived' &&
-            (n.folderId === folderId ||
-              (cleanPath && (n.folderPath === cleanPath || n.folderPath?.startsWith(`${cleanPath}/`))))
-          ) {
-            return { ...n, status: 'active', updatedAt: new Date().toISOString() };
-          }
-          return n;
-        })
-      );
-
-      return res;
-    } catch (err) {
-      console.warn('Failed to unarchive folder:', err);
-      return { affectedNotes: 0, affectedFolders: 0 };
-    }
-  };
-
-  const getFolderStats = async (folderPath: string, folderId?: string): Promise<FolderNoteStats> => {
-    try {
-      return await foldersRepo.getFolderNoteStats(folderPath, folderId);
-    } catch (err) {
-      const cleanPath = folderPath.trim().replace(/^\/+|\/+$/g, '');
-      const direct = notes.filter((n) => n.status !== 'trashed' && (n.folderPath === cleanPath || n.folderId === folderId)).length;
-      const nested = notes.filter((n) => n.status !== 'trashed' && n.folderPath?.startsWith(`${cleanPath}/`)).length;
-      const subfolders = folders.filter((f) => f.path.startsWith(`${cleanPath}/`)).length;
-      return {
-        directNotesCount: direct,
-        nestedNotesCount: nested,
-        totalNotesCount: direct + nested,
-        subfoldersCount: subfolders,
-      };
-    }
-  };
-
-  const getPendingFolderChangelogs = async (sinceRev = 0): Promise<DBSyncChangelog[]> => {
-    return foldersRepo.getPendingFolderChangelogs(sinceRev);
-  };
-
-  const applyRemoteFolderDelta = async (entry: DBSyncChangelog): Promise<FolderSyncResult> => {
-    const res = await foldersRepo.applyRemoteFolderDelta(entry);
-    await refreshFromDB();
-    return res;
-  };
+  // Folder Store Actions Slice
+  const {
+    createFolder,
+    renameFolder,
+    moveFolder,
+    deleteFolderWithOptions,
+    deleteFolder,
+    duplicateFolder,
+    updateFolderColor,
+    updateFolderIcon,
+    toggleFolderFavorite,
+    toggleFolderPin,
+    archiveFolder,
+    unarchiveFolder,
+    getFolderStats,
+    getPendingFolderChangelogs,
+    applyRemoteFolderDelta,
+  } = useFolderStoreActions({
+    folders,
+    setFolders,
+    notes,
+    setNotes,
+    queryRequest,
+    setFolderFilter,
+    logWorkspaceActivity,
+    refreshFromDB,
+  });
 
   const moveNoteToFolder = async (noteId: string, folderPath: string, folderId?: string) => {
     setNotes((prev) =>
@@ -1467,212 +1048,6 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const setTaskReminder = async (taskId: string, triggerAt: string | null) => {
-    const targetTask = tasks.find((t) => t.id === taskId);
-    if (!targetTask) return;
-
-    if (!triggerAt) {
-      const existing = await remindersRepo.getActiveReminderByTarget('task', taskId);
-      if (existing?.notificationId) {
-        await notificationService.cancelReminder(existing.notificationId);
-      }
-      await remindersRepo.dismissReminderByTarget('task', taskId);
-      await notificationsRepo.deleteNotificationByTarget('task', taskId);
-      await tasksRepo.updateTaskReminder(taskId, null);
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, reminderAt: undefined } : t)));
-      setReminders((prev) => prev.filter((r) => !(r.targetType === 'task' && r.targetId === taskId)));
-      await refreshNotifications();
-
-      if (targetTask.noteId) {
-        const targetNote = notes.find((n) => n.id === targetTask.noteId);
-        if (targetNote && targetNote.blocks) {
-          let hasChanged = false;
-          const updatedBlocks = targetNote.blocks.map((b) => {
-            if (b.type === 'checklist' && Array.isArray(b.metadata?.items)) {
-              const updatedItems = b.metadata.items.map((item: any) => {
-                if (item.id === taskId) {
-                  hasChanged = true;
-                  return { ...item, reminderAt: undefined };
-                }
-                return item;
-              });
-              return { ...b, metadata: { ...b.metadata, items: updatedItems } };
-            }
-            return b;
-          });
-          if (hasChanged) {
-            const nextContent = serializeBlocksToMarkdown(updatedBlocks);
-            await notesRepo.updateNote(targetTask.noteId, {
-              blocks: updatedBlocks,
-              contentMarkdown: nextContent,
-            });
-            updateNote({
-              ...targetNote,
-              blocks: updatedBlocks,
-              contentMarkdown: nextContent,
-            });
-          }
-        }
-      }
-    } else {
-      const parsedConfig = parseReminderString(triggerAt);
-      const computedTriggerDate = parsedConfig?.type === 'repeat' && parsedConfig.repeatRule
-        ? getNextOccurrence(parsedConfig.repeatRule)
-        : new Date(triggerAt);
-
-      const reminder = await remindersRepo.createReminder({
-        targetType: 'task',
-        targetId: taskId,
-        noteId: targetTask.noteId,
-        triggerAt,
-        title: targetTask.title,
-        body: targetTask.noteTitle ? `From note: ${targetTask.noteTitle}` : '',
-      });
-
-      const notificationId = await notificationService.scheduleReminder({
-        reminderId: reminder.id,
-        title: targetTask.title,
-        body: targetTask.noteTitle ? `From note: ${targetTask.noteTitle}` : '',
-        triggerDate: computedTriggerDate,
-        repeatRule: parsedConfig?.type === 'repeat' ? parsedConfig.repeatRule : undefined,
-        payload: {
-          targetType: 'task',
-          targetId: taskId,
-          noteId: targetTask.noteId,
-          title: targetTask.title,
-          body: targetTask.noteTitle ? `From note: ${targetTask.noteTitle}` : '',
-        },
-      });
-
-      if (notificationId) {
-        await remindersRepo.updateNotificationId(reminder.id, notificationId);
-        reminder.notificationId = notificationId;
-      }
-
-      await tasksRepo.updateTaskReminder(taskId, triggerAt);
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, reminderAt: triggerAt } : t)));
-      setReminders((prev) => [
-        ...prev.filter((r) => !(r.targetType === 'task' && r.targetId === taskId)),
-        reminder,
-      ]);
-      await refreshNotifications();
-
-      if (targetTask.noteId) {
-        const targetNote = notes.find((n) => n.id === targetTask.noteId);
-        if (targetNote && targetNote.blocks) {
-          let hasChanged = false;
-          const updatedBlocks = targetNote.blocks.map((b) => {
-            if (b.type === 'checklist' && Array.isArray(b.metadata?.items)) {
-              const updatedItems = b.metadata.items.map((item: any) => {
-                if (item.id === taskId) {
-                  hasChanged = true;
-                  return { ...item, reminderAt: triggerAt };
-                }
-                return item;
-              });
-              return { ...b, metadata: { ...b.metadata, items: updatedItems } };
-            }
-            return b;
-          });
-          if (hasChanged) {
-            const nextContent = serializeBlocksToMarkdown(updatedBlocks);
-            await notesRepo.updateNote(targetTask.noteId, {
-              blocks: updatedBlocks,
-              contentMarkdown: nextContent,
-            });
-            updateNote({
-              ...targetNote,
-              blocks: updatedBlocks,
-              contentMarkdown: nextContent,
-            });
-          }
-        }
-      }
-    }
-  };
-
-  const setNoteReminder = async (noteId: string, triggerAt: string | null) => {
-    const targetNote = notes.find((n) => n.id === noteId);
-    if (!targetNote) return;
-
-    if (!triggerAt) {
-      const existing = await remindersRepo.getActiveReminderByTarget('note', noteId);
-      if (existing?.notificationId) {
-        await notificationService.cancelReminder(existing.notificationId);
-      }
-      await remindersRepo.dismissReminderByTarget('note', noteId);
-      await notificationsRepo.deleteNotificationByTarget('note', noteId);
-      await notesRepo.updateNote(noteId, { reminderAt: null });
-      setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, reminderAt: undefined } : n)));
-      setReminders((prev) => prev.filter((r) => !(r.targetType === 'note' && r.targetId === noteId)));
-      await refreshNotifications();
-    } else {
-      const parsedConfig = parseReminderString(triggerAt);
-      const computedTriggerDate = parsedConfig?.type === 'repeat' && parsedConfig.repeatRule
-        ? getNextOccurrence(parsedConfig.repeatRule)
-        : new Date(triggerAt);
-
-      const noteTitle = targetNote.title || 'Untitled Note';
-      const noteBody = targetNote.contentMarkdown ? targetNote.contentMarkdown.trim().slice(0, 100) : '';
-
-      const reminder = await remindersRepo.createReminder({
-        targetType: 'note',
-        targetId: noteId,
-        noteId,
-        triggerAt,
-        title: noteTitle,
-        body: noteBody,
-      });
-
-      const notificationId = await notificationService.scheduleReminder({
-        reminderId: reminder.id,
-        title: noteTitle,
-        body: noteBody,
-        triggerDate: computedTriggerDate,
-        repeatRule: parsedConfig?.type === 'repeat' ? parsedConfig.repeatRule : undefined,
-        payload: {
-          targetType: 'note',
-          targetId: noteId,
-          noteId,
-          title: noteTitle,
-          body: noteBody,
-        },
-      });
-
-      if (notificationId) {
-        await remindersRepo.updateNotificationId(reminder.id, notificationId);
-        reminder.notificationId = notificationId;
-      }
-
-      await notesRepo.updateNote(noteId, { reminderAt: triggerAt });
-      setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, reminderAt: triggerAt } : n)));
-      setReminders((prev) => [
-        ...prev.filter((r) => !(r.targetType === 'note' && r.targetId === noteId)),
-        reminder,
-      ]);
-      await refreshNotifications();
-    }
-  };
-
-  const cancelReminder = async (reminderId: string) => {
-    const rem = await remindersRepo.getReminderById(reminderId);
-    if (!rem) return;
-    if (rem.notificationId) {
-      await notificationService.cancelReminder(rem.notificationId);
-    }
-    await remindersRepo.dismissReminder(reminderId);
-    await notificationsRepo.deleteNotificationByTarget(rem.targetType, rem.targetId);
-    if (rem.targetType === 'task') {
-      await tasksRepo.updateTaskReminder(rem.targetId, null);
-      setTasks((prev) => prev.map((t) => (t.id === rem.targetId ? { ...t, reminderAt: undefined } : t)));
-    } else if (rem.targetType === 'note') {
-      await notesRepo.updateNote(rem.targetId, { reminderAt: null });
-      setNotes((prev) => prev.map((n) => (n.id === rem.targetId ? { ...n, reminderAt: undefined } : n)));
-    }
-    setReminders((prev) => prev.filter((r) => r.id !== reminderId));
-    await refreshNotifications();
-  };
-
   return (
     <NotesContext.Provider
       value={{
@@ -1715,6 +1090,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         isLoading,
         setActiveFilter,
         addNote,
+        addNoteWithBlocks,
         updateNote,
         deleteNote,
         toggleFavorite,

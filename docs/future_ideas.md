@@ -41,6 +41,7 @@ Remaining Tasks to fix
 32 - [x] Add favourites, pinned and archive feature for folders as well as specified in docs/Folder_Favourites_Pinned_Archive_Plan.md (COMPLETED)
 33 - [x] Add Offline Notifications and InApp Notification Center as specified in docs/Offline_Notifications_and_InApp_Notification_Center_Plan.md (COMPLETED)
 34 - [x] Add Reminder & Recurrence Support for Tasks as specified in docs/Reminder_and_Recurrence_Specs.md (COMPLETED)
+35 - [] Adding whatsapp export chat to be stored in a new note 
 
 
 Long term Ideas
@@ -56,3 +57,5 @@ Long term Ideas
 5 - [] Adding github connector so that i can manage repo's from the app itslef .
 
 6 - [] Adding a section of connector in the system where the app can connect to various apps and services to fetch or send data to them, using APIs.
+
+7 - [] impliment whatsapp chat sharing and saving as a note feature using bailey 

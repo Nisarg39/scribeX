@@ -17,6 +17,13 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
+    com.nashtech.scribex.share.ShareIntentModule.handleIntent(intent, applicationContext)
+  }
+
+  override fun onNewIntent(intent: android.content.Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    com.nashtech.scribex.share.ShareIntentModule.handleIntent(intent, applicationContext)
   }
 
   /**

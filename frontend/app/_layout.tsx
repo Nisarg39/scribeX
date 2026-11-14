@@ -5,20 +5,34 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '../src/theme';
 import { AuthProvider } from '../src/context';
-import { NotesProvider } from '../src/state/useNotesStore';
+import { NotesProvider, useNotesStore } from '../src/state/useNotesStore';
+import { shareIngestService } from '../src/services/share/ShareIngestService';
 import { View, Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 
-// Silence React Native Web "Running application 'main'..." banner
-if (typeof console !== 'undefined' && console.log) {
-  const originalLog = console.log;
-  console.log = (...args: any[]) => {
-    if (typeof args[0] === 'string' && args[0].startsWith('Running application "')) {
-      return;
-    }
-    originalLog.apply(console, args);
-  };
+// Silence React Native Web "Running application 'main'..." banner & push token web warning
+if (typeof console !== 'undefined') {
+  if (console.log) {
+    const originalLog = console.log;
+    console.log = (...args: any[]) => {
+      if (typeof args[0] === 'string' && args[0].startsWith('Running application "')) {
+        return;
+      }
+      originalLog.apply(console, args);
+    };
+  }
+  if (console.warn) {
+    const originalWarn = console.warn;
+    console.warn = (...args: any[]) => {
+      if (
+        typeof args[0] === 'string' &&
+        args[0].includes('[expo-notifications] Listening to push token changes is not yet fully supported on web')
+      ) {
+        return;
+      }
+      originalWarn.apply(console, args);
+    };
+  }
 }
 
 // Disable Reanimated strict logger warning flood in DEV to protect JS bridge responsiveness
@@ -30,6 +44,20 @@ configureReanimatedLogger({
 function RootContent() {
   const { isDark } = useTheme();
   const router = useRouter();
+  const { addNoteWithBlocks } = useNotesStore();
+
+  useEffect(() => {
+    const unsubscribeShare = shareIngestService.initialize(
+      addNoteWithBlocks,
+      (noteId) => {
+        router.push(`/note/${noteId}`);
+      }
+    );
+
+    return () => {
+      unsubscribeShare();
+    };
+  }, [addNoteWithBlocks, router]);
 
   useEffect(() => {
     const handleDeepLink = (data: any) => {
@@ -51,16 +79,19 @@ function RootContent() {
 
     // 1. Mobile OS Notification response listener (Android & iOS foreground & background)
     let subscription: { remove: () => void } | undefined;
-    if (Platform.OS !== 'web' && Notifications.addNotificationResponseReceivedListener) {
+    if (Platform.OS !== 'web') {
       try {
-        subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-          const data = response?.notification?.request?.content?.data;
-          handleDeepLink(data);
-        });
+        const Notifications = require('expo-notifications');
+        if (Notifications.addNotificationResponseReceivedListener) {
+          subscription = Notifications.addNotificationResponseReceivedListener((response: any) => {
+            const data = response?.notification?.request?.content?.data;
+            handleDeepLink(data);
+          });
+        }
 
         // Cold-start check if launched directly from a killed-state notification tap
         if (Notifications.getLastNotificationResponseAsync) {
-          Notifications.getLastNotificationResponseAsync().then((response) => {
+          Notifications.getLastNotificationResponseAsync().then((response: any) => {
             if (response) {
               const data = response?.notification?.request?.content?.data;
               handleDeepLink(data);

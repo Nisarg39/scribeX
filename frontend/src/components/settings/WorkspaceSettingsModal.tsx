@@ -14,10 +14,13 @@ import {
   Tag,
   AlertTriangle,
   HardDrive,
+  MessageSquare,
 } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useNotesStore } from '../../state/useNotesStore';
 import { workspaceBackupService } from '../../services/workspaceBackupService';
+import { shareIngestService } from '../../services/share/ShareIngestService';
 import { RestoreBackupModal } from './RestoreBackupModal';
 
 interface WorkspaceSettingsModalProps {
@@ -39,15 +42,48 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
     tags,
     refreshFromDB,
     emptyTrash,
+    addNoteWithBlocks,
   } = useNotesStore();
 
+  const router = useRouter();
   const [isExporting, setIsExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
   const [isPurgingTrash, setIsPurgingTrash] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSimulatingShare, setIsSimulatingShare] = useState(false);
 
   if (!visible) return null;
+
+  const handleSimulateWhatsAppShare = async () => {
+    try {
+      setIsSimulatingShare(true);
+      const testPayload = {
+        batchId: `sim-share-${Date.now()}`,
+        subject: 'Sprint 42 Architecture & Delivery',
+        text: `[14/11/26, 10:15:30 AM] Sarah: Hey team, benchmark on local SQLite replication passed with *sub-5ms latency* across all platforms.
+[14/11/26, 10:16:12 AM] Marcus: That is huge! Are we shipping WhatsApp export chat capture in this cycle?
+[14/11/26, 10:17:00 AM] Sarah: Yes, fully parsed into composable blocks.
+POLL: Ready for release?
+OPTION: Ship to Beta (9 votes)
+OPTION: Run 1 more audit (2 votes)`,
+        files: [],
+      };
+
+      onClose();
+      await shareIngestService.ingestSharePayload(
+        testPayload,
+        addNoteWithBlocks,
+        (noteId) => {
+          router.push(`/note/${noteId}`);
+        }
+      );
+    } catch (err) {
+      console.warn('Simulate share error:', err);
+    } finally {
+      setIsSimulatingShare(false);
+    }
+  };
 
   const activeNotesCount = notes.filter((n) => n.status === 'active').length;
   const archivedNotesCount = notes.filter((n) => n.status === 'archived').length;
@@ -315,6 +351,35 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
                   </View>
                 </View>
                 {isPurgingTrash && <ActivityIndicator size="small" color="#EF4444" />}
+              </Pressable>
+            </View>
+
+            {/* Section 4: WhatsApp Export Chat Simulation */}
+            <View className="mt-4">
+              <Text className="text-xs font-bold uppercase tracking-wider text-light-textMuted dark:text-dark-textMuted mb-2">
+                WhatsApp Export Chat Simulation
+              </Text>
+
+              <Pressable
+                onPress={handleSimulateWhatsAppShare}
+                disabled={isSimulatingShare}
+                accessibilityLabel="Simulate WhatsApp Export Chat"
+                className="flex-row items-center justify-between p-3.5 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/15 border border-emerald-500/30 active:scale-[0.99]"
+              >
+                <View className="flex-row items-center gap-3">
+                  <View className="w-8 h-8 rounded-full bg-emerald-500/20 items-center justify-center">
+                    <MessageSquare size={16} color="#10B981" />
+                  </View>
+                  <View>
+                    <Text className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                      Simulate WhatsApp Chat Export
+                    </Text>
+                    <Text className="text-[11px] text-light-textMuted dark:text-dark-textMuted">
+                      Test multi-message chat transcript, poll & block synthesis in 1 tap
+                    </Text>
+                  </View>
+                </View>
+                {isSimulatingShare && <ActivityIndicator size="small" color="#10B981" />}
               </Pressable>
             </View>
           </Pressable>

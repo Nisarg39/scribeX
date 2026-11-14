@@ -13,10 +13,11 @@ import {
   Check, 
   CornerDownRight,
   AtSign,
-  ChevronDown
+  ChevronDown,
+  Paperclip
 } from 'lucide-react-native';
 
-export type MessageChannel = 'email' | 'slack' | 'imessage' | 'telegram' | 'teams';
+export type MessageChannel = 'whatsapp' | 'email' | 'slack' | 'imessage' | 'telegram' | 'teams';
 
 export interface ThreadMessage {
   id: string;
@@ -25,6 +26,8 @@ export interface ThreadMessage {
   timestamp: string;
   content: string;
   isMe?: boolean;
+  attachmentName?: string;
+  replyTo?: string;
 }
 
 export interface MessageThreadBlockMetadata {
@@ -46,9 +49,10 @@ interface MessageThreadBlockProps {
   onUpdateThread?: (updates: MessageThreadBlockMetadata) => void;
 }
 
-const CHANNELS: MessageChannel[] = ['email', 'slack', 'imessage', 'telegram', 'teams'];
+const CHANNELS: MessageChannel[] = ['whatsapp', 'email', 'slack', 'imessage', 'telegram', 'teams'];
 
 const CHANNEL_CONFIG: Record<MessageChannel, { label: string; icon: any; color: string; bg: string }> = {
+  whatsapp: { label: 'WhatsApp Chat', icon: MessageSquare, color: '#25D366', bg: 'rgba(37, 211, 102, 0.12)' },
   email: { label: 'Email Thread', icon: Mail, color: '#8B5CF6', bg: 'rgba(139, 92, 246, 0.12)' },
   slack: { label: 'Slack Capture', icon: Hash, color: '#E01E5A', bg: 'rgba(224, 30, 90, 0.12)' },
   imessage: { label: 'iMessage', icon: MessageSquare, color: '#38BDF8', bg: 'rgba(56, 189, 248, 0.12)' },
@@ -382,6 +386,15 @@ export const MessageThreadBlock: React.FC<MessageThreadBlockProps> = ({
                     </View>
                   </View>
 
+                  {/* Optional Reply-To Banner */}
+                  {Boolean(msg.replyTo) && (
+                    <View className="mb-1 px-2 py-0.5 rounded bg-black/5 dark:bg-white/5 border-l-2 border-primary/50">
+                      <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted italic" numberOfLines={1}>
+                        Replying to: {msg.replyTo}
+                      </Text>
+                    </View>
+                  )}
+
                   {/* Message Body Content Input */}
                   <TextInput
                     value={msg.content}
@@ -392,6 +405,16 @@ export const MessageThreadBlock: React.FC<MessageThreadBlockProps> = ({
                     placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
                     className="text-xs leading-relaxed text-light-textPrimary dark:text-dark-textPrimary py-0.5"
                   />
+
+                  {/* Optional Attachment Pill */}
+                  {Boolean(msg.attachmentName) && (
+                    <View className="mt-1 flex-row items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 self-start">
+                      <Paperclip size={10} color="#10B981" />
+                      <Text className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400">
+                        {msg.attachmentName}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
             );
