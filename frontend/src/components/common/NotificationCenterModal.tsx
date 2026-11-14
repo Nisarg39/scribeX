@@ -27,9 +27,15 @@ import {
   Clock,
   Repeat,
   Sparkles,
+  Lock,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
+import { useSecurity } from '../../context';
 import { useNotesStore } from '../../state/useNotesStore';
+import {
+  LOCKED_MASK_LABEL,
+  shouldRedactNotification,
+} from '../../core/security/vaultLockHelpers';
 import { InAppNotificationItem, NotificationTargetType } from '../../db/types';
 import {
   parseReminderString,
@@ -106,9 +112,12 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
+  const { promptUnlockNote } = useSecurity();
   const {
     notes,
+    folders,
     tasks,
+    lockedNoteIds,
     notifications,
     unreadNotificationsCount,
     notificationCounts,
@@ -422,11 +431,26 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
                   const taskItem = isTask ? tasks.find((t) => t.id === item.targetId) : undefined;
                   const noteItem = isNote ? notes.find((n) => n.id === item.targetId || n.id === item.noteId) : undefined;
+                  const resolvedNoteId =
+                    item.noteId ||
+                    taskItem?.noteId ||
+                    (isNote ? item.targetId : undefined);
+                  const isItemLocked = shouldRedactNotification(
+                    {
+                      noteId: resolvedNoteId,
+                      targetType: item.targetType,
+                      targetId: item.targetId,
+                    },
+                    lockedNoteIds
+                  );
 
                   let displayTitle = '';
                   let displayBody = '';
 
-                  if (isTask) {
+                  if (isItemLocked) {
+                    displayTitle = LOCKED_MASK_LABEL;
+                    displayBody = 'Tap to unlock and view protected notification.';
+                  } else if (isTask) {
                     displayTitle =
                       taskItem?.title ||
                       (item.body && item.body !== 'Task Reminder' && item.body !== 'Scheduled task' ? item.body : '') ||
@@ -479,6 +503,19 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                     <Pressable
                       key={item.id}
                       onPress={() => {
+                        if (isItemLocked && resolvedNoteId) {
+                          const targetNote = notes.find((n) => n.id === resolvedNoteId);
+                          onClose();
+                          setTimeout(async () => {
+                            if (targetNote) {
+                              const ok = await promptUnlockNote(targetNote, folders);
+                              if (!ok) return;
+                            }
+                            markNotificationAsRead(item.id, true);
+                            onNavigateToTarget?.(item.targetType, item.targetId, resolvedNoteId);
+                          }, 60);
+                          return;
+                        }
                         markNotificationAsRead(item.id, !item.isRead);
                         if (onNavigateToTarget) {
                           onNavigateToTarget(item.targetType, item.targetId, item.noteId);
@@ -525,6 +562,15 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
                               {item.targetType}
                             </Text>
                           </View>
+
+                          {isItemLocked && (
+                            <View className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/15">
+                              <Lock size={10} color="#B18AF3" />
+                              <Text className="text-[10px] font-bold text-purple-400">
+                                Locked
+                              </Text>
+                            </View>
+                          )}
 
                           {/* Recurrence Badge or Relative Duration */}
                           {parsedRule ? (

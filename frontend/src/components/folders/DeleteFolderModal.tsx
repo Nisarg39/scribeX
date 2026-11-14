@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Modal, Pressable, Platform } from 'react-native';
 import { AlertTriangle, Trash2, FolderInput, X, ShieldAlert, Folder } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
@@ -26,6 +26,13 @@ export const DeleteFolderModal: React.FC<DeleteFolderModalProps> = ({
 
   const [noteAction, setNoteAction] = useState<'moveToGeneral' | 'trash'>('moveToGeneral');
   const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setNoteAction('moveToGeneral');
+      setIsDeleting(false);
+    }
+  }, [visible, folderPath]);
 
   if (!visible) return null;
 

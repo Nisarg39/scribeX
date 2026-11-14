@@ -2,8 +2,13 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme, NoteColors } from '../theme';
+import { useSecurity } from '../context';
 import { useNotesStore } from '../state/useNotesStore';
 import { TaskPriority } from '../types/note';
+import {
+  LOCKED_MASK_LABEL,
+  shouldRedactTaskForNote,
+} from '../core/security/vaultLockHelpers';
 import { 
   CheckCircle2, 
   Circle, 
@@ -14,7 +19,8 @@ import {
   Flag,
   Filter,
   Bell,
-  BellRing
+  BellRing,
+  Lock
 } from 'lucide-react-native';
 import { ReminderPickerModal } from './common/ReminderPickerModal';
 import { TaskItem } from '../types/note';
@@ -52,7 +58,26 @@ export interface TasksViewProps {
 export const TasksView: React.FC<TasksViewProps> = ({ focusedTaskId, onClearFocusedTask }) => {
   const router = useRouter();
   const { isDark } = useTheme();
-  const { tasks, addTask, toggleTask, updateTaskPriority, updateTaskDueDate, deleteTask, setTaskReminder } = useNotesStore();
+  const { promptUnlockNote } = useSecurity();
+  const {
+    notes,
+    folders,
+    lockedNoteIds,
+    tasks,
+    addTask,
+    toggleTask,
+    updateTaskPriority,
+    updateTaskDueDate,
+    deleteTask,
+    setTaskReminder,
+  } = useNotesStore();
+
+  const handleUnlockLockedTask = async (noteId?: string) => {
+    if (!noteId) return;
+    const originNote = notes.find((n) => n.id === noteId);
+    if (!originNote) return;
+    await promptUnlockNote(originNote, folders);
+  };
 
   const scrollViewRef = useRef<ScrollView>(null);
   const taskYPositions = useRef<Record<string, number>>({});
@@ -232,7 +257,8 @@ export const TasksView: React.FC<TasksViewProps> = ({ focusedTaskId, onClearFocu
           value={newTaskTitle}
           onChangeText={setNewTaskTitle}
           onSubmitEditing={handleAddTask}
-          className="text-base font-medium text-light-textPrimary dark:text-dark-textPrimary px-2 py-1 mb-2"
+          className="text-base font-medium text-light-textPrimary dark:text-dark-textPrimary px-2 py-1 mb-2 outline-none"
+          style={{ outlineStyle: 'none' } as any}
         />
 
         {/* Bottom Options inside capture box */}
@@ -296,6 +322,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ focusedTaskId, onClearFocu
             const originColor = task.noteColorToken ? NoteColors[task.noteColorToken] : undefined;
             const pConf = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.none;
             const isHighlighted = highlightedTaskId === task.id;
+            const isTaskLocked = shouldRedactTaskForNote(task.noteId, lockedNoteIds);
 
             return (
               <View 
@@ -310,131 +337,154 @@ export const TasksView: React.FC<TasksViewProps> = ({ focusedTaskId, onClearFocu
                 }`}
               >
                 <Pressable
-                  onPress={() => toggleTask(task.id)}
+                  onPress={() => {
+                    if (isTaskLocked) {
+                      handleUnlockLockedTask(task.noteId);
+                    } else {
+                      toggleTask(task.id);
+                    }
+                  }}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: false }}
                   className="flex-1 flex-row items-center gap-3.5 pr-2"
                 >
-                  <Circle 
-                    size={20} 
-                    color={isDark ? '#858585' : '#929292'} 
-                    strokeWidth={2} 
-                  />
+                  {isTaskLocked ? (
+                    <Lock size={19} color={NoteColors.lavender} strokeWidth={2.2} />
+                  ) : (
+                    <Circle 
+                      size={20} 
+                      color={isDark ? '#858585' : '#929292'} 
+                      strokeWidth={2} 
+                    />
+                  )}
 
                   <View className="flex-1">
                     <Text className="text-base font-medium text-light-textPrimary dark:text-dark-textPrimary leading-snug">
-                      {task.title}
+                      {isTaskLocked ? LOCKED_MASK_LABEL : task.title}
                     </Text>
 
                     {/* Metadata & Origin Note Badge */}
                     <View className="flex-row items-center gap-2 mt-1.5 flex-wrap">
-                      {/* Origin Note Pastel Chip */}
-                      {task.noteTitle && (
-                        <Pressable 
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            if (task.noteId) {
-                              router.push(`/note/${task.noteId}`);
-                            }
-                          }}
-                          style={({ pressed }) => [
-                            { backgroundColor: originColor || '#E5F28B' },
-                            pressed ? { transform: [{ scale: 0.95 }] } : undefined,
-                          ]}
-                          className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full"
-                        >
-                          <FileText size={10} color="#191919" />
-                          <Text className="text-[10px] font-bold text-[#191919]">
-                            {task.noteTitle}
+                      {isTaskLocked ? (
+                        <View className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-500/15">
+                          <Lock size={10} color={NoteColors.lavender} />
+                          <Text className="text-[10px] font-bold text-purple-400">
+                            Tap to unlock protected note
                           </Text>
-                        </Pressable>
-                      )}
+                        </View>
+                      ) : (
+                        <>
+                          {/* Origin Note Pastel Chip */}
+                          {task.noteTitle && (
+                            <Pressable 
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                if (task.noteId) {
+                                  router.push(`/note/${task.noteId}`);
+                                }
+                              }}
+                              style={({ pressed }) => [
+                                { backgroundColor: originColor || '#E5F28B' },
+                                pressed ? { transform: [{ scale: 0.95 }] } : undefined,
+                              ]}
+                              className="flex-row items-center gap-1 px-2.5 py-0.5 rounded-full"
+                            >
+                              <FileText size={10} color="#191919" />
+                              <Text className="text-[10px] font-bold text-[#191919]">
+                                {task.noteTitle}
+                              </Text>
+                            </Pressable>
+                          )}
 
-                      {/* Priority Chip with inline cycle on tap */}
-                      {task.priority !== 'none' && (
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            const idx = PRIORITY_ORDER.indexOf(task.priority);
-                            updateTaskPriority(task.id, PRIORITY_ORDER[(idx + 1) % PRIORITY_ORDER.length]);
-                          }}
-                          className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised"
-                        >
-                          <View
-                            style={{ backgroundColor: pConf.color }}
-                            className="w-1.5 h-1.5 rounded-full"
-                          />
-                          <Text
-                            style={{ color: pConf.color }}
-                            className="text-[10px] font-bold uppercase tracking-wider"
-                          >
-                            {pConf.label}
-                          </Text>
-                        </Pressable>
-                      )}
+                          {/* Priority Chip with inline cycle on tap */}
+                          {task.priority !== 'none' && (
+                            <Pressable
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                const idx = PRIORITY_ORDER.indexOf(task.priority);
+                                updateTaskPriority(task.id, PRIORITY_ORDER[(idx + 1) % PRIORITY_ORDER.length]);
+                              }}
+                              className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-light-appBg dark:bg-dark-raised"
+                            >
+                              <View
+                                style={{ backgroundColor: pConf.color }}
+                                className="w-1.5 h-1.5 rounded-full"
+                              />
+                              <Text
+                                style={{ color: pConf.color }}
+                                className="text-[10px] font-bold uppercase tracking-wider"
+                              >
+                                {pConf.label}
+                              </Text>
+                            </Pressable>
+                          )}
 
-                      {/* Due Date Chip */}
-                      {task.dueDate && (
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            const nextDue = task.dueDate === 'Today' ? 'Tomorrow' : task.dueDate === 'Tomorrow' ? 'This Week' : 'Today';
-                            updateTaskDueDate(task.id, nextDue);
-                          }}
-                          className="flex-row items-center gap-1"
-                        >
-                          <Calendar size={11} color={isDark ? '#858585' : '#929292'} />
-                          <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
-                            {task.dueDate}
-                          </Text>
-                        </Pressable>
-                      )}
+                          {/* Due Date Chip */}
+                          {task.dueDate && (
+                            <Pressable
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                const nextDue = task.dueDate === 'Today' ? 'Tomorrow' : task.dueDate === 'Tomorrow' ? 'This Week' : 'Today';
+                                updateTaskDueDate(task.id, nextDue);
+                              }}
+                              className="flex-row items-center gap-1"
+                            >
+                              <Calendar size={11} color={isDark ? '#858585' : '#929292'} />
+                              <Text className="text-xs text-light-textMuted dark:text-dark-textMuted">
+                                {task.dueDate}
+                              </Text>
+                            </Pressable>
+                          )}
 
-                      {/* Scheduled Reminder Chip */}
-                      {task.reminderAt && (
-                        <Pressable
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            setReminderModalTask(task);
-                          }}
-                          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                          className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-lime-500/10 active:scale-95"
-                        >
-                          <BellRing size={11} color="#84CC16" />
-                          <Text className="text-[10px] font-bold text-lime-600 dark:text-lime-400">
-                            {formatReminderChip(task.reminderAt)}
-                          </Text>
-                        </Pressable>
+                          {/* Scheduled Reminder Chip */}
+                          {task.reminderAt && (
+                            <Pressable
+                              onPress={(e) => {
+                                e.stopPropagation();
+                                setReminderModalTask(task);
+                              }}
+                              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                              className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-lime-500/10 active:scale-95"
+                            >
+                              <BellRing size={11} color="#84CC16" />
+                              <Text className="text-[10px] font-bold text-lime-600 dark:text-lime-400">
+                                {formatReminderChip(task.reminderAt)}
+                              </Text>
+                            </Pressable>
+                          )}
+                        </>
                       )}
                     </View>
                   </View>
                 </Pressable>
 
-                <View className="flex-row items-center gap-1">
-                  <Pressable
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    onPress={() => setReminderModalTask(task)}
-                    accessibilityLabel="Set Reminder"
-                    className={`w-8 h-8 rounded-full items-center justify-center active:scale-90 ${
-                      task.reminderAt ? 'opacity-100 bg-lime-500/15' : 'opacity-40 hover:opacity-100'
-                    }`}
-                  >
-                    {task.reminderAt ? (
-                      <BellRing size={15} color="#84CC16" strokeWidth={2.2} />
-                    ) : (
-                      <Bell size={15} color={isDark ? '#B5B5B5' : '#626262'} />
-                    )}
-                  </Pressable>
+                {!isTaskLocked && (
+                  <View className="flex-row items-center gap-1">
+                    <Pressable
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => setReminderModalTask(task)}
+                      accessibilityLabel="Set Reminder"
+                      className={`w-8 h-8 rounded-full items-center justify-center active:scale-90 ${
+                        task.reminderAt ? 'opacity-100 bg-lime-500/15' : 'opacity-40 hover:opacity-100'
+                      }`}
+                    >
+                      {task.reminderAt ? (
+                        <BellRing size={15} color="#84CC16" strokeWidth={2.2} />
+                      ) : (
+                        <Bell size={15} color={isDark ? '#B5B5B5' : '#626262'} />
+                      )}
+                    </Pressable>
 
-                  <Pressable
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    onPress={() => deleteTask(task.id)}
-                    accessibilityLabel="Delete Task"
-                    className="w-8 h-8 rounded-full items-center justify-center opacity-40 hover:opacity-100 active:scale-90"
-                  >
-                    <Trash2 size={16} color={isDark ? '#B5B5B5' : '#626262'} />
-                  </Pressable>
-                </View>
+                    <Pressable
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => deleteTask(task.id)}
+                      accessibilityLabel="Delete Task"
+                      className="w-8 h-8 rounded-full items-center justify-center opacity-40 hover:opacity-100 active:scale-90"
+                    >
+                      <Trash2 size={16} color={isDark ? '#B5B5B5' : '#626262'} />
+                    </Pressable>
+                  </View>
+                )}
               </View>
             );
           })}
@@ -459,6 +509,7 @@ export const TasksView: React.FC<TasksViewProps> = ({ focusedTaskId, onClearFocu
           <View className="gap-2 opacity-60">
             {completedTasks.map((task) => {
               const isHighlighted = highlightedTaskId === task.id;
+              const isTaskLocked = shouldRedactTaskForNote(task.noteId, lockedNoteIds);
 
               return (
                 <View 
@@ -473,30 +524,48 @@ export const TasksView: React.FC<TasksViewProps> = ({ focusedTaskId, onClearFocu
                   }`}
                 >
                 <Pressable
-                  onPress={() => toggleTask(task.id)}
+                  onPress={() => {
+                    if (isTaskLocked) {
+                      handleUnlockLockedTask(task.noteId);
+                    } else {
+                      toggleTask(task.id);
+                    }
+                  }}
                   accessibilityRole="checkbox"
                   accessibilityState={{ checked: true }}
                   className="flex-1 flex-row items-center gap-3.5 pr-2"
                 >
-                  <CheckCircle2 
-                    size={20} 
-                    color={NoteColors.lime} 
-                    strokeWidth={2.2} 
-                  />
+                  {isTaskLocked ? (
+                    <Lock size={19} color={NoteColors.lavender} strokeWidth={2.2} />
+                  ) : (
+                    <CheckCircle2 
+                      size={20} 
+                      color={NoteColors.lime} 
+                      strokeWidth={2.2} 
+                    />
+                  )}
 
-                  <Text className="flex-1 text-base font-medium line-through text-light-textMuted dark:text-dark-textMuted leading-snug">
-                    {task.title}
+                  <Text
+                    className={`flex-1 text-base font-medium leading-snug ${
+                      isTaskLocked
+                        ? 'text-light-textPrimary dark:text-dark-textPrimary'
+                        : 'line-through text-light-textMuted dark:text-dark-textMuted'
+                    }`}
+                  >
+                    {isTaskLocked ? LOCKED_MASK_LABEL : task.title}
                   </Text>
                 </Pressable>
 
-                <Pressable
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  onPress={() => deleteTask(task.id)}
-                  accessibilityLabel="Delete Task"
-                  className="w-8 h-8 rounded-full items-center justify-center opacity-40 hover:opacity-100 active:scale-90"
-                >
-                  <Trash2 size={16} color={isDark ? '#B5B5B5' : '#626262'} />
-                </Pressable>
+                {!isTaskLocked && (
+                  <Pressable
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() => deleteTask(task.id)}
+                    accessibilityLabel="Delete Task"
+                    className="w-8 h-8 rounded-full items-center justify-center opacity-40 hover:opacity-100 active:scale-90"
+                  >
+                    <Trash2 size={16} color={isDark ? '#B5B5B5' : '#626262'} />
+                  </Pressable>
+                )}
                 </View>
               );
             })}

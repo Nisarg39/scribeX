@@ -4,7 +4,8 @@ import { Slot, useRouter } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '../src/theme';
-import { AuthProvider } from '../src/context';
+import { AuthProvider, SecurityProvider, useSecurity } from '../src/context';
+import { AppLockScreenOverlay } from '../src/components/security/AppLockScreenOverlay';
 import { NotesProvider, useNotesStore } from '../src/state/useNotesStore';
 import { shareIngestService } from '../src/services/share/ShareIngestService';
 import { View, Platform } from 'react-native';
@@ -45,6 +46,7 @@ function RootContent() {
   const { isDark } = useTheme();
   const router = useRouter();
   const { addNoteWithBlocks } = useNotesStore();
+  const { isSecurityLoading, isAppLocked, securityConfig, unlockAppWithCredential } = useSecurity();
 
   useEffect(() => {
     const unsubscribeShare = shareIngestService.initialize(
@@ -120,6 +122,27 @@ function RootContent() {
     };
   }, [router]);
 
+  if (isSecurityLoading) {
+    return (
+      <View className="flex-1 bg-light-appBg dark:bg-dark-appBg">
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+      </View>
+    );
+  }
+
+  if (isAppLocked) {
+    return (
+      <View className="flex-1 bg-light-appBg dark:bg-dark-appBg">
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <AppLockScreenOverlay
+          credentialKind={securityConfig.masterCredentialType}
+          masterHint={securityConfig.masterHint}
+          onUnlockAttempt={unlockAppWithCredential}
+        />
+      </View>
+    );
+  }
+
   return (
     <View className="flex-1 bg-light-appBg dark:bg-dark-appBg">
       <StatusBar style={isDark ? 'light' : 'dark'} />
@@ -133,9 +156,11 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ThemeProvider>
         <AuthProvider>
-          <NotesProvider>
-            <RootContent />
-          </NotesProvider>
+          <SecurityProvider>
+            <NotesProvider>
+              <RootContent />
+            </NotesProvider>
+          </SecurityProvider>
         </AuthProvider>
       </ThemeProvider>
     </SafeAreaProvider>

@@ -18,10 +18,12 @@ import {
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
+import { useSecurity } from '../../context';
 import { useNotesStore } from '../../state/useNotesStore';
 import { workspaceBackupService } from '../../services/workspaceBackupService';
 import { shareIngestService } from '../../services/share/ShareIngestService';
 import { RestoreBackupModal } from './RestoreBackupModal';
+import { getAncestorFolderPaths, normalizeFolderPath } from '../../core/security/vaultLockHelpers';
 
 interface WorkspaceSettingsModalProps {
   visible: boolean;
@@ -34,12 +36,23 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
 }) => {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const {
+    refreshSecurityConfig,
+    promptUnlockNote,
+    securityConfig,
+    unlockedNoteIds,
+    unlockedFolderPaths,
+    relockNoteSession,
+    relockFolderSession,
+  } = useSecurity();
 
   const {
     notes,
     folders,
     tasks,
     tags,
+    lockedNoteIds,
+    queryRequest,
     refreshFromDB,
     emptyTrash,
     addNoteWithBlocks,
@@ -115,11 +128,46 @@ OPTION: Run 1 more audit (2 votes)`,
     if (trashedNotesCount === 0 || isPurgingTrash) return;
 
     const executePurge = async () => {
+      const preNoteIds = new Set(unlockedNoteIds);
+      const preFolderPaths = new Set(unlockedFolderPaths);
+      const touchedNoteIds = new Set<string>();
+      const touchedFolderPaths = new Set<string>();
+      const activeFolderPath = normalizeFolderPath(queryRequest.folderPath);
+
       try {
+        const lockedTrashed = notes.filter(
+          (n) => n.status === 'trashed' && lockedNoteIds.has(n.id)
+        );
+        if (lockedTrashed.length > 0) {
+          onClose();
+          for (const lockedCandidate of lockedTrashed) {
+            touchedNoteIds.add(lockedCandidate.id);
+            for (const anc of getAncestorFolderPaths(normalizeFolderPath(lockedCandidate.folderPath))) {
+              touchedFolderPaths.add(anc);
+            }
+            const ok = await promptUnlockNote(lockedCandidate, folders);
+            if (!ok) return;
+          }
+        }
         setIsPurgingTrash(true);
         await emptyTrash();
       } finally {
         setIsPurgingTrash(false);
+        if (securityConfig.autoRelockSeconds === 0) {
+          for (const id of touchedNoteIds) {
+            if (!preNoteIds.has(id)) {
+              relockNoteSession(id);
+            }
+          }
+          for (const fp of touchedFolderPaths) {
+            if (
+              !preFolderPaths.has(fp) &&
+              !(activeFolderPath && (activeFolderPath === fp || activeFolderPath.startsWith(`${fp}/`)))
+            ) {
+              relockFolderSession(fp);
+            }
+          }
+        }
       }
     };
 
@@ -391,7 +439,14 @@ OPTION: Run 1 more audit (2 votes)`,
         visible={isRestoreModalOpen}
         onClose={() => setIsRestoreModalOpen(false)}
         onSuccessRestore={async () => {
+          for (const id of Array.from(unlockedNoteIds)) {
+            relockNoteSession(id);
+          }
+          for (const fp of Array.from(unlockedFolderPaths)) {
+            relockFolderSession(fp);
+          }
           await refreshFromDB();
+          await refreshSecurityConfig();
         }}
       />
     </>

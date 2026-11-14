@@ -11,15 +11,20 @@ import {
   X,
   FolderTree,
   Tag,
+  Lock,
 } from 'lucide-react-native';
 import { DBFolder } from '../../db/types';
 import { NoteColors, NoteColorToken } from '../../theme/tokens';
 import { NoteQueryRequest, NotePartitionCounts, NoteStatusScope } from '../../core/noteQueryEngine';
+import { buildFolderMapByPath, isFolderEffectivelyLocked } from '../../core/security/vaultLockHelpers';
+
+const EMPTY_UNLOCKED_SET: ReadonlySet<string> = new Set();
 
 export interface NotesFilterTrackProps {
   queryRequest: NoteQueryRequest;
   partitionCounts: NotePartitionCounts;
   isDark: boolean;
+  folders?: DBFolder[];
   pinnedFolders: DBFolder[];
   activeFolderObj?: DBFolder | null;
   activeFolderColor?: string | null;
@@ -37,6 +42,7 @@ export const NotesFilterTrack: React.FC<NotesFilterTrackProps> = ({
   queryRequest,
   partitionCounts,
   isDark,
+  folders = [],
   pinnedFolders,
   activeFolderObj,
   activeFolderColor,
@@ -49,6 +55,13 @@ export const NotesFilterTrack: React.FC<NotesFilterTrackProps> = ({
   onOpenFolderExplorer,
   onOpenFolderActions,
 }) => {
+  const folderLockMap = React.useMemo(() => buildFolderMapByPath(folders), [folders]);
+  const isActiveFolderLocked = Boolean(
+    activeFolderObj?.is_locked ||
+      (queryRequest.folderPath &&
+        isFolderEffectivelyLocked(queryRequest.folderPath, folderLockMap, EMPTY_UNLOCKED_SET))
+  );
+
   return (
     <ScrollView
       horizontal
@@ -253,6 +266,9 @@ export const NotesFilterTrack: React.FC<NotesFilterTrackProps> = ({
           {Boolean(activeFolderObj?.is_archived) && (
             <Archive size={10} color={isDark ? '#111111' : '#06B6D4'} />
           )}
+          {isActiveFolderLocked && (
+            <Lock size={10} color={isDark ? '#111111' : '#B18AF3'} />
+          )}
 
           {/* Manage folder actions button */}
           <Pressable
@@ -346,6 +362,9 @@ export const NotesFilterTrack: React.FC<NotesFilterTrackProps> = ({
               color={isSelected ? (isDark ? '#111111' : '#FFC96F') : '#FFC96F'}
               fill={isSelected ? (isDark ? '#111111' : '#FFC96F') : '#FFC96F'}
             />
+            {Boolean(folder.is_locked || isFolderEffectivelyLocked(folderKey, folderLockMap, EMPTY_UNLOCKED_SET)) && (
+              <Lock size={10} color={isSelected ? (isDark ? '#111111' : '#B18AF3') : '#B18AF3'} />
+            )}
 
             {/* If selected, show Manage & Clear buttons */}
             {isSelected && (

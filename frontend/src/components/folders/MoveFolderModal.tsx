@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Text, Modal, Pressable, ScrollView } from 'react-native';
 import { FolderInput, X, Folder, ChevronRight, CornerDownRight, Check } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
@@ -32,6 +32,14 @@ export const MoveFolderModal: React.FC<MoveFolderModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (visible) {
+      setSelectedParent(currentParentPath);
+      setIsSubmitting(false);
+      setErrorMsg(null);
+    }
+  }, [visible, currentParentPath]);
+
   // Filter out invalid destinations (self and all descendants to prevent cyclic graphs)
   const validParentOptions = useMemo(() => {
     return allFolderPaths.filter((path) => {
@@ -56,6 +64,7 @@ export const MoveFolderModal: React.FC<MoveFolderModalProps> = ({
       onClose();
     } catch (err: any) {
       setErrorMsg(err?.message || 'Failed to move folder');
+    } finally {
       setIsSubmitting(false);
     }
   };

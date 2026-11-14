@@ -1,9 +1,15 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, Pressable, ScrollView, Platform, KeyboardAvoidingView } from 'react-native';
+import { View, Text, TextInput, Pressable, ScrollView, Platform, KeyboardAvoidingView, Alert } from 'react-native';
 import { NoteItem } from '../../types/note';
 import { useTheme, NoteColors } from '../../theme';
-import { Folder, Upload, Tag, Plus, X, ChevronDown } from 'lucide-react-native';
+import { Folder, Upload, Tag, Plus, X, ChevronDown, Lock } from 'lucide-react-native';
+import { useSecurity } from '../../context';
 import { useNotesStore } from '../../state/useNotesStore';
+import {
+  getAncestorFolderPaths,
+  isFolderEffectivelyLocked,
+  normalizeFolderPath,
+} from '../../core/security/vaultLockHelpers';
 import { ReminderPickerModal } from '../common/ReminderPickerModal';
 import { BlockRenderer } from './BlockRenderer';
 import {
@@ -34,7 +40,23 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
   onNoteDeleted,
 }) => {
   const { isDark } = useTheme();
-  const { folders, createFolder, archiveNote, unarchiveNote, setNoteReminder } = useNotesStore();
+  const {
+    unlockedFolderPaths,
+    relockNoteSession,
+    relockFolderSession,
+    promptUnlockFolder,
+    promptConfigureLock,
+    promptVerifyTargetCredential,
+  } = useSecurity();
+  const {
+    folders,
+    createFolder,
+    archiveNote,
+    unarchiveNote,
+    setNoteReminder,
+    lockNote,
+    unlockNoteForever,
+  } = useNotesStore();
   const [isReminderModalVisible, setIsReminderModalVisible] = useState(false);
   const [isInsertPaletteOpen, setIsInsertPaletteOpen] = useState(false);
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
@@ -53,6 +75,78 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
       setIsArchived(true);
       onNoteUpdated({ ...note, status: 'archived' });
     }
+  };
+
+  const ancestorPaths = getAncestorFolderPaths(note.folderPath);
+  const lockedAncestorFolders = folders.filter(
+    (f) => f.is_locked === 1 && ancestorPaths.includes(normalizeFolderPath(f.path))
+  );
+
+  const handleManageNoteLock = async () => {
+    if (note.id.startsWith('draft-')) {
+      Alert.alert(
+        'Save Note First',
+        'Add a title or block content first so this note is saved before adding a lock.'
+      );
+      return;
+    }
+
+    if (!note.isLocked) {
+      const payload = await promptConfigureLock({
+        targetLabel: title.trim() || note.title || 'Untitled Note',
+        entityType: 'note',
+      });
+      if (!payload) return;
+      const computed = await lockNote(note.id, payload, { keepSessionUnlocked: true });
+      onNoteUpdated({
+        ...note,
+        isLocked: true,
+        lockType: computed ? computed.lockType : payload.lockType,
+        lockCredentialKind: (computed ? computed.lockCredentialKind : payload.credentialKind) || undefined,
+        lockHash: computed?.lockHash || undefined,
+        lockSalt: computed?.lockSalt || undefined,
+        lockHint: (computed ? computed.lockHint : payload.hint) || undefined,
+      });
+      return;
+    }
+
+    // Already locked: let user remove lock cleanly (after strict verification)
+    const lockType = note.lockType === 'custom' ? 'custom' : 'master';
+    const verified = await promptVerifyTargetCredential({
+      title: `Remove Lock: "${title.trim() || note.title || 'Untitled Note'}"`,
+      subtitle:
+        lockType === 'custom'
+          ? 'Enter this note’s Custom PIN or Password to unlock it permanently.'
+          : 'Enter your Master credential to permanently remove this note’s lock.',
+      lockType,
+      credentialKind: note.lockCredentialKind,
+      customHash: note.lockHash,
+      customSalt: note.lockSalt,
+      hint: note.lockHint,
+      rateLimitKey: `note:${note.id}`,
+      confirmLabel: 'Remove Lock',
+    });
+    if (!verified) return;
+    await unlockNoteForever(note.id);
+    onNoteUpdated({
+      ...note,
+      isLocked: false,
+      lockType: undefined,
+      lockCredentialKind: undefined,
+      lockHash: undefined,
+      lockSalt: undefined,
+      lockHint: undefined,
+    });
+  };
+
+  const handleRelockNow = () => {
+    if (note.isLocked) {
+      relockNoteSession(note.id);
+    }
+    for (const lf of lockedAncestorFolders) {
+      relockFolderSession(lf.path);
+    }
+    onClose();
   };
 
   // 1. Note Container & Block Mutations Hook (with 3-tier action history & pristine draft protection)
@@ -255,8 +349,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
         isPinned={isPinned}
         isFavorite={isFavorite}
         isArchived={isArchived}
+        isLocked={Boolean(note.isLocked)}
+        isFolderLocked={lockedAncestorFolders.length > 0}
         reminderAt={note.reminderAt}
         onSetReminder={() => setIsReminderModalVisible(true)}
+        onManageLock={handleManageNoteLock}
+        onRelockNow={handleRelockNow}
         onClose={onClose}
         onColorChange={handleColorChange}
         onTogglePin={handleTogglePin}
@@ -431,13 +529,22 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
 
               {/* Folders List */}
               <View className="gap-1 mb-2.5 max-h-48">
-                {Array.from(new Set(['General', ...folders.map((f) => f.name || f.path)])).map((folderName) => {
-                  const isCurrent = folderPath === folderName;
+                {Array.from(new Set(['General', ...folders.map((f) => f.path || f.name)])).map((folderName) => {
+                  const cleanTarget = normalizeFolderPath(folderName);
+                  const isCurrent = normalizeFolderPath(folderPath) === cleanTarget;
+                  const targetAncestors = getAncestorFolderPaths(cleanTarget);
+                  const isProtectedFolder = folders.some(
+                    (f) => f.is_locked === 1 && targetAncestors.includes(normalizeFolderPath(f.path))
+                  );
                   return (
                     <Pressable
                       key={folderName}
-                      onPress={() => {
-                        handleFolderPathChange(folderName);
+                      onPress={async () => {
+                        if (isFolderEffectivelyLocked(cleanTarget, folders, unlockedFolderPaths)) {
+                          const ok = await promptUnlockFolder(cleanTarget, folders);
+                          if (!ok) return;
+                        }
+                        handleFolderPathChange(cleanTarget);
                         setIsFolderPickerOpen(false);
                       }}
                       className={`flex-row items-center justify-between px-3 py-2 rounded-xl ${
@@ -457,6 +564,7 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                         >
                           {folderName}
                         </Text>
+                        {isProtectedFolder && <Lock size={11} color="#B18AF3" />}
                       </View>
                       {isCurrent && <Text className="text-[10px] text-cyan-400 font-bold">Active</Text>}
                     </Pressable>
@@ -472,8 +580,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                   value={newFolderInput}
                   onChangeText={setNewFolderInput}
                   onSubmitEditing={async () => {
-                    const clean = newFolderInput.trim();
+                    const clean = normalizeFolderPath(newFolderInput);
                     if (clean) {
+                      if (isFolderEffectivelyLocked(clean, folders, unlockedFolderPaths)) {
+                        const ok = await promptUnlockFolder(clean, folders);
+                        if (!ok) return;
+                      }
                       await createFolder(clean);
                       handleFolderPathChange(clean);
                       setNewFolderInput('');
@@ -484,8 +596,12 @@ export const BlockEditor: React.FC<BlockEditorProps> = ({
                 />
                 <Pressable
                   onPress={async () => {
-                    const clean = newFolderInput.trim();
+                    const clean = normalizeFolderPath(newFolderInput);
                     if (clean) {
+                      if (isFolderEffectivelyLocked(clean, folders, unlockedFolderPaths)) {
+                        const ok = await promptUnlockFolder(clean, folders);
+                        if (!ok) return;
+                      }
                       await createFolder(clean);
                       handleFolderPathChange(clean);
                       setNewFolderInput('');

@@ -22,11 +22,13 @@ import {
   Star,
   Archive,
   Trash2,
+  Lock,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { BlockType } from '../../types/note';
 import { DBFolder } from '../../db/types';
 import { NoteStatusScope, NoteQueryRequest } from '../../core/noteQueryEngine';
+import { getAncestorFolderPaths, normalizeFolderPath } from '../../core/security/vaultLockHelpers';
 
 interface FilterOptionItem {
   id: BlockType;
@@ -263,6 +265,14 @@ export const NotesFilterModal: React.FC<NotesFilterModalProps> = ({
 
                   {folders.map((f) => {
                     const isSelected = activeFolderPath === f.path;
+                    const anc = getAncestorFolderPaths(f.path);
+                    const hasLock = Boolean(
+                      f.is_locked === 1 ||
+                        folders.some(
+                          (parent) =>
+                            parent.is_locked === 1 && anc.includes(normalizeFolderPath(parent.path))
+                        )
+                    );
                     return (
                       <Pressable
                         key={f.id}
@@ -286,6 +296,7 @@ export const NotesFilterModal: React.FC<NotesFilterModalProps> = ({
                         >
                           {f.name || f.path}
                         </Text>
+                        {hasLock && <Lock size={10} color="#B18AF3" />}
                       </Pressable>
                     );
                   })}

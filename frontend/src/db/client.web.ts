@@ -178,6 +178,27 @@ export class WebDatabaseClient {
         try {
           db.exec('CREATE INDEX IF NOT EXISTS idx_folders_flags ON folders(is_favorite, is_pinned, is_archived);');
         } catch {}
+        const securityAlterStatements = [
+          'ALTER TABLE notes ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0;',
+          "ALTER TABLE notes ADD COLUMN lock_type TEXT CHECK(lock_type IN ('master', 'custom')) DEFAULT NULL;",
+          "ALTER TABLE notes ADD COLUMN lock_credential_kind TEXT CHECK(lock_credential_kind IN ('pin', 'password')) DEFAULT NULL;",
+          'ALTER TABLE notes ADD COLUMN lock_hash TEXT DEFAULT NULL;',
+          'ALTER TABLE notes ADD COLUMN lock_salt TEXT DEFAULT NULL;',
+          'ALTER TABLE notes ADD COLUMN lock_hint TEXT DEFAULT NULL;',
+          'ALTER TABLE folders ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0;',
+          "ALTER TABLE folders ADD COLUMN lock_type TEXT CHECK(lock_type IN ('master', 'custom')) DEFAULT NULL;",
+          "ALTER TABLE folders ADD COLUMN lock_credential_kind TEXT CHECK(lock_credential_kind IN ('pin', 'password')) DEFAULT NULL;",
+          'ALTER TABLE folders ADD COLUMN lock_hash TEXT DEFAULT NULL;',
+          'ALTER TABLE folders ADD COLUMN lock_salt TEXT DEFAULT NULL;',
+          'ALTER TABLE folders ADD COLUMN lock_hint TEXT DEFAULT NULL;',
+          'CREATE INDEX IF NOT EXISTS idx_notes_locked ON notes(is_locked);',
+          'CREATE INDEX IF NOT EXISTS idx_folders_locked ON folders(is_locked);',
+        ];
+        for (const stmt of securityAlterStatements) {
+          try {
+            db.run(stmt);
+          } catch {}
+        }
       } else {
         db = new SQL.Database();
         // Initialize standard schema

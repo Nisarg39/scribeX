@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS folders (
   is_favorite BOOLEAN NOT NULL DEFAULT 0,
   is_pinned BOOLEAN NOT NULL DEFAULT 0,
   is_archived BOOLEAN NOT NULL DEFAULT 0,
+  is_locked INTEGER NOT NULL DEFAULT 0,
+  lock_type TEXT CHECK(lock_type IN ('master', 'custom')) DEFAULT NULL,
+  lock_credential_kind TEXT CHECK(lock_credential_kind IN ('pin', 'password')) DEFAULT NULL,
+  lock_hash TEXT DEFAULT NULL,
+  lock_salt TEXT DEFAULT NULL,
+  lock_hint TEXT DEFAULT NULL,
   sync_rev INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -47,6 +53,12 @@ CREATE TABLE IF NOT EXISTS notes (
   status TEXT CHECK(status IN ('active', 'archived', 'trashed')) NOT NULL DEFAULT 'active',
   priority_score REAL DEFAULT 0.0,
   reminder_at TEXT,
+  is_locked INTEGER NOT NULL DEFAULT 0,
+  lock_type TEXT CHECK(lock_type IN ('master', 'custom')) DEFAULT NULL,
+  lock_credential_kind TEXT CHECK(lock_credential_kind IN ('pin', 'password')) DEFAULT NULL,
+  lock_hash TEXT DEFAULT NULL,
+  lock_salt TEXT DEFAULT NULL,
+  lock_hint TEXT DEFAULT NULL,
   sync_rev INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -174,11 +186,25 @@ CREATE TABLE IF NOT EXISTS in_app_notifications (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- 12. Workspace-level Master Security Configuration
+CREATE TABLE IF NOT EXISTS workspace_security (
+  id TEXT PRIMARY KEY DEFAULT 'default',
+  app_lock_enabled INTEGER NOT NULL DEFAULT 0,
+  master_credential_type TEXT CHECK(master_credential_type IN ('pin', 'password')) DEFAULT NULL,
+  master_hash TEXT DEFAULT NULL,
+  master_salt TEXT DEFAULT NULL,
+  master_hint TEXT DEFAULT NULL,
+  biometrics_enabled INTEGER NOT NULL DEFAULT 0,
+  auto_relock_seconds INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Sub-5ms Performance Query Indexes
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status);
 CREATE INDEX IF NOT EXISTS idx_notes_favorite ON notes(is_favorite);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_locked ON notes(is_locked);
 CREATE INDEX IF NOT EXISTS idx_tasks_note ON tasks(note_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(is_completed);
 CREATE INDEX IF NOT EXISTS idx_relations_source ON entity_relations(source_id);
@@ -191,4 +217,5 @@ CREATE INDEX IF NOT EXISTS idx_reminders_sync ON reminders(sync_rev);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON in_app_notifications(user_id, is_read, is_cleared);
 CREATE INDEX IF NOT EXISTS idx_notifications_trigger ON in_app_notifications(trigger_at);
 CREATE INDEX IF NOT EXISTS idx_folders_flags ON folders(is_favorite, is_pinned, is_archived);
+CREATE INDEX IF NOT EXISTS idx_folders_locked ON folders(is_locked);
 `;

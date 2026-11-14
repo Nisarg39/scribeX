@@ -115,7 +115,8 @@ export const RenameFolderModal: React.FC<RenameFolderModalProps> = ({
             onSubmitEditing={handleSave}
             placeholder="Enter new folder name..."
             placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
-            className="text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary px-3.5 py-2.5 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10 mb-2"
+            className="text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary px-3.5 py-2.5 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10 mb-2 outline-none"
+            style={{ outlineStyle: 'none' } as any}
           />
 
           {/* Path Preview */}

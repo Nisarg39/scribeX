@@ -11,12 +11,16 @@ import {
   Star,
   Pin,
   Archive,
+  Lock,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { DBFolder } from '../../db/types';
 import { NoteItem } from '../../types/note';
 import { NoteColors, NoteColorToken } from '../../theme/tokens';
 import { renderFolderIcon } from './FolderActionSheet';
+import { buildFolderMapByPath, isFolderEffectivelyLocked } from '../../core/security/vaultLockHelpers';
+
+const EMPTY_UNLOCKED_SET: ReadonlySet<string> = new Set();
 
 interface FolderExplorerModalProps {
   visible: boolean;
@@ -52,6 +56,7 @@ export const FolderExplorerModal: React.FC<FolderExplorerModalProps> = ({
   const isDark = colorScheme === 'dark';
 
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(new Set());
+  const folderLockMap = useMemo(() => buildFolderMapByPath(folders), [folders]);
 
   // Build tree from notes and folders
   const rootTree = useMemo(() => {
@@ -205,6 +210,10 @@ export const FolderExplorerModal: React.FC<FolderExplorerModalProps> = ({
                 )}
                 {Boolean(node.folderRecord?.is_archived) && (
                   <Archive size={11} color="#06B6D4" />
+                )}
+                {(Boolean(node.folderRecord?.is_locked) ||
+                  isFolderEffectivelyLocked(node.fullPath, folderLockMap, EMPTY_UNLOCKED_SET)) && (
+                  <Lock size={11} color="#B18AF3" />
                 )}
               </View>
               <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted" numberOfLines={1}>

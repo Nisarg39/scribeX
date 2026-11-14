@@ -1,23 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTheme } from '../../src/theme';
+import { useTheme, NoteColors } from '../../src/theme';
+import { useSecurity } from '../../src/context';
 import { useNotesStore } from '../../src/state/useNotesStore';
 import { notesRepo } from '../../src/db/notesRepo';
 import { NoteItem } from '../../src/types/note';
 import { BlockEditor } from '../../src/components/editor/BlockEditor';
-import { ArrowLeft, FileQuestion } from 'lucide-react-native';
+import { inspectNoteLockState } from '../../src/core/security/vaultLockHelpers';
+import { ArrowLeft, FileQuestion, Lock, ShieldCheck } from 'lucide-react-native';
 
 export default function NoteEditorScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isDark } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { notes, updateNote, deleteNote, addNote, refreshFromDB } = useNotesStore();
+  const {
+    unlockedNoteIds,
+    unlockedFolderPaths,
+    promptUnlockNote,
+    relockNoteOnEditorExit,
+  } = useSecurity();
+  const { notes, folders, updateNote, deleteNote, refreshFromDB } = useNotesStore();
 
   const [localNote, setLocalNote] = useState<NoteItem | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(true);
+  const didAutoPromptRef = useRef<string | null>(null);
+  const isClosingRef = useRef<boolean>(false);
 
   // Look up note from store or directly from repository
   useEffect(() => {
@@ -100,7 +110,42 @@ export default function NoteEditorScreen() {
     };
   }, [id]);
 
+  // Immediate-on-exit auto-relock lifecycle when leaving the Note Editor
+  useEffect(() => {
+    const activeId = localNote?.id;
+    return () => {
+      isClosingRef.current = true;
+      if (activeId && !activeId.startsWith('draft-')) {
+        relockNoteOnEditorExit(activeId);
+      }
+    };
+  }, [localNote?.id, relockNoteOnEditorExit]);
+
+  const lockInspection =
+    localNote && !localNote.id.startsWith('draft-')
+      ? inspectNoteLockState(localNote, folders, unlockedNoteIds, unlockedFolderPaths)
+      : null;
+  const isRouteNoteLocked = Boolean(lockInspection?.isEffectivelyLocked);
+
+  // If navigated directly to a locked note (e.g., notification/deep-link/URL), prompt immediately once
+  useEffect(() => {
+    if (
+      !isClosingRef.current &&
+      !isResolving &&
+      localNote &&
+      isRouteNoteLocked &&
+      didAutoPromptRef.current !== localNote.id
+    ) {
+      didAutoPromptRef.current = localNote.id;
+      promptUnlockNote(localNote, folders);
+    }
+  }, [isResolving, localNote, isRouteNoteLocked, folders, promptUnlockNote]);
+
   const handleClose = () => {
+    isClosingRef.current = true;
+    if (localNote?.id && !localNote.id.startsWith('draft-')) {
+      relockNoteOnEditorExit(localNote.id);
+    }
     refreshFromDB();
     if (router.canGoBack()) {
       router.back();
@@ -167,6 +212,66 @@ export default function NoteEditorScreen() {
             Back to Notes
           </Text>
         </Pressable>
+      </View>
+    );
+  }
+
+  // Locked Note Gate — never mounts BlockEditor / sensitive body until verified
+  if (isRouteNoteLocked) {
+    return (
+      <View
+        className="flex-1 bg-light-surface dark:bg-dark-surface items-center justify-center px-7"
+        style={{
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        }}
+      >
+        <View
+          className="w-16 h-16 rounded-2xl items-center justify-center mb-5 border"
+          style={{
+            backgroundColor: isDark ? '#303030' : '#F8FAFC',
+            borderColor: isDark ? '#3A3A3A' : '#E8E8E8',
+          }}
+        >
+          <Lock size={28} color={NoteColors.lavender} strokeWidth={2.2} />
+        </View>
+
+        <Text
+          className="text-2xl font-black text-light-textPrimary dark:text-dark-textPrimary tracking-tight text-center mb-1.5"
+        >
+          {localNote.title || 'Protected Note'}
+        </Text>
+
+        <Text className="text-sm text-light-textSecondary dark:text-dark-textSecondary text-center max-w-sm mb-6">
+          {lockInspection?.lockReason === 'folder' && lockInspection.blockingFolders.length > 0
+            ? `Protected inside locked folder "${lockInspection.blockingFolders[0].path}".`
+            : localNote.lockType === 'custom'
+            ? 'This note is locked with a Custom PIN or Password.'
+            : 'Enter your Master Credential to view or edit this note.'}
+        </Text>
+
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={handleClose}
+            accessibilityLabel="Back to Notes"
+            className="flex-row items-center gap-2 px-5 py-3 rounded-full bg-light-border dark:bg-dark-raised active:opacity-80"
+          >
+            <ArrowLeft size={16} color={isDark ? '#F7F7F7' : '#171717'} strokeWidth={2.2} />
+            <Text className="text-sm font-bold text-light-textPrimary dark:text-dark-textPrimary">
+              Back
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => promptUnlockNote(localNote, folders)}
+            accessibilityLabel="Unlock Note"
+            style={{ backgroundColor: NoteColors.lavender }}
+            className="flex-row items-center gap-2 px-6 py-3 rounded-full active:opacity-85"
+          >
+            <ShieldCheck size={17} color="#171717" strokeWidth={2.3} />
+            <Text className="text-sm font-extrabold text-[#171717]">Unlock Note</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }

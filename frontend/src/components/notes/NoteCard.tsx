@@ -25,6 +25,9 @@ import {
   Folder,
   Tag,
   BellRing,
+  Lock,
+  LockOpen,
+  Shield,
 } from 'lucide-react-native';
 
 export interface NoteCardProps {
@@ -32,9 +35,11 @@ export interface NoteCardProps {
   isPinnedShelfCard?: boolean;
   isSelectionMode?: boolean;
   isSelected?: boolean;
+  isEffectivelyLocked?: boolean;
   onOpenNote: (note: NoteItem) => void;
   onTogglePin: (noteId: string) => void;
   onToggleFavorite: (noteId: string) => void;
+  onToggleLock?: (note: NoteItem) => void;
   onRestoreNote: (noteId: string) => void;
   onPermanentlyDeleteNote: (noteId: string) => void;
   onUnarchiveNote: (noteId: string) => void;
@@ -88,9 +93,11 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   isPinnedShelfCard = false,
   isSelectionMode = false,
   isSelected = false,
+  isEffectivelyLocked = false,
   onOpenNote,
   onTogglePin,
   onToggleFavorite,
+  onToggleLock,
   onRestoreNote,
   onPermanentlyDeleteNote,
   onUnarchiveNote,
@@ -101,6 +108,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({
   const pastelHex = NoteColors[note.colorToken] || '#FFC96F';
   const isTrashed = note.status === 'trashed';
   const isArchived = note.status === 'archived';
+  const isDirectlyLocked = Boolean(note.isLocked);
+  const isMasked = isEffectivelyLocked;
 
   return (
     <View className="w-full sm:w-1/2 lg:w-1/3 p-2.5">
@@ -199,6 +208,30 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           ) : (
             !isTrashed && (
               <View className="flex-row items-center gap-1">
+                {onToggleLock && (
+                  <Pressable
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      onToggleLock(note);
+                    }}
+                    hitSlop={8}
+                    accessibilityLabel={isDirectlyLocked ? 'Manage Note Lock' : 'Lock Note'}
+                    className="w-7 h-7 rounded-full items-center justify-center active:scale-90"
+                    style={{
+                      backgroundColor:
+                        isMasked || isDirectlyLocked ? 'rgba(25, 25, 25, 0.14)' : 'transparent',
+                    }}
+                  >
+                    {isMasked ? (
+                      <Lock size={14} color="#191919" strokeWidth={2.3} />
+                    ) : isDirectlyLocked ? (
+                      <LockOpen size={14} color="#191919" strokeWidth={2.2} />
+                    ) : (
+                      <Lock size={14} color="rgba(25, 25, 25, 0.4)" strokeWidth={2} />
+                    )}
+                  </Pressable>
+                )}
+
                 <Pressable
                   onPress={(e) => {
                     e.stopPropagation();
@@ -236,21 +269,35 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           )}
         </View>
 
-        {/* Note Title & Clean Human-Readable Preview */}
+        {/* Note Title & Clean Human-Readable Preview (or Redacted Lock Shield) */}
         <View style={{ flexGrow: 1, flexShrink: 0 }} className="mb-3">
           <Text className="text-xl font-bold text-[#191919] tracking-tight mb-1.5 leading-tight">
             {note.title}
           </Text>
-          <Text
-            numberOfLines={3}
-            className="text-sm text-[#191919]/80 leading-relaxed font-normal"
-          >
-            {cleanPreviewText}
-          </Text>
+          {isMasked ? (
+            <View className="flex-row items-center gap-2 self-start px-3 py-2 rounded-2xl bg-black/10 mt-1">
+              <Shield size={15} color="#191919" strokeWidth={2.3} />
+              <Text className="text-xs font-extrabold text-[#191919] tracking-tight">
+                Locked
+              </Text>
+              <Text className="text-[11px] font-medium text-[#191919]/75">
+                {note.lockType === 'custom'
+                  ? 'Custom PIN/Password'
+                  : 'Protected Content'}
+              </Text>
+            </View>
+          ) : (
+            <Text
+              numberOfLines={3}
+              className="text-sm text-[#191919]/80 leading-relaxed font-normal"
+            >
+              {cleanPreviewText}
+            </Text>
+          )}
         </View>
 
-        {/* Contextual Match Badge (Shown when matched by Search or Block-Type Filter) */}
-        {matchBadge && (
+        {/* Contextual Match Badge (Hidden when locked so snippets cannot leak) */}
+        {!isMasked && matchBadge && (
           <View className="flex-row items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#111111]/85 mb-3">
             {renderMatchBadgeIcon(matchBadge.iconType)}
             <Text
@@ -262,8 +309,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({
           </View>
         )}
 
-        {/* Tag Chips */}
-        {note.tags && note.tags.length > 0 && (
+        {/* Tag Chips (Hidden while locked) */}
+        {!isMasked && note.tags && note.tags.length > 0 && (
           <View className="flex-row flex-wrap gap-1 mb-3">
             {note.tags.map((t) => (
               <View key={t} className="px-2 py-0.5 rounded-full bg-black/10">
@@ -279,7 +326,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({
             <Text className="text-xs font-medium text-[#191919]/60">
               {formatNoteCardDate(note.createdAt)}
             </Text>
-            {note.reminderAt && (
+            {!isMasked && note.reminderAt && (
               <View className="flex-row items-center gap-1 px-2 py-0.5 rounded-full bg-black/10">
                 <BellRing size={10} color="#191919" />
                 <Text className="text-[10px] font-bold text-[#191919]">

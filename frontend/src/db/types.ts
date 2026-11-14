@@ -6,6 +6,33 @@
 import { NoteColorToken } from '../theme/tokens';
 import { ComposableBlock, RelationType, TaskPriority } from '../types/note';
 import { ReminderTargetType } from '../types/reminder';
+import { CredentialKind, LockType } from '../core/security/pinCrypto';
+
+export type { CredentialKind, LockType };
+
+export interface DBWorkspaceSecurity {
+  id: string;
+  app_lock_enabled: number; // 0 or 1
+  master_credential_type: CredentialKind | null;
+  master_hash: string | null;
+  master_salt: string | null;
+  master_hint: string | null;
+  biometrics_enabled: number; // 0 or 1
+  auto_relock_seconds: number; // 0 = immediate, -1 = on background, >0 = seconds
+  updated_at: string;
+}
+
+export interface WorkspaceSecurityConfig {
+  id: string;
+  appLockEnabled: boolean;
+  masterCredentialType: CredentialKind | null;
+  masterHash: string | null;
+  masterSalt: string | null;
+  masterHint: string | null;
+  biometricsEnabled: boolean;
+  autoRelockSeconds: number;
+  updatedAt: string;
+}
 
 // Database Row Types (Matching SQLite columns exactly)
 export interface DBFolder {
@@ -19,6 +46,12 @@ export interface DBFolder {
   is_favorite: number; // 0 or 1
   is_pinned: number; // 0 or 1
   is_archived: number; // 0 or 1
+  is_locked?: number; // 0 or 1
+  lock_type?: LockType | null;
+  lock_credential_kind?: CredentialKind | null;
+  lock_hash?: string | null;
+  lock_salt?: string | null;
+  lock_hint?: string | null;
   sync_rev: number;
   created_at: string;
   updated_at: string;
@@ -47,6 +80,12 @@ export interface DBNote {
   status: 'active' | 'archived' | 'trashed';
   priority_score: number;
   reminder_at: string | null;
+  is_locked?: number; // 0 or 1
+  lock_type?: LockType | null;
+  lock_credential_kind?: CredentialKind | null;
+  lock_hash?: string | null;
+  lock_salt?: string | null;
+  lock_hint?: string | null;
   sync_rev: number;
   created_at: string;
   updated_at: string;
@@ -263,6 +302,8 @@ export interface FolderTreeNode {
   isFavorite?: boolean;
   isPinned?: boolean;
   isArchived?: boolean;
+  isLocked?: boolean;
+  lockType?: LockType | null;
   children: FolderTreeNode[];
   noteCount?: number;
 }

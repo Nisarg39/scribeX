@@ -41,7 +41,10 @@ Remaining Tasks to fix
 32 - [x] Add favourites, pinned and archive feature for folders as well as specified in docs/Folder_Favourites_Pinned_Archive_Plan.md (COMPLETED)
 33 - [x] Add Offline Notifications and InApp Notification Center as specified in docs/Offline_Notifications_and_InApp_Notification_Center_Plan.md (COMPLETED)
 34 - [x] Add Reminder & Recurrence Support for Tasks as specified in docs/Reminder_and_Recurrence_Specs.md (COMPLETED)
-35 - [] Adding whatsapp export chat to be stored in a new note 
+35 - [x] Adding whatsapp export chat to be stored in a new note (COMPLETED)
+36 - [x] add a pin/password protection feature for individual notes, folder or on start of the app even if the user is logged in or using the skip login option . we will need to add a side navbar in the ui and give this option there for app and for notes and folders we should provide in their respective menu options and in the app lock configuration screen which we will create and navigate it through sidebar settings screen we will list all the notes and folders that have been locked and will provide options to lock/unlock them (SPECIFIED IN docs/Pin_and_Password_Protection_Plan.md) (COMPLETED).
+37 - [ ] Pre-Seeded Interactive 'Welcome to ScribeX' Starter Note: On first launch when the database is empty, automatically seed a beautifully formatted starter note demonstrating the 42 input blocks, slash commands (/), pastel color tokens, KaTeX math formulas, interactive checklists, sample callouts, and offline reminder tips so first-time users can immediately explore the canvas without facing a blank screen.
+
 
 
 Long term Ideas
@@ -58,4 +61,7 @@ Long term Ideas
 
 6 - [] Adding a section of connector in the system where the app can connect to various apps and services to fetch or send data to them, using APIs.
 
-7 - [] impliment whatsapp chat sharing and saving as a note feature using bailey 
+7 - [ ] Outbound WhatsApp Task/Note Reminders via Meta Cloud API: Scheduled via Supabase pg_cron & Edge Functions on reminder trigger, delivering interactive alerts directly to user's configured WhatsApp number
+
+8 - [ ] giving an option to the user to manage the context provided to AI assistant on notes and folder level which will stored in database so that AI assistant cannot have context of that note or folder.
+

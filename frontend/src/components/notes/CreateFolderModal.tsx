@@ -226,7 +226,8 @@ export const CreateFolderModal: React.FC<CreateFolderModalProps> = ({
             onChangeText={setNewFolderName}
             autoFocus
             onSubmitEditing={onCreateAndClose}
-            className="text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-2.5 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10 mb-2"
+            className="text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-2.5 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10 mb-2 outline-none"
+            style={{ outlineStyle: 'none' } as any}
           />
 
           {/* Live Target Path Preview */}
@@ -400,7 +401,8 @@ export const BatchMoveFolderModal: React.FC<BatchMoveFolderModalProps> = ({
               value={quickNewFolderName}
               onChangeText={setQuickNewFolderName}
               onSubmitEditing={onCreateAndMove}
-              className="flex-1 text-xs font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-2 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10"
+              className="flex-1 text-xs font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-2 rounded-xl bg-light-appBg dark:bg-white/5 border border-light-border dark:border-white/10 outline-none"
+              style={{ outlineStyle: 'none' } as any}
             />
             <Pressable
               onPress={onCreateAndMove}

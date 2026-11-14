@@ -101,6 +101,12 @@ export interface NoteItem {
   status: 'active' | 'archived' | 'trashed';
   tags: string[];
   reminderAt?: string;
+  isLocked?: boolean;
+  lockType?: 'master' | 'custom' | null;
+  lockCredentialKind?: 'pin' | 'password' | null;
+  lockHash?: string | null;
+  lockSalt?: string | null;
+  lockHint?: string | null;
   createdAt: string;
   updatedAt: string;
 }

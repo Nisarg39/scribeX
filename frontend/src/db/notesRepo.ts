@@ -34,6 +34,12 @@ export class NotesRepository {
       status: dbNote.status,
       tags,
       reminderAt: dbNote.reminder_at || undefined,
+      isLocked: dbNote.is_locked === 1,
+      lockType: dbNote.lock_type || undefined,
+      lockCredentialKind: dbNote.lock_credential_kind || undefined,
+      lockHash: dbNote.lock_hash || undefined,
+      lockSalt: dbNote.lock_salt || undefined,
+      lockHint: dbNote.lock_hint || undefined,
       createdAt: dbNote.created_at,
       updatedAt: dbNote.updated_at,
     };

@@ -13,12 +13,16 @@ import {
   Star,
   Pin,
   Archive,
+  Lock,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { DBFolder } from '../../db/types';
 import { NoteItem } from '../../types/note';
 import { NoteColors, NoteColorToken } from '../../theme/tokens';
 import { renderFolderIcon } from './FolderActionSheet';
+import { buildFolderMapByPath, isFolderEffectivelyLocked } from '../../core/security/vaultLockHelpers';
+
+const EMPTY_UNLOCKED_SET: ReadonlySet<string> = new Set();
 
 export interface FolderDropdownModalProps {
   visible: boolean;
@@ -48,6 +52,7 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [searchQuery, setSearchQuery] = useState('');
+  const folderLockMap = useMemo(() => buildFolderMapByPath(folders), [folders]);
 
   // Precompute note counts per folder (active notes only)
   const folderCounts = useMemo(() => {
@@ -148,7 +153,8 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
                 onChangeText={setSearchQuery}
                 placeholder="Search folders..."
                 placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
-                className="flex-1 ml-2 text-xs text-light-textPrimary dark:text-dark-textPrimary p-0"
+                className="flex-1 ml-2 text-xs text-light-textPrimary dark:text-dark-textPrimary p-0 outline-none"
+                style={{ outlineStyle: 'none' } as any}
               />
               {searchQuery.length > 0 && (
                 <Pressable
@@ -237,12 +243,12 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
                 <Pressable
                   key={folderName}
                   onPress={() => {
-                    onSelectFolder(folderName);
                     onClose();
+                    setTimeout(() => onSelectFolder(folderName), 60);
                   }}
                   onLongPress={() => {
                     onClose();
-                    onOpenFolderActions(folderName);
+                    setTimeout(() => onOpenFolderActions(folderName), 60);
                   }}
                   delayLongPress={350}
                   accessibilityRole="button"
@@ -306,6 +312,12 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
                         {Boolean(folderObj?.is_archived) && (
                           <Archive size={11} color="#06B6D4" />
                         )}
+
+                        {/* Locked Badge (Direct or Inherited) */}
+                        {(Boolean(folderObj?.is_locked) ||
+                          isFolderEffectivelyLocked(folderName, folderLockMap, EMPTY_UNLOCKED_SET)) && (
+                          <Lock size={11} color="#B18AF3" />
+                        )}
                       </View>
 
                       {isNested && (
@@ -337,7 +349,7 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
                       onPress={(e) => {
                         e.stopPropagation?.();
                         onClose();
-                        onOpenFolderActions(folderName);
+                        setTimeout(() => onOpenFolderActions(folderName), 60);
                       }}
                       accessibilityLabel={`Manage folder ${folderName}`}
                       className="w-7 h-7 rounded-full items-center justify-center hover:bg-black/10 dark:hover:bg-white/10 active:scale-95 ml-1"
@@ -364,7 +376,7 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
             <Pressable
               onPress={() => {
                 onClose();
-                onOpenCreateFolder();
+                setTimeout(() => onOpenCreateFolder(), 60);
               }}
               accessibilityLabel="Create New Folder"
               className="flex-1 flex-row items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 hover:bg-cyan-500/20 active:scale-95"
@@ -380,7 +392,7 @@ export const FolderDropdownModal: React.FC<FolderDropdownModalProps> = ({
               <Pressable
                 onPress={() => {
                   onClose();
-                  onOpenFolderTree();
+                  setTimeout(() => onOpenFolderTree(), 60);
                 }}
                 accessibilityLabel="Open Folder Tree Hierarchy"
                 className="flex-1 flex-row items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl bg-light-surface/80 dark:bg-white/5 border border-light-border dark:border-white/10 hover:border-cyan-500/40 active:scale-95"

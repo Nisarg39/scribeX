@@ -207,7 +207,8 @@ function buildCenteredSnippet(text: string, token: string, maxLen: number = 76):
 export function filterNotesPartition(
   notes: NoteItem[],
   searchIndexMap: Map<string, NoteSearchDocument>,
-  request: NoteQueryRequest
+  request: NoteQueryRequest,
+  lockedNoteIds?: ReadonlySet<string>
 ): { filteredNotes: NoteItem[]; counts: NotePartitionCounts } {
   const counts: NotePartitionCounts = {
     allActive: 0,
@@ -228,7 +229,7 @@ export function filterNotesPartition(
       if (n.isFavorite) counts.favorites++;
       const folder = n.folderPath || 'General';
       counts.byFolder[folder] = (counts.byFolder[folder] || 0) + 1;
-      if (Array.isArray(n.tags)) {
+      if (Array.isArray(n.tags) && !lockedNoteIds?.has(n.id)) {
         for (const t of n.tags) {
           counts.byTag[t] = (counts.byTag[t] || 0) + 1;
         }
@@ -266,15 +267,17 @@ export function filterNotesPartition(
       }
     }
 
-    // 3. Tags Filter Check
+    // 3. Tags Filter Check (excluded for locked notes so hidden tags cannot be enumerated or filtered)
     if (requiredTags.length > 0) {
+      if (lockedNoteIds?.has(n.id)) return false;
       const noteTagsLower = (n.tags || []).map((t) => t.toLowerCase());
       const hasAllTags = requiredTags.every((rt) => noteTagsLower.some((nt) => nt.includes(rt)));
       if (!hasAllTags) return false;
     }
 
-    // 4. Block Type Filter Check (for AI / media filter queries)
+    // 4. Block Type Filter Check (for AI / media filter queries — excluded for locked notes so internal structure is not leaked)
     if (requiredBlockTypes.length > 0) {
+      if (lockedNoteIds?.has(n.id)) return false;
       const doc = searchIndexMap.get(n.id) || buildNoteSearchDocument(n);
       const hasMatchingBlock = requiredBlockTypes.some((bt) => doc.presentBlockTypes.includes(bt));
       if (!hasMatchingBlock) return false;
@@ -293,7 +296,8 @@ export function scoreNoteAgainstQuery(
   note: NoteItem,
   doc: NoteSearchDocument,
   tokens: string[],
-  fullQueryLower: string
+  fullQueryLower: string,
+  isLocked: boolean = false
 ): { score: number; matchBadge?: NoteMatchBadge } {
   if (tokens.length === 0) {
     return { score: 0 };
@@ -326,17 +330,20 @@ export function scoreNoteAgainstQuery(
     }
 
     // Tier 2: Organization — Tags & Folder Path (+60)
-    const matchedTag = (note.tags || []).find((t) => t.toLowerCase().includes(token));
-    if (matchedTag) {
-      totalScore += 60;
-      tokenMatched = true;
-      if (bestBadgePriority < 2) {
-        bestBadgePriority = 2;
-        bestBadge = {
-          iconType: 'tag',
-          label: 'Tag',
-          snippet: `#${matchedTag}`,
-        };
+    // Security: For locked notes, do not inspect tags or body blocks — only visible Title & Folder path match.
+    if (!isLocked) {
+      const matchedTag = (note.tags || []).find((t) => t.toLowerCase().includes(token));
+      if (matchedTag) {
+        totalScore += 60;
+        tokenMatched = true;
+        if (bestBadgePriority < 2) {
+          bestBadgePriority = 2;
+          bestBadge = {
+            iconType: 'tag',
+            label: 'Tag',
+            snippet: `#${matchedTag}`,
+          };
+        }
       }
     }
 
@@ -354,35 +361,38 @@ export function scoreNoteAgainstQuery(
     }
 
     // Tier 3 & Tier 4: Inspect granular `blockEntries` to score and extract exact Match Badge
-    for (const entry of doc.blockEntries) {
-      const primaryLower = entry.primaryTitle.toLowerCase();
-      const bodyLower = entry.bodyText.toLowerCase();
+    // Excluded for locked notes so private content cannot be matched or leaked in search snippets.
+    if (!isLocked) {
+      for (const entry of doc.blockEntries) {
+        const primaryLower = entry.primaryTitle.toLowerCase();
+        const bodyLower = entry.bodyText.toLowerCase();
 
-      // Tier 3: Media Caption / Block Title / Filename (+45)
-      if (primaryLower && primaryLower.includes(token)) {
-        totalScore += 45;
-        tokenMatched = true;
-        if (bestBadgePriority < 4) {
-          bestBadgePriority = 4;
-          bestBadge = {
-            iconType: entry.blockType,
-            label: entry.label,
-            snippet: buildCenteredSnippet(entry.primaryTitle, token),
-          };
+        // Tier 3: Media Caption / Block Title / Filename (+45)
+        if (primaryLower && primaryLower.includes(token)) {
+          totalScore += 45;
+          tokenMatched = true;
+          if (bestBadgePriority < 4) {
+            bestBadgePriority = 4;
+            bestBadge = {
+              iconType: entry.blockType,
+              label: entry.label,
+              snippet: buildCenteredSnippet(entry.primaryTitle, token),
+            };
+          }
         }
-      }
 
-      // Tier 4: Block Body / Transcript / OCR / Checklist (+20)
-      if (bodyLower && bodyLower.includes(token)) {
-        totalScore += 20;
-        tokenMatched = true;
-        if (bestBadgePriority < 3) {
-          bestBadgePriority = 3;
-          bestBadge = {
-            iconType: entry.blockType,
-            label: entry.label,
-            snippet: buildCenteredSnippet(entry.bodyText, token),
-          };
+        // Tier 4: Block Body / Transcript / OCR / Checklist (+20)
+        if (bodyLower && bodyLower.includes(token)) {
+          totalScore += 20;
+          tokenMatched = true;
+          if (bestBadgePriority < 3) {
+            bestBadgePriority = 3;
+            bestBadge = {
+              iconType: entry.blockType,
+              label: entry.label,
+              snippet: buildCenteredSnippet(entry.bodyText, token),
+            };
+          }
         }
       }
     }
@@ -411,6 +421,10 @@ export function scoreNoteAgainstQuery(
   };
 }
 
+export interface ExecuteNoteQueryOptions {
+  lockedNoteIds?: ReadonlySet<string>;
+}
+
 /**
  * Executes the complete 3-stage Note Query Pipeline:
  * Stage A (Filter Partition) -> Stage B (Ranked Search / Default Sort) -> Stage C (10-Note Pagination)
@@ -418,8 +432,10 @@ export function scoreNoteAgainstQuery(
 export function executeNoteQuery(
   notes: NoteItem[],
   searchIndexMap: Map<string, NoteSearchDocument>,
-  rawRequest: Partial<NoteQueryRequest> = {}
+  rawRequest: Partial<NoteQueryRequest> = {},
+  options?: ExecuteNoteQueryOptions
 ): UnifiedFeedResult {
+  const lockedNoteIds = options?.lockedNoteIds;
   const request: NoteQueryRequest = {
     ...DEFAULT_NOTE_QUERY_REQUEST,
     ...rawRequest,
@@ -428,7 +444,12 @@ export function executeNoteQuery(
   };
 
   // Stage A: Partition & Filter
-  const { filteredNotes, counts } = filterNotesPartition(notes, searchIndexMap, request);
+  const { filteredNotes, counts } = filterNotesPartition(
+    notes,
+    searchIndexMap,
+    request,
+    lockedNoteIds
+  );
 
   const trimmedQuery = (request.searchQuery || '').trim();
   const tokens = tokenizeSearchQuery(trimmedQuery);
@@ -440,12 +461,19 @@ export function executeNoteQuery(
     const scoredCards: NoteCardViewModel[] = [];
 
     for (const note of filteredNotes) {
+      const isLocked = Boolean(lockedNoteIds?.has(note.id));
       const doc = searchIndexMap.get(note.id) || buildNoteSearchDocument(note);
-      const { score, matchBadge } = scoreNoteAgainstQuery(note, doc, tokens, fullQueryLower);
+      const { score, matchBadge } = scoreNoteAgainstQuery(
+        note,
+        doc,
+        tokens,
+        fullQueryLower,
+        isLocked
+      );
       if (score > 0) {
         scoredCards.push({
           note,
-          cleanPreviewText: doc.cleanPreviewText,
+          cleanPreviewText: isLocked ? '' : doc.cleanPreviewText,
           matchBadge,
           score,
         });
@@ -476,10 +504,11 @@ export function executeNoteQuery(
 
   // Standard Browsing Mode (No active search query)
   const buildViewModel = (note: NoteItem): NoteCardViewModel => {
+    const isLocked = Boolean(lockedNoteIds?.has(note.id));
     const doc = searchIndexMap.get(note.id) || buildNoteSearchDocument(note);
     let blockFilterBadge: NoteMatchBadge | undefined;
 
-    if (request.hasBlockTypes && request.hasBlockTypes.length > 0) {
+    if (!isLocked && request.hasBlockTypes && request.hasBlockTypes.length > 0) {
       const matchedEntry: IndexedBlockEntry | undefined = doc.blockEntries.find((e) =>
         request.hasBlockTypes!.includes(e.blockType)
       );
@@ -494,7 +523,7 @@ export function executeNoteQuery(
 
     return {
       note,
-      cleanPreviewText: doc.cleanPreviewText,
+      cleanPreviewText: isLocked ? '' : doc.cleanPreviewText,
       matchBadge: blockFilterBadge,
     };
   };

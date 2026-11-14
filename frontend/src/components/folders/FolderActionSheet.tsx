@@ -22,6 +22,9 @@ import {
   Sparkles,
   Pin,
   Archive,
+  Lock,
+  Unlock,
+  RefreshCw,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { FolderNoteStats } from '../../db/types';
@@ -74,6 +77,8 @@ interface FolderActionSheetProps {
   isFavorite?: boolean;
   isPinned?: boolean;
   isArchived?: boolean;
+  isLocked?: boolean;
+  lockType?: 'master' | 'custom' | null;
   stats: FolderNoteStats | null;
   onClose: () => void;
   onOpenCreateSubfolder: (parentPath: string) => void;
@@ -84,6 +89,10 @@ interface FolderActionSheetProps {
   onToggleFavorite?: () => void;
   onTogglePin?: () => void;
   onToggleArchive?: () => void;
+  onLockFolder?: () => void;
+  onChangeFolderLock?: () => void;
+  onUnlockFolderForever?: () => void;
+  onRelockFolderSession?: () => void;
   onSelectAllNotes?: (folderPath: string) => void;
   onExportFolder?: (folderPath: string) => void;
   onChangeColor?: (colorToken: string) => void;
@@ -99,6 +108,8 @@ export const FolderActionSheet: React.FC<FolderActionSheetProps> = ({
   isFavorite = false,
   isPinned = false,
   isArchived = false,
+  isLocked = false,
+  lockType = null,
   stats,
   onClose,
   onOpenCreateSubfolder,
@@ -109,6 +120,10 @@ export const FolderActionSheet: React.FC<FolderActionSheetProps> = ({
   onToggleFavorite,
   onTogglePin,
   onToggleArchive,
+  onLockFolder,
+  onChangeFolderLock,
+  onUnlockFolderForever,
+  onRelockFolderSession,
   onSelectAllNotes,
   onExportFolder,
   onChangeColor,
@@ -281,6 +296,95 @@ export const FolderActionSheet: React.FC<FolderActionSheetProps> = ({
           <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
             {/* Actions List */}
             <View className="gap-1.5 mb-4">
+              {/* Folder Security Lock / Unlock Controls */}
+              {!isLocked && onLockFolder && (
+                <Pressable
+                  onPress={() => handleAction(() => onLockFolder())}
+                  className="flex-row items-center justify-between p-3 rounded-2xl bg-purple-500/10 border border-purple-500/25 active:scale-[0.99]"
+                >
+                  <View className="flex-row items-center gap-3">
+                    <View className="w-8 h-8 rounded-xl bg-purple-500/20 items-center justify-center">
+                      <Lock size={16} color="#B18AF3" />
+                    </View>
+                    <View>
+                      <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                        Lock Folder with PIN / Password
+                      </Text>
+                      <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                        Protects all {totalNotes} note(s) and subfolders inside
+                      </Text>
+                    </View>
+                  </View>
+                </Pressable>
+              )}
+
+              {isLocked && (
+                <>
+                  {onRelockFolderSession && (
+                    <Pressable
+                      onPress={() => handleAction(() => onRelockFolderSession())}
+                      className="flex-row items-center justify-between p-3 rounded-2xl bg-purple-500/10 border border-purple-500/25 active:scale-[0.99]"
+                    >
+                      <View className="flex-row items-center gap-3">
+                        <View className="w-8 h-8 rounded-xl bg-purple-500/20 items-center justify-center">
+                          <Lock size={16} color="#B18AF3" />
+                        </View>
+                        <View>
+                          <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                            Re-lock Folder Now
+                          </Text>
+                          <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                            Hide all notes in /{folderPath} until re-authenticated
+                          </Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  )}
+
+                  {onChangeFolderLock && (
+                    <Pressable
+                      onPress={() => handleAction(() => onChangeFolderLock())}
+                      className="flex-row items-center justify-between p-3 rounded-2xl bg-light-surface dark:bg-white/[0.03] border border-light-border dark:border-white/10 active:scale-[0.99]"
+                    >
+                      <View className="flex-row items-center gap-3">
+                        <View className="w-8 h-8 rounded-xl bg-cyan-500/15 items-center justify-center">
+                          <RefreshCw size={15} color="#06B6D4" />
+                        </View>
+                        <View>
+                          <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                            Change Folder Lock ({lockType === 'custom' ? 'Custom' : 'Master'})
+                          </Text>
+                          <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                            Switch between Master or Custom PIN/Password
+                          </Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  )}
+
+                  {onUnlockFolderForever && (
+                    <Pressable
+                      onPress={() => handleAction(() => onUnlockFolderForever())}
+                      className="flex-row items-center justify-between p-3 rounded-2xl bg-light-surface dark:bg-white/[0.03] border border-light-border dark:border-white/10 active:scale-[0.99]"
+                    >
+                      <View className="flex-row items-center gap-3">
+                        <View className="w-8 h-8 rounded-xl bg-orange-500/15 items-center justify-center">
+                          <Unlock size={15} color="#FF9277" />
+                        </View>
+                        <View>
+                          <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                            Remove Folder Lock
+                          </Text>
+                          <Text className="text-[10px] text-light-textMuted dark:text-dark-textMuted">
+                            Verify credential to permanently unlock /{folderPath}
+                          </Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  )}
+                </>
+              )}
+
               {/* 1. New Subfolder */}
               <Pressable
                 onPress={() => handleAction(() => onOpenCreateSubfolder(folderPath))}

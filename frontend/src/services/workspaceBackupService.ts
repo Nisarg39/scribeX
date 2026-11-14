@@ -24,6 +24,7 @@ export interface ScribeXWorkspaceBackup {
     tasks: any[];
     entityRelations: any[];
     assets: any[];
+    workspaceSecurity?: any[];
   };
 }
 
@@ -39,7 +40,7 @@ class WorkspaceBackupService {
    * Generates a complete JSON backup object of all local SQLite tables.
    */
   public async generateFullBackup(): Promise<ScribeXWorkspaceBackup> {
-    const [folders, tags, notes, noteTags, tasks, entityRelations, assets] = await Promise.all([
+    const [folders, tags, notes, noteTags, tasks, entityRelations, assets, workspaceSecurity] = await Promise.all([
       dbClient.query<any>('SELECT * FROM folders ORDER BY path ASC;').catch(() => []),
       dbClient.query<any>('SELECT * FROM tags ORDER BY name ASC;').catch(() => []),
       dbClient.query<any>('SELECT * FROM notes ORDER BY updated_at DESC;').catch(() => []),
@@ -47,6 +48,7 @@ class WorkspaceBackupService {
       dbClient.query<any>('SELECT * FROM tasks ORDER BY created_at DESC;').catch(() => []),
       dbClient.query<any>('SELECT * FROM entity_relations;').catch(() => []),
       dbClient.query<any>('SELECT * FROM assets;').catch(() => []),
+      dbClient.query<any>('SELECT * FROM workspace_security;').catch(() => []),
     ]);
 
     return {
@@ -70,6 +72,7 @@ class WorkspaceBackupService {
         tasks,
         entityRelations,
         assets,
+        workspaceSecurity,
       },
     };
   }
@@ -151,6 +154,9 @@ class WorkspaceBackupService {
       await dbClient.run('DELETE FROM notes;');
       await dbClient.run('DELETE FROM folders;');
       await dbClient.run('DELETE FROM tags;');
+      if (Array.isArray(workspace.workspaceSecurity) && workspace.workspaceSecurity.length > 0) {
+        await dbClient.run('DELETE FROM workspace_security;');
+      }
     }
 
     let foldersRestored = 0;
@@ -163,8 +169,12 @@ class WorkspaceBackupService {
       for (const f of workspace.folders) {
         if (!f.id || !f.name || !f.path) continue;
         await dbClient.run(
-          `INSERT OR REPLACE INTO folders (id, user_id, name, parent_id, path, color_token, icon, sync_rev, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+          `INSERT OR REPLACE INTO folders (
+             id, user_id, name, parent_id, path, color_token, icon,
+             is_favorite, is_pinned, is_archived,
+             is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
+             sync_rev, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           [
             f.id,
             f.user_id || 'user-default',
@@ -173,6 +183,15 @@ class WorkspaceBackupService {
             f.path,
             f.color_token || 'cyan',
             f.icon || null,
+            f.is_favorite ? 1 : 0,
+            f.is_pinned ? 1 : 0,
+            f.is_archived ? 1 : 0,
+            f.is_locked ? 1 : 0,
+            f.lock_type || null,
+            f.lock_credential_kind || null,
+            f.lock_hash || null,
+            f.lock_salt || null,
+            f.lock_hint || null,
             f.sync_rev || 0,
             f.created_at || new Date().toISOString(),
             f.updated_at || new Date().toISOString(),
@@ -209,8 +228,9 @@ class WorkspaceBackupService {
           `INSERT OR REPLACE INTO notes (
              id, user_id, folder_id, folder_path, group_name, title, content_markdown,
              blocks_json, color_token, is_favorite, is_pinned, status, priority_score,
+             reminder_at, is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
              sync_rev, created_at, updated_at, trashed_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           [
             n.id,
             n.user_id || 'user-default',
@@ -225,6 +245,13 @@ class WorkspaceBackupService {
             n.is_pinned ? 1 : 0,
             n.status || 'active',
             n.priority_score || 0.0,
+            n.reminder_at || null,
+            n.is_locked ? 1 : 0,
+            n.lock_type || null,
+            n.lock_credential_kind || null,
+            n.lock_hash || null,
+            n.lock_salt || null,
+            n.lock_hint || null,
             n.sync_rev || 0,
             n.created_at || new Date().toISOString(),
             n.updated_at || new Date().toISOString(),
@@ -294,6 +321,42 @@ class WorkspaceBackupService {
             rel.created_at || new Date().toISOString(),
           ]
         );
+      }
+    }
+
+    // 7. Workspace Security Config
+    if (Array.isArray(workspace.workspaceSecurity) && workspace.workspaceSecurity.length > 0) {
+      let shouldImportSecurity = strategy === 'replace';
+      if (!shouldImportSecurity) {
+        const existingMaster = await dbClient.queryFirst<{ master_hash: string | null }>(
+          `SELECT master_hash FROM workspace_security
+           WHERE master_hash IS NOT NULL AND TRIM(master_hash) != ''
+           LIMIT 1;`
+        );
+        shouldImportSecurity = !existingMaster?.master_hash;
+      }
+
+      if (shouldImportSecurity) {
+        for (const sec of workspace.workspaceSecurity) {
+          if (!sec.id) continue;
+          await dbClient.run(
+            `INSERT OR REPLACE INTO workspace_security (
+               id, app_lock_enabled, master_credential_type, master_hash, master_salt,
+               master_hint, biometrics_enabled, auto_relock_seconds, updated_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+            [
+              sec.id,
+              sec.app_lock_enabled ? 1 : 0,
+              sec.master_credential_type || null,
+              sec.master_hash || null,
+              sec.master_salt || null,
+              sec.master_hint || null,
+              sec.biometrics_enabled ? 1 : 0,
+              typeof sec.auto_relock_seconds === 'number' ? sec.auto_relock_seconds : 0,
+              sec.updated_at || new Date().toISOString(),
+            ]
+          );
+        }
       }
     }
 

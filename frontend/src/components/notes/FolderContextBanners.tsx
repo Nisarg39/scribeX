@@ -7,10 +7,18 @@ import {
   MoreVertical,
   X,
   Star,
+  Lock,
 } from 'lucide-react-native';
 import { DBFolder } from '../../db/types';
 import { NoteColors, NoteColorToken } from '../../theme/tokens';
 import { NoteQueryRequest, NotePartitionCounts } from '../../core/noteQueryEngine';
+import {
+  getAncestorFolderPaths,
+  isFolderEffectivelyLocked,
+  normalizeFolderPath,
+} from '../../core/security/vaultLockHelpers';
+
+const EMPTY_UNLOCKED_SET: ReadonlySet<string> = new Set();
 
 export interface FolderContextBannersProps {
   queryRequest: NoteQueryRequest;
@@ -19,8 +27,10 @@ export interface FolderContextBannersProps {
   pinnedCardsCount: number;
   emptyTrash: () => Promise<void>;
   isDark: boolean;
+  folders?: DBFolder[];
   activeFolderObj?: DBFolder | null;
   onOpenFolderActions: (folderKey: string) => void;
+  onRelockFolder?: (folderPath: string) => void;
   setFolderFilter: (f: string | null) => void;
   unarchiveFolder: (folderId: string) => Promise<{ affectedNotes: number; affectedFolders: number }>;
   favoriteFolders: DBFolder[];
@@ -34,13 +44,24 @@ export const FolderContextBanners: React.FC<FolderContextBannersProps> = ({
   pinnedCardsCount,
   emptyTrash,
   isDark,
+  folders = [],
   activeFolderObj,
   onOpenFolderActions,
+  onRelockFolder,
   setFolderFilter,
   unarchiveFolder,
   favoriteFolders,
   renderFolderIcon,
 }) => {
+  const activeAncestorPaths = queryRequest.folderPath
+    ? getAncestorFolderPaths(queryRequest.folderPath)
+    : [];
+  const isActiveFolderProtected = Boolean(
+    activeFolderObj?.is_locked === 1 ||
+      folders.some(
+        (f) => f.is_locked === 1 && activeAncestorPaths.includes(normalizeFolderPath(f.path))
+      )
+  );
   return (
     <>
       {/* Trash View Action Banner */}
@@ -89,10 +110,16 @@ export const FolderContextBanners: React.FC<FolderContextBannersProps> = ({
               <Folder size={18} color="#06B6D4" />
             </View>
             <View className="flex-1">
-              <View className="flex-row items-center gap-2">
+              <View className="flex-row items-center gap-2 flex-wrap">
                 <Text className="text-sm font-bold text-light-textPrimary dark:text-dark-textPrimary" numberOfLines={1}>
                   /{queryRequest.folderPath}
                 </Text>
+                {isActiveFolderProtected && (
+                  <View className="flex-row items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/20">
+                    <Lock size={10} color="#B18AF3" />
+                    <Text className="text-[10px] font-bold text-purple-400">Protected</Text>
+                  </View>
+                )}
                 <Text className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400">
                   {feedCardsCount + pinnedCardsCount} notes
                 </Text>
@@ -104,6 +131,17 @@ export const FolderContextBanners: React.FC<FolderContextBannersProps> = ({
           </View>
 
           <View className="flex-row items-center gap-1.5">
+            {isActiveFolderProtected && onRelockFolder && (
+              <Pressable
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                onPress={() => onRelockFolder(queryRequest.folderPath!)}
+                accessibilityLabel="Re-lock Folder Now"
+                className="px-2.5 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/40 flex-row items-center gap-1 active:scale-95"
+              >
+                <Lock size={12} color="#B18AF3" />
+                <Text className="text-xs font-bold text-purple-400">Lock</Text>
+              </Pressable>
+            )}
             <Pressable
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               onPress={() => onOpenFolderActions(queryRequest.folderPath!)}
@@ -241,6 +279,10 @@ export const FolderContextBanners: React.FC<FolderContextBannersProps> = ({
                   >
                     {favFolder.name}
                   </Text>
+                  {(favFolder.is_locked === 1 ||
+                    isFolderEffectivelyLocked(folderPath, folders, EMPTY_UNLOCKED_SET)) && (
+                    <Lock size={10} color={isSelected ? '#F59E0B' : '#B18AF3'} />
+                  )}
                 </Pressable>
               );
             })}

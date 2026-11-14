@@ -84,6 +84,8 @@ export class FoldersRepository {
         isFavorite: Boolean(f.is_favorite),
         isPinned: Boolean(f.is_pinned),
         isArchived: Boolean(f.is_archived),
+        isLocked: Boolean(f.is_locked),
+        lockType: f.lock_type || null,
         children: [],
       });
     }
@@ -443,6 +445,34 @@ export class FoldersRepository {
       icon: folder?.icon || undefined,
     });
 
+    if (folder?.is_locked === 1) {
+      await dbClient.run(
+        `UPDATE folders
+         SET is_locked = 1,
+             lock_type = ?,
+             lock_credential_kind = ?,
+             lock_hash = ?,
+             lock_salt = ?,
+             lock_hint = ?,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?;`,
+        [
+          folder.lock_type || null,
+          folder.lock_credential_kind || null,
+          folder.lock_hash || null,
+          folder.lock_salt || null,
+          folder.lock_hint || null,
+          newFolder.id,
+        ]
+      );
+      newFolder.is_locked = 1;
+      newFolder.lock_type = folder.lock_type || null;
+      newFolder.lock_credential_kind = folder.lock_credential_kind || null;
+      newFolder.lock_hash = folder.lock_hash || null;
+      newFolder.lock_salt = folder.lock_salt || null;
+      newFolder.lock_hint = folder.lock_hint || null;
+    }
+
     // Query non-trashed notes in the source folder
     const notesToClone = await dbClient.query<any>(
       `SELECT * FROM notes 
@@ -458,8 +488,9 @@ export class FoldersRepository {
 
       await dbClient.run(
         `INSERT INTO notes (
-          id, user_id, folder_id, folder_path, group_name, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'active');`,
+          id, user_id, folder_id, folder_path, group_name, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, status,
+          is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, ?, ?, ?, ?, ?);`,
         [
           clonedId,
           note.user_id,
@@ -470,6 +501,12 @@ export class FoldersRepository {
           note.content_markdown,
           note.blocks_json,
           note.color_token,
+          note.is_locked ?? 0,
+          note.lock_type ?? null,
+          note.lock_credential_kind ?? null,
+          note.lock_hash ?? null,
+          note.lock_salt ?? null,
+          note.lock_hint ?? null,
         ]
       );
       duplicatedCount++;

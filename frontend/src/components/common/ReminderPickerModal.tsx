@@ -598,7 +598,8 @@ export const ReminderPickerModal: React.FC<ReminderPickerModalProps> = ({
                             keyboardType="numeric"
                             maxLength={10}
                             placeholderTextColor={isDark ? '#666666' : '#999999'}
-                            className="flex-1 text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary p-0"
+                            className="flex-1 text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary p-0 outline-none"
+                            style={{ outlineStyle: 'none' } as any}
                           />
                           <Pressable
                             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -766,7 +767,8 @@ export const ReminderPickerModal: React.FC<ReminderPickerModalProps> = ({
                           keyboardType="default"
                           maxLength={5}
                           placeholderTextColor={isDark ? '#666666' : '#999999'}
-                          className="flex-1 text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary p-0"
+                          className="flex-1 text-sm font-medium text-light-textPrimary dark:text-dark-textPrimary p-0 outline-none"
+                          style={{ outlineStyle: 'none' } as any}
                         />
 
                         {/* Upfront AM / PM Switcher Pill */}

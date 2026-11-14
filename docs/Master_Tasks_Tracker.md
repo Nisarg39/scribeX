@@ -13,8 +13,8 @@
 | Phase | Description | Status | Authoritative Blueprint |
 | :---: | :--- | :---: | :--- |
 | **Phase 1** | **Universal Manual Note Engine, Local SQLite & Serverless Reminders** | `[x] COMPLETED (100% AUDITED & VERIFIED)` | [Unified_Frontend_Master_Specification.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Frontend_Master_Specification.md) |
-| **Phase 2** | **Supabase Realtime Sync, Direct RPCs & Google Drive Media Vault** | `[ ] NEXT IN QUEUE` | [Unified_Backend_and_AI_Master_Specification.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md#9-phased-delivery-roadmap) |
-| **Phase 3** | **Cognitive Memory, Friday Client-Direct Assistant & Universal MCP Connector** | `[ ] PENDING` | [Unified_Backend_and_AI_Master_Specification.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md#4-the-4-layer-shared-cognitive-memory-model) |
+| **Phase 2** | **Supabase Realtime Sync, Shared RPC Pipeline & Two-Tier Reminders** | `[ ] NEXT IN QUEUE` | [Unified_Backend_and_AI_Master_Specification.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md#9-phased-delivery-roadmap) |
+| **Phase 3** | **Unified Backend AI Engine, Ephemeral BYOK & Universal MCP Connector** | `[ ] PENDING` | [Unified_Backend_and_AI_Master_Specification.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md#4-the-4-layer-shared-cognitive-memory-model) |
 | **Phase 4** | **Remote PC Bridge Daemon + Pluggable CLI Verification Loop** | `[ ] PENDING` | [Unified_Backend_and_AI_Master_Specification.md (Section 7)](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md#7-remote-pc-agentic-execution--pluggable-cli-daemon) |
 | **Phase 5** | **SaaS Multi-Tenancy, Commercial Billing & Production Scaling** | `[ ] PENDING` | [Unified_Backend_and_AI_Master_Specification.md (Section 8)](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Unified_Backend_and_AI_Master_Specification.md#8-multi-tenancy-commercial-billing--security) |
 
@@ -90,16 +90,19 @@
 
 ## Upcoming Phases Summary
 
-### Phase 2: Supabase Realtime Sync, Direct RPCs & Google Drive Media Vault
+### Phase 2: Supabase Realtime Sync, Shared RPC Pipeline & Two-Tier Reminders
 - **Supabase Cloud Schema & RLS:** PostgreSQL migrations mirroring local SQLite schema with Row Level Security (`auth.uid() = user_id`).
-- **Single Source of AI Orchestration (SSAO):** Direct Supabase PostgreSQL Stored Procedures (`create_note`, `update_note`, `create_task`, `toggle_task`, `schedule_reminder`, `search_vault`) executing in 40–80ms.
+- **Action Pipeline Symmetry (Shared Supabase RPC Pipeline):** Strongly typed Supabase PostgreSQL Stored Procedures (`rpc_create_note`, `rpc_update_note`, `rpc_create_task`, `rpc_toggle_task`, `rpc_schedule_reminder`, `rpc_search_vault`) serving as the single action pipeline for both frontend direct client sync and backend AI tool execution.
+- **Two-Tier Hardware Push Notifications:**
+  - *Tier 1 (Logged-Out / Guest):* Reminders operate 100% locally on the device (saved in local SQLite, scheduled directly to native hardware `AlarmManager` / `UNUserNotificationCenter` / Web Notifications) with zero network calls and zero syncing.
+  - *Tier 2 (Logged-In):* Reminders commit to Supabase `reminders` table and `sync_changelog`, broadcasting via Supabase Realtime CDC in ~50ms to ring hardware alarms across all user devices, with cross-device auto-cancellation on task completion.
 - **Client Delta Sync Protocol:** `@supabase/supabase-js` client in frontend subscribing to Postgres Realtime CDC channels with monotonic `sync_rev` reconciliation.
-- **Hardware Push Notification Convergence:** Remote CDC events automatically register or cancel native OS alarms on mobile devices.
 - **Zero-Cost Google Drive Media Vault:** Binary assets stream to user's Google Drive (`ScribeX_Vault/`), storing only lightweight metadata in `assets` table.
 - **Next.js Serverless Micro-Routes (Vercel):** Route handlers for heavy external tasks (`/api/ai/transcribe` for Whisper, `/api/clip-webpage`, OAuth token exchange, Stripe webhooks).
 
-### Phase 3: Cognitive Memory, Friday Client-Direct Assistant & Universal MCP Connector
-- **Client-Direct BYOK AI:** In-app Friday assistant connects directly to cloud models (Gemini, Claude, OpenAI) using user's on-device API keys with zero server proxy.
+### Phase 3: Unified Backend AI Engine, Ephemeral BYOK & Universal MCP Connector
+- **Unified Backend AI Engine:** Single backend gateway (`/api/ai/chat` & `/api/ai/agent` on Next.js / Edge Functions) powering Mobile Friday, Web Friday, Claude Desktop MCP, and ChatGPT Custom Actions with zero dual-codebase drift.
+- **Frontend BYOK via Ephemeral Request Headers:** Users enter model keys in frontend UI (`SecureStore` on mobile, encrypted storage on web). Client sends key in ephemeral headers (`x-gemini-key`, `x-anthropic-key`, `x-openai-key`). Backend uses key in volatile memory and discards it immediately ($0 server token spend, zero backend `.env` key storage).
 - **Universal Invocation Platform Context (`PlatformContext`):** Metadata envelope (`mobile_native`, `web_browser`, `desktop_mcp`, `chatgpt_custom_action`) passed into all prompts and Supabase RPCs.
 - **Ask-Before-Write Ambiguity Gate:** Pauses and requests clarification if `clarity_score < 0.85` or contradictions are detected.
 - **4-Layer Cognitive Memory:** Layer 1 (Identity), Layer 2 (Living Vault & `pgvector`), Layer 3 (Versions of Me temporal timeline), Layer 4 (Behavioral Ledger & noise-filtered edit learner).

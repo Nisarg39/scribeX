@@ -6,3 +6,4 @@ export * from './tasksRepo';
 export * from './foldersRepo';
 export * from './tagsRepo';
 export * from './remindersRepo';
+export * from './securityRepo';

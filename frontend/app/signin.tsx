@@ -4,13 +4,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../src/theme';
 import { useAuth } from '../src/context';
-import { Sun, Moon, LogIn } from 'lucide-react-native';
+import { Sun, Moon, LogIn, ArrowRight } from 'lucide-react-native';
 
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isDark, toggleTheme } = useTheme();
-  const { signIn } = useAuth();
+  const { signIn, continueAsGuest } = useAuth();
+
+  const handleSkip = async () => {
+    await continueAsGuest();
+    router.replace('/home');
+  };
 
   const handleSignIn = async () => {
     await signIn();
@@ -51,21 +56,33 @@ export default function SignInScreen() {
           Welcome back.
         </Text>
         <Text className="text-base text-light-textSecondary dark:text-dark-textSecondary leading-relaxed">
-          Open your local vault and resume your stream of thoughts.
+          Open your local vault and resume your stream of thoughts offline with sub-2ms speed.
         </Text>
       </View>
 
-      {/* Single Action Button */}
-      <View className="max-w-md w-full self-center">
+      {/* Action Buttons: Primary Skip as Guest & Secondary Sign In */}
+      <View className="max-w-md w-full self-center gap-3">
+        <Pressable
+          onPress={handleSkip}
+          accessibilityRole="button"
+          accessibilityLabel="Skip and continue as guest"
+          className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-2 active:scale-98 shadow-sm"
+        >
+          <Text className="text-base font-semibold text-white">
+            Skip & Open Vault
+          </Text>
+          <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.2} />
+        </Pressable>
+
         <Pressable
           onPress={handleSignIn}
           accessibilityRole="button"
-          accessibilityLabel="Sign In to ScribeX"
-          className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-2 active:scale-98"
+          accessibilityLabel="Sign in with account"
+          className="w-full py-3.5 rounded-2xl border border-light-border dark:border-dark-border flex-row items-center justify-center gap-2 active:scale-98"
         >
-          <LogIn size={18} color="#FFFFFF" strokeWidth={2.2} />
-          <Text className="text-base font-semibold text-white">
-            Sign In
+          <LogIn size={16} color={isDark ? '#9CA3AF' : '#6B7280'} strokeWidth={2} />
+          <Text className="text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary">
+            Sign In with Account
           </Text>
         </Pressable>
       </View>

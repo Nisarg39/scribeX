@@ -4,7 +4,7 @@ import { Redirect } from 'expo-router';
 import { useAuth } from '../src/context';
 
 export default function RootIndex() {
-  const { hasCompletedOnboarding, isAuthenticated, isLoading } = useAuth();
+  const { hasCompletedOnboarding, isAuthenticated, isGuest, isLoading } = useAuth();
 
   if (isLoading) {
     return <View className="flex-1 bg-light-appBg dark:bg-dark-appBg" />;
@@ -14,7 +14,8 @@ export default function RootIndex() {
     return <Redirect href="/onboarding" />;
   }
 
-  if (!isAuthenticated) {
+  // Allow immediate entry if user is logged in OR has chosen offline guest mode
+  if (!isAuthenticated && !isGuest) {
     return <Redirect href="/signin" />;
   }
 

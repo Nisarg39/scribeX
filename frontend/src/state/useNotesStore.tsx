@@ -9,6 +9,9 @@ import { tagsRepo } from '../db/tagsRepo';
 import { searchHistoryRepo } from '../db/searchHistoryRepo';
 import { remindersRepo } from '../db/remindersRepo';
 import { notificationsRepo } from '../db/notificationsRepo';
+import { LockTargetPayload, securityRepo } from '../db/securityRepo';
+import { useSecurity } from '../context/SecurityContext';
+import { computeLockedNoteIdSet } from '../core/security/vaultLockHelpers';
 import { notificationService } from '../services/notifications/NotificationService';
 import { syncEngine } from '../services/sync/syncEngine';
 import { ReminderRecord, parseReminderString, getNextOccurrence } from '../types/reminder';
@@ -122,6 +125,23 @@ interface NotesContextValue {
   batchArchiveNotes: (ids: string[], archive: boolean) => Promise<void>;
   batchRestoreNotes: (ids: string[]) => Promise<void>;
   batchPermanentlyDeleteNotes: (ids: string[]) => Promise<void>;
+  lockedNoteIds: ReadonlySet<string>;
+  lockNote: (
+    noteId: string,
+    payload: LockTargetPayload,
+    options?: { keepSessionUnlocked?: boolean }
+  ) => Promise<{
+    lockType: 'master' | 'custom';
+    lockCredentialKind: 'pin' | 'password' | null;
+    lockHash: string | null;
+    lockSalt: string | null;
+    lockHint: string | null;
+  } | void>;
+  unlockNoteForever: (noteId: string) => Promise<void>;
+  batchLockNotes: (noteIds: string[], payload: LockTargetPayload) => Promise<void>;
+  batchUnlockNotesForever: (noteIds: string[]) => Promise<void>;
+  lockFolder: (folderId: string, folderPath: string, payload: LockTargetPayload) => Promise<void>;
+  unlockFolderForever: (folderId: string) => Promise<void>;
   createFolder: (name: string, parentPath?: string) => Promise<DBFolder>;
   renameFolder: (id: string, newName: string) => Promise<void>;
   moveFolder: (id: string, newParentPath: string | null) => Promise<void>;
@@ -235,6 +255,13 @@ const NotesContext = createContext<NotesContextValue>({
   batchArchiveNotes: async () => {},
   batchRestoreNotes: async () => {},
   batchPermanentlyDeleteNotes: async () => {},
+  lockedNoteIds: new Set<string>(),
+  lockNote: async () => {},
+  unlockNoteForever: async () => {},
+  batchLockNotes: async () => {},
+  batchUnlockNotesForever: async () => {},
+  lockFolder: async () => {},
+  unlockFolderForever: async () => {},
   createFolder: async () => ({} as DBFolder),
   renameFolder: async () => {},
   moveFolder: async () => {},
@@ -278,6 +305,14 @@ const NotesContext = createContext<NotesContextValue>({
 });
 
 export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const {
+    unlockedNoteIds,
+    unlockedFolderPaths,
+    markNoteUnlocked,
+    relockNoteSession,
+    relockFolderSession,
+    relockFoldersOnSwitch,
+  } = useSecurity();
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [folders, setFolders] = useState<DBFolder[]>([]);
@@ -377,11 +412,13 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const resetQueryRequest = () => {
+    relockFoldersOnSwitch(null);
     setQueryRequestState(DEFAULT_NOTE_QUERY_REQUEST);
     setActiveFilterState('all');
   };
 
   const setStatusScopeFilter = (statusScope: NoteStatusScope) => {
+    relockFoldersOnSwitch(null);
     setQueryRequest({
       statusScope,
       folderPath: null,
@@ -390,6 +427,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const setFolderFilter = (folderPath: string | null, includeSubfolders: boolean = false) => {
+    relockFoldersOnSwitch(folderPath);
     setQueryRequest({
       statusScope: 'active',
       folderPath,
@@ -401,6 +439,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const toggleTagFilter = (tag: string) => {
     const cleanTag = tag.trim().replace(/^#/, '');
     if (!cleanTag) return;
+    relockFoldersOnSwitch(null);
     setQueryRequestState((prev) => {
       const currentTags = prev.tags || [];
       const exists = currentTags.some((t) => t.toLowerCase() === cleanTag.toLowerCase());
@@ -470,14 +509,198 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return map;
   }, [notes]);
 
+  // Effective locked note set (direct note lock OR ancestor folder lock cascade)
+  const lockedNoteIds = useMemo(
+    () => computeLockedNoteIdSet(notes, folders, unlockedNoteIds, unlockedFolderPaths),
+    [notes, folders, unlockedNoteIds, unlockedFolderPaths]
+  );
+
+  // Redact tags belonging exclusively to locked notes until unlocked
+  const visibleTags = useMemo(() => {
+    const lockedOnlyTags = new Set<string>();
+    const unlockedTags = new Set<string>();
+    for (const n of notes) {
+      if (n.status === 'trashed') continue;
+      const noteTags = n.tags || [];
+      if (lockedNoteIds.has(n.id)) {
+        for (const t of noteTags) lockedOnlyTags.add(t);
+      } else {
+        for (const t of noteTags) unlockedTags.add(t);
+      }
+    }
+    for (const t of tags) {
+      if (!lockedOnlyTags.has(t)) unlockedTags.add(t);
+    }
+    return Array.from(unlockedTags).filter(Boolean);
+  }, [notes, tags, lockedNoteIds]);
+
   // Execute the Unified 3-Stage Query, Ranking & 10-Note Pagination Pipeline
   const unifiedFeed = useMemo(
-    () => executeNoteQuery(notes, searchIndexMap, queryRequest),
-    [notes, searchIndexMap, queryRequest]
+    () => executeNoteQuery(notes, searchIndexMap, queryRequest, { lockedNoteIds }),
+    [notes, searchIndexMap, queryRequest, lockedNoteIds]
   );
 
   const updateNote = (updated: NoteItem) => {
     setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)));
+  };
+
+  const lockNote = async (
+    noteId: string,
+    payload: LockTargetPayload,
+    options?: { keepSessionUnlocked?: boolean }
+  ) => {
+    const computed = await securityRepo.lockNoteRecord(noteId, payload);
+    setNotes((prev) =>
+      prev.map((n) =>
+        n.id === noteId
+          ? {
+              ...n,
+              isLocked: true,
+              lockType: computed.lockType,
+              lockCredentialKind: computed.lockCredentialKind || undefined,
+              lockHash: computed.lockHash || undefined,
+              lockSalt: computed.lockSalt || undefined,
+              lockHint: computed.lockHint || undefined,
+            }
+          : n
+      )
+    );
+    if (options?.keepSessionUnlocked) {
+      markNoteUnlocked(noteId);
+    } else {
+      relockNoteSession(noteId);
+    }
+    logWorkspaceActivity('note_lifecycle', 'lock_note', `Locked note (${computed.lockType})`, noteId);
+    return computed;
+  };
+
+  const unlockNoteForever = async (noteId: string) => {
+    await securityRepo.unlockNoteRecord(noteId);
+    setNotes((prev) =>
+      prev.map((n) =>
+        n.id === noteId
+          ? {
+              ...n,
+              isLocked: false,
+              lockType: undefined,
+              lockCredentialKind: undefined,
+              lockHash: undefined,
+              lockSalt: undefined,
+              lockHint: undefined,
+            }
+          : n
+      )
+    );
+    relockNoteSession(noteId);
+    logWorkspaceActivity('note_lifecycle', 'unlock_note_permanent', 'Removed lock from note', noteId);
+  };
+
+  const batchLockNotes = async (noteIds: string[], payload: LockTargetPayload) => {
+    if (noteIds.length === 0) return;
+    const computed = await securityRepo.batchLockNoteRecords(noteIds, payload);
+    const targetSet = new Set(noteIds);
+    setNotes((prev) =>
+      prev.map((n) =>
+        targetSet.has(n.id)
+          ? {
+              ...n,
+              isLocked: true,
+              lockType: computed.lockType,
+              lockCredentialKind: computed.lockCredentialKind || undefined,
+              lockHash: computed.lockHash || undefined,
+              lockSalt: computed.lockSalt || undefined,
+              lockHint: computed.lockHint || undefined,
+            }
+          : n
+      )
+    );
+    for (const id of noteIds) {
+      relockNoteSession(id);
+    }
+    logWorkspaceActivity(
+      'note_lifecycle',
+      'batch_lock_notes',
+      `Locked ${noteIds.length} note(s) (${computed.lockType})`
+    );
+  };
+
+  const batchUnlockNotesForever = async (noteIds: string[]) => {
+    if (noteIds.length === 0) return;
+    await securityRepo.batchUnlockNoteRecords(noteIds);
+    const targetSet = new Set(noteIds);
+    setNotes((prev) =>
+      prev.map((n) =>
+        targetSet.has(n.id)
+          ? {
+              ...n,
+              isLocked: false,
+              lockType: undefined,
+              lockCredentialKind: undefined,
+              lockHash: undefined,
+              lockSalt: undefined,
+              lockHint: undefined,
+            }
+          : n
+      )
+    );
+    for (const id of noteIds) {
+      relockNoteSession(id);
+    }
+    logWorkspaceActivity(
+      'note_lifecycle',
+      'batch_unlock_notes',
+      `Removed lock from ${noteIds.length} note(s)`
+    );
+  };
+
+  const lockFolder = async (folderId: string, folderPath: string, payload: LockTargetPayload) => {
+    const computed = await securityRepo.lockFolderRecord(folderId, payload);
+    setFolders((prev) =>
+      prev.map((f) =>
+        f.id === folderId
+          ? {
+              ...f,
+              is_locked: 1,
+              lock_type: computed.lockType,
+              lock_credential_kind: computed.lockCredentialKind,
+              lock_hash: computed.lockHash,
+              lock_salt: computed.lockSalt,
+              lock_hint: computed.lockHint,
+            }
+          : f
+      )
+    );
+    relockFolderSession(folderPath);
+    logWorkspaceActivity(
+      'folder',
+      'lock_folder',
+      `Locked folder "${folderPath}" (${computed.lockType})`,
+      folderId
+    );
+  };
+
+  const unlockFolderForever = async (folderId: string) => {
+    const targetFolder = folders.find((f) => f.id === folderId);
+    await securityRepo.unlockFolderRecord(folderId);
+    setFolders((prev) =>
+      prev.map((f) =>
+        f.id === folderId
+          ? {
+              ...f,
+              is_locked: 0,
+              lock_type: null,
+              lock_credential_kind: null,
+              lock_hash: null,
+              lock_salt: null,
+              lock_hint: null,
+            }
+          : f
+      )
+    );
+    if (targetFolder?.path) {
+      relockFolderSession(targetFolder.path);
+    }
+    logWorkspaceActivity('folder', 'unlock_folder_permanent', 'Removed lock from folder', folderId);
   };
 
   const {
@@ -1085,7 +1308,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         favoriteFolders,
         pinnedFolders,
         archivedFolders,
-        tags,
+        tags: visibleTags,
         activeFilter,
         isLoading,
         setActiveFilter,
@@ -1106,6 +1329,13 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         batchArchiveNotes,
         batchRestoreNotes,
         batchPermanentlyDeleteNotes,
+        lockedNoteIds,
+        lockNote,
+        unlockNoteForever,
+        batchLockNotes,
+        batchUnlockNotesForever,
+        lockFolder,
+        unlockFolderForever,
         createFolder,
         renameFolder,
         moveFolder,

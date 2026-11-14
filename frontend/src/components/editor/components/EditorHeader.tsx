@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, useWindowDimensions } from 'react-native';
-import { ArrowLeft, Check, Pin, Star, Trash2, Download, Upload, FileText, Archive, MoreHorizontal, Bell } from 'lucide-react-native';
+import { ArrowLeft, Check, Pin, Star, Trash2, Download, Upload, FileText, Archive, MoreHorizontal, Bell, Lock, LockOpen } from 'lucide-react-native';
 import { useTheme, NoteColors, NoteColorToken } from '../../../theme';
 
 export const PASTEL_PALETTE: NoteColorToken[] = [
@@ -28,8 +28,12 @@ interface EditorHeaderProps {
   isPinned: boolean;
   isFavorite: boolean;
   isArchived?: boolean;
+  isLocked?: boolean;
+  isFolderLocked?: boolean;
   reminderAt?: string;
   onSetReminder?: () => void;
+  onManageLock?: () => void;
+  onRelockNow?: () => void;
   onClose: () => void;
   onColorChange: (color: NoteColorToken) => void;
   onTogglePin: () => void;
@@ -46,8 +50,12 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
   isPinned,
   isFavorite,
   isArchived = false,
+  isLocked = false,
+  isFolderLocked = false,
   reminderAt,
   onSetReminder,
+  onManageLock,
+  onRelockNow,
   onClose,
   onColorChange,
   onTogglePin,
@@ -176,6 +184,16 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
             style={{ position: 'absolute', top: 60, right: 12, zIndex: 100, backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }}
             className="rounded-2xl border p-1.5 min-w-[220px]"
           >
+            {onManageLock &&
+              menuItem(
+                isLocked ? 'Manage Lock / Unlock' : 'Lock Note (PIN / Password)',
+                isLocked ? LockOpen : Lock,
+                NoteColors.lavender,
+                onManageLock
+              )}
+            {(isLocked || isFolderLocked) &&
+              onRelockNow &&
+              menuItem('Re-lock & Close Now', Lock, NoteColors.cyan, onRelockNow)}
             {onSetReminder && menuItem(reminderAt ? 'Edit Reminder' : 'Set Reminder', Bell, reminderAt ? '#F59E0B' : iconColor, onSetReminder)}
             {menuItem('Import File (.md, .json, .csv)', Upload, iconColor, onImportFile)}
             {menuItem('Export as Markdown (.md)', FileText, NoteColors.cyan, onExportMarkdown)}
@@ -302,6 +320,33 @@ export const EditorHeader: React.FC<EditorHeaderProps> = ({
               </View>
             )}
           </View>
+        )}
+
+        {onManageLock && (
+          <Pressable
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            onPress={onManageLock}
+            accessibilityLabel={isLocked ? 'Manage Note Lock' : 'Lock Note'}
+            className="w-9 h-9 rounded-full items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 active:bg-black/10 dark:active:bg-white/10"
+            style={({ pressed }) => (pressed ? { transform: [{ scale: 0.9 }] } : undefined)}
+          >
+            {isLocked ? (
+              <LockOpen size={17} color={NoteColors.lavender} />
+            ) : (
+              <Lock size={17} color={isDark ? '#B5B5B5' : '#626262'} />
+            )}
+          </Pressable>
+        )}
+
+        {(isLocked || isFolderLocked) && onRelockNow && (
+          <Pressable
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            onPress={onRelockNow}
+            accessibilityLabel="Re-lock Note Now"
+            className="px-3 py-1.5 rounded-full bg-purple-500/15 items-center justify-center ml-0.5 active:opacity-80"
+          >
+            <Text className="text-[11px] font-extrabold text-purple-400">Re-lock</Text>
+          </Pressable>
         )}
 
         <Pressable

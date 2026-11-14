@@ -17,18 +17,19 @@ export const BacklinksStrip: React.FC<BacklinksStripProps> = ({
 }) => {
   const router = useRouter();
   const { isDark } = useTheme();
-  const { notes } = useNotesStore();
+  const { notes, lockedNoteIds } = useNotesStore();
 
-  // Find all other notes in the vault that contain a note_link pointing to currentNoteId
+  // Find all other unlocked notes in the vault that contain a note_link pointing to currentNoteId
   const backlinks = useMemo(() => {
     return notes.filter((n: NoteItem) => {
       if (n.id === currentNoteId) return false;
+      if (lockedNoteIds.has(n.id)) return false;
       const blocks: ComposableBlock[] = Array.isArray(n.blocks) ? n.blocks : [];
       return blocks.some(
         (b) => b.type === 'note_link' && b.metadata?.targetNoteId === currentNoteId
       );
     });
-  }, [notes, currentNoteId]);
+  }, [notes, currentNoteId, lockedNoteIds]);
 
   if (backlinks.length === 0) {
     return null;

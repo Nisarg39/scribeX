@@ -95,7 +95,8 @@ export const NotesSearchBar: React.FC<NotesSearchBarProps> = ({
               if (searchQuery.trim()) recordSearchHistory(searchQuery.trim());
             }}
             returnKeyType="search"
-            className="flex-1 text-base font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-1"
+            className="flex-1 text-base font-medium text-light-textPrimary dark:text-dark-textPrimary px-3 py-1 outline-none"
+            style={{ outlineStyle: 'none' } as any}
           />
 
           {searchQuery.length > 0 && (

@@ -2,8 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, Modal, Platform, Share, Alert, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../theme';
+import { useSecurity } from '../context';
 import { useNotesStore } from '../state/useNotesStore';
 import { NoteItem } from '../types/note';
+import {
+  getAncestorFolderPaths,
+  isFolderEffectivelyLocked,
+  normalizeFolderPath,
+} from '../core/security/vaultLockHelpers';
+
+function isSameOrDescendantPath(childPath?: string | null, parentPath?: string | null): boolean {
+  const normChild = normalizeFolderPath(childPath);
+  const normParent = normalizeFolderPath(parentPath);
+  if (!normChild || !normParent) return false;
+  return normChild === normParent || normChild.startsWith(`${normParent}/`);
+}
 import { NoteCard } from './notes/NoteCard';
 import {
   Star,
@@ -47,11 +60,25 @@ import { FolderDropdownModal } from './folders/FolderDropdownModal';
 import { SortOrderModal } from './notes/SortOrderModal';
 import { NotesFilterModal } from './notes/NotesFilterModal';
 import { NoteColors, NoteColorToken } from '../theme/tokens';
+import { NoteStatusScope } from '../core/noteQueryEngine';
 import { FolderNoteStats } from '../db/types';
 
 export const NotesView: React.FC = () => {
   const router = useRouter();
   const { isDark } = useTheme();
+  const {
+    securityConfig,
+    unlockedNoteIds,
+    unlockedFolderPaths,
+    markFolderUnlocked,
+    relockFoldersOnSwitch,
+    relockNoteSession,
+    relockFolderSession,
+    promptUnlockNote,
+    promptUnlockFolder,
+    promptConfigureLock,
+    promptVerifyTargetCredential,
+  } = useSecurity();
   const {
     notes,
     folders,
@@ -105,6 +132,13 @@ export const NotesView: React.FC = () => {
     batchArchiveNotes,
     batchRestoreNotes,
     batchPermanentlyDeleteNotes,
+    lockedNoteIds,
+    lockNote,
+    unlockNoteForever,
+    batchLockNotes,
+    batchUnlockNotesForever,
+    lockFolder,
+    unlockFolderForever,
     setSortByFilter,
     toggleBlockTypeFilter,
     resetQueryRequest,
@@ -138,6 +172,8 @@ export const NotesView: React.FC = () => {
     isFavorite?: boolean;
     isPinned?: boolean;
     isArchived?: boolean;
+    isLocked?: boolean;
+    lockType?: 'master' | 'custom' | null;
   } | null>(null);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isFolderExplorerOpen, setIsFolderExplorerOpen] = useState(false);
@@ -151,9 +187,14 @@ export const NotesView: React.FC = () => {
   const [isVoiceSearching, setIsVoiceSearching] = useState(false);
   const recognitionRef = useRef<any>(null);
   const loadingMoreLockRef = useRef(false);
+  const actionSheetEphemeralFoldersRef = useRef<string[]>([]);
+  const actionSheetRelockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     return () => {
+      if (actionSheetRelockTimerRef.current) {
+        clearTimeout(actionSheetRelockTimerRef.current);
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -237,11 +278,304 @@ export const NotesView: React.FC = () => {
     setIsFolderModalOpen(true);
   };
 
-  const handleOpenNote = (note: NoteItem) => {
+  const handleSelectFolderWithSecurity = async (
+    folderPath: string | null,
+    includeSubfolders: boolean = false
+  ) => {
+    setIsFilterModalOpen(false);
+    setIsFolderDropdownOpen(false);
+    setIsFolderExplorerOpen(false);
+
+    if (folderPath) {
+      const clean = normalizeFolderPath(folderPath);
+      if (isFolderEffectivelyLocked(clean, folders, unlockedFolderPaths)) {
+        const unlocked = await promptUnlockFolder(clean, folders);
+        if (!unlocked) return;
+      }
+    }
+
+    relockFoldersOnSwitch(folderPath);
+    setFolderFilter(folderPath, includeSubfolders);
+  };
+
+  const handleSetStatusScopeWithSecurity = (scope: NoteStatusScope) => {
+    relockFoldersOnSwitch(null);
+    setStatusScopeFilter(scope);
+  };
+
+  const handleOpenNote = async (note: NoteItem) => {
+    if (lockedNoteIds.has(note.id)) {
+      const ok = await promptUnlockNote(note, folders);
+      if (!ok) return;
+    }
+
     if (searchQuery.trim()) {
       recordSearchHistory(searchQuery.trim());
     }
     router.push(`/note/${note.id}`);
+  };
+
+  const cancelActionSheetRelockTimer = () => {
+    if (actionSheetRelockTimerRef.current) {
+      clearTimeout(actionSheetRelockTimerRef.current);
+      actionSheetRelockTimerRef.current = null;
+    }
+  };
+
+  const consumeActionSheetEphemeralSet = (): Set<string> => {
+    cancelActionSheetRelockTimer();
+    const list = actionSheetEphemeralFoldersRef.current;
+    actionSheetEphemeralFoldersRef.current = [];
+    return new Set(list);
+  };
+
+  const flushActionSheetEphemeralRelock = (activeFolderOverride?: string | null) => {
+    const ephemeral = consumeActionSheetEphemeralSet();
+    if (securityConfig.autoRelockSeconds !== 0 || ephemeral.size === 0) return;
+    const activeTarget =
+      activeFolderOverride !== undefined ? activeFolderOverride : queryRequest.folderPath;
+    for (const fp of ephemeral) {
+      if (!isSameOrDescendantPath(activeTarget, fp)) {
+        relockFolderSession(fp);
+      }
+    }
+  };
+
+  const restoreEphemeralUnlocks = (
+    preNoteIds: Set<string>,
+    preFolderPaths: Set<string>,
+    touchedNoteIds: Iterable<string>,
+    touchedFolderPaths: Iterable<string>,
+    activeFolderOverride?: string | null
+  ) => {
+    if (securityConfig.autoRelockSeconds !== 0) return;
+    for (const id of touchedNoteIds) {
+      if (!preNoteIds.has(id)) {
+        relockNoteSession(id);
+      }
+    }
+    const activeTarget =
+      activeFolderOverride !== undefined ? activeFolderOverride : queryRequest.folderPath;
+    for (const fp of touchedFolderPaths) {
+      if (!preFolderPaths.has(fp) && !isSameOrDescendantPath(activeTarget, fp)) {
+        relockFolderSession(fp);
+      }
+    }
+  };
+
+  const collectAndVerifyNotes = async (
+    candidates: NoteItem[],
+    touchedNotes: Set<string>,
+    touchedFolders: Set<string>
+  ): Promise<boolean> => {
+    for (const candidate of candidates) {
+      if (lockedNoteIds.has(candidate.id)) {
+        touchedNotes.add(candidate.id);
+        for (const anc of getAncestorFolderPaths(normalizeFolderPath(candidate.folderPath))) {
+          touchedFolders.add(anc);
+        }
+        const ok = await promptUnlockNote(candidate, folders);
+        if (!ok) return false;
+      }
+    }
+    return true;
+  };
+
+  const handleToggleCardLock = async (note: NoteItem) => {
+    const cleanFolder = normalizeFolderPath(note.folderPath);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedFolders = new Set<string>();
+
+    try {
+      if (isFolderEffectivelyLocked(cleanFolder, folders, unlockedFolderPaths)) {
+        for (const anc of getAncestorFolderPaths(cleanFolder)) {
+          touchedFolders.add(anc);
+        }
+        const folderUnlocked = await promptUnlockFolder(cleanFolder, folders);
+        if (!folderUnlocked) return;
+      }
+
+      if (note.isLocked) {
+        // Unlock or re-lock existing locked note
+        const lockType = note.lockType === 'custom' ? 'custom' : 'master';
+        const verified = await promptVerifyTargetCredential({
+          title: `Remove Lock: "${note.title || 'Untitled Note'}"`,
+          subtitle:
+            lockType === 'custom'
+              ? 'Requires this note’s Custom PIN or Password.'
+              : 'Verify your Master credential to permanently unlock this note.',
+          lockType,
+          credentialKind: note.lockCredentialKind,
+          customHash: note.lockHash,
+          customSalt: note.lockSalt,
+          hint: note.lockHint,
+          rateLimitKey: `note:${note.id}`,
+          confirmLabel: 'Remove Lock',
+        });
+        if (!verified) return;
+        await unlockNoteForever(note.id);
+        return;
+      }
+
+      const payload = await promptConfigureLock({
+        targetLabel: note.title || 'Untitled Note',
+        entityType: 'note',
+      });
+      if (!payload) return;
+      await lockNote(note.id, payload);
+    } finally {
+      restoreEphemeralUnlocks(new Set(), preFolderPaths, [], touchedFolders);
+    }
+  };
+
+  const runWithSingleNoteUnlocked = async (
+    noteId: string,
+    action: () => Promise<void>
+  ) => {
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      const target = notes.find((n) => n.id === noteId);
+      if (target && lockedNoteIds.has(noteId)) {
+        touchedNotes.add(noteId);
+        for (const anc of getAncestorFolderPaths(normalizeFolderPath(target.folderPath))) {
+          touchedFolders.add(anc);
+        }
+        const ok = await promptUnlockNote(target, folders);
+        if (!ok) return;
+      }
+      await action();
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
+  };
+
+  const handleTogglePinSafe = async (noteId: string) => {
+    await runWithSingleNoteUnlocked(noteId, () => togglePin(noteId));
+  };
+
+  const handleToggleFavoriteSafe = async (noteId: string) => {
+    await runWithSingleNoteUnlocked(noteId, () => toggleFavorite(noteId));
+  };
+
+  const handleRestoreNoteSafe = async (noteId: string) => {
+    await runWithSingleNoteUnlocked(noteId, () => restoreNote(noteId));
+  };
+
+  const handleUnarchiveNoteSafe = async (noteId: string) => {
+    await runWithSingleNoteUnlocked(noteId, () => unarchiveNote(noteId));
+  };
+
+  const handlePermanentlyDeleteNoteSafe = async (noteId: string) => {
+    await runWithSingleNoteUnlocked(noteId, () => permanentlyDeleteNote(noteId));
+  };
+
+  const handleEmptyTrashSafe = async () => {
+    const trashedNotes = notes.filter((n) => n.status === 'trashed');
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      const ok = await collectAndVerifyNotes(trashedNotes, touchedNotes, touchedFolders);
+      if (!ok) return;
+      await emptyTrash();
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
+  };
+
+  const verifyFolderSubtreeUnlocked = async (
+    folderPath: string,
+    options?: {
+      targetParentPath?: string | null;
+      includeTrashedNotes?: boolean;
+      beforePrompt?: () => void;
+      touchedNoteIds?: Set<string>;
+      touchedFolderPaths?: Set<string>;
+    }
+  ): Promise<boolean> => {
+    const cleanRoot = normalizeFolderPath(folderPath);
+    if (!cleanRoot) return true;
+
+    const localUnlockedFolders = new Set(unlockedFolderPaths);
+    const localUnlockedNotes = new Set(unlockedNoteIds);
+    let didDismissActiveModal = false;
+    const notifyBeforePrompt = () => {
+      if (!didDismissActiveModal) {
+        didDismissActiveModal = true;
+        options?.beforePrompt?.();
+      }
+    };
+    const recordFolderTouched = (fp: string) => {
+      for (const anc of getAncestorFolderPaths(fp)) {
+        localUnlockedFolders.add(anc);
+        options?.touchedFolderPaths?.add(anc);
+      }
+    };
+
+    if (isFolderEffectivelyLocked(cleanRoot, folders, localUnlockedFolders)) {
+      notifyBeforePrompt();
+      const ok = await promptUnlockFolder(cleanRoot, folders);
+      if (!ok) return false;
+      recordFolderTouched(cleanRoot);
+    }
+
+    const lockedDescendants = folders
+      .filter((f) => {
+        const subPath = normalizeFolderPath(f.path || f.name);
+        if (!subPath || subPath === cleanRoot) return false;
+        if (!isSameOrDescendantPath(subPath, cleanRoot)) return false;
+        return Boolean(f.is_locked) && !localUnlockedFolders.has(subPath);
+      })
+      .sort(
+        (a, b) =>
+          normalizeFolderPath(a.path || a.name).length -
+          normalizeFolderPath(b.path || b.name).length
+      );
+
+    for (const sub of lockedDescendants) {
+      const subPath = normalizeFolderPath(sub.path || sub.name);
+      if (isFolderEffectivelyLocked(subPath, folders, localUnlockedFolders)) {
+        notifyBeforePrompt();
+        const ok = await promptUnlockFolder(subPath, folders);
+        if (!ok) return false;
+        recordFolderTouched(subPath);
+      }
+    }
+
+    const cleanDest = normalizeFolderPath(options?.targetParentPath);
+    if (cleanDest && isFolderEffectivelyLocked(cleanDest, folders, localUnlockedFolders)) {
+      notifyBeforePrompt();
+      const ok = await promptUnlockFolder(cleanDest, folders);
+      if (!ok) return false;
+      recordFolderTouched(cleanDest);
+    }
+
+    const lockedNotesInSubtree = notes.filter((n) => {
+      if (!options?.includeTrashedNotes && n.status === 'trashed') return false;
+      if (!isSameOrDescendantPath(n.folderPath, cleanRoot)) return false;
+      return Boolean(n.isLocked) && !localUnlockedNotes.has(n.id);
+    });
+
+    for (const lockedNote of lockedNotesInSubtree) {
+      if (!localUnlockedNotes.has(lockedNote.id)) {
+        notifyBeforePrompt();
+        options?.touchedNoteIds?.add(lockedNote.id);
+        for (const anc of getAncestorFolderPaths(normalizeFolderPath(lockedNote.folderPath))) {
+          options?.touchedFolderPaths?.add(anc);
+        }
+        const ok = await promptUnlockNote(lockedNote, folders);
+        if (!ok) return false;
+        localUnlockedNotes.add(lockedNote.id);
+      }
+    }
+
+    return true;
   };
 
   const handleCreateNewBlankNote = () => {
@@ -251,8 +585,17 @@ export const NotesView: React.FC = () => {
   const handleCreateFolder = async () => {
     const clean = newFolderName.trim().replace(/^\/+|\/+$/g, '');
     if (!clean) return;
-    const created = await createFolder(clean, selectedParentPath || undefined);
-    const targetPath = created?.path || (selectedParentPath ? `${selectedParentPath}/${clean}` : clean);
+    const cleanParent = normalizeFolderPath(selectedParentPath);
+    const fullTargetPath = normalizeFolderPath(cleanParent ? `${cleanParent}/${clean}` : clean);
+    consumeActionSheetEphemeralSet();
+    if (fullTargetPath && isFolderEffectivelyLocked(fullTargetPath, folders, unlockedFolderPaths)) {
+      setIsFolderModalOpen(false);
+      const unlocked = await promptUnlockFolder(fullTargetPath, folders);
+      if (!unlocked) return;
+      setIsFolderModalOpen(true);
+    }
+    const created = await createFolder(clean, cleanParent || undefined);
+    const targetPath = created?.path || fullTargetPath;
     setNewFolderName('');
     setSelectedParentPath(targetPath);
     setFolderFilter(targetPath);
@@ -261,14 +604,41 @@ export const NotesView: React.FC = () => {
   const handleCreateAndCloseFolderModal = async () => {
     const clean = newFolderName.trim().replace(/^\/+|\/+$/g, '');
     if (!clean) return;
-    const created = await createFolder(clean, selectedParentPath || undefined);
-    const targetPath = created?.path || (selectedParentPath ? `${selectedParentPath}/${clean}` : clean);
+    const cleanParent = normalizeFolderPath(selectedParentPath);
+    const fullTargetPath = normalizeFolderPath(cleanParent ? `${cleanParent}/${clean}` : clean);
+    consumeActionSheetEphemeralSet();
+    if (fullTargetPath && isFolderEffectivelyLocked(fullTargetPath, folders, unlockedFolderPaths)) {
+      setIsFolderModalOpen(false);
+      const unlocked = await promptUnlockFolder(fullTargetPath, folders);
+      if (!unlocked) return;
+    }
+    const created = await createFolder(clean, cleanParent || undefined);
+    const targetPath = created?.path || fullTargetPath;
     setNewFolderName('');
     setIsFolderModalOpen(false);
     setFolderFilter(targetPath);
   };
 
   const handleOpenFolderActions = async (folderPath: string) => {
+    const cleanPath = normalizeFolderPath(folderPath);
+    cancelActionSheetRelockTimer();
+    const preFolders = new Set(unlockedFolderPaths);
+    let newlyUnlockedAncestors: string[] = [];
+
+    if (isFolderEffectivelyLocked(cleanPath, folders, unlockedFolderPaths)) {
+      const unlocked = await promptUnlockFolder(cleanPath, folders);
+      if (!unlocked) return;
+      if (
+        securityConfig.autoRelockSeconds === 0 &&
+        !isSameOrDescendantPath(queryRequest.folderPath, cleanPath)
+      ) {
+        newlyUnlockedAncestors = getAncestorFolderPaths(cleanPath).filter(
+          (p) => !preFolders.has(p)
+        );
+      }
+    }
+    actionSheetEphemeralFoldersRef.current = newlyUnlockedAncestors;
+
     const existingFolder = folders.find((f) => (f.path || f.name) === folderPath);
     let folderId = existingFolder?.id;
     if (!folderId) {
@@ -282,6 +652,8 @@ export const NotesView: React.FC = () => {
     const isFavorite = Boolean(existingFolder?.is_favorite);
     const isPinned = Boolean(existingFolder?.is_pinned);
     const isArchived = Boolean(existingFolder?.is_archived);
+    const isLocked = Boolean(existingFolder?.is_locked);
+    const lockType = existingFolder?.lock_type || null;
     setActionSheetFolder({
       path: folderPath,
       id: folderId,
@@ -290,6 +662,8 @@ export const NotesView: React.FC = () => {
       isFavorite,
       isPinned,
       isArchived,
+      isLocked,
+      lockType,
     });
     try {
       const stats = await getFolderStats(folderPath, folderId);
@@ -300,32 +674,280 @@ export const NotesView: React.FC = () => {
     setIsActionSheetOpen(true);
   };
 
-  const handleOpenCreateSubfolderFromSheet = (parentPath?: string) => {
-    setSelectedParentPath(parentPath || '');
+  const handleOpenCreateSubfolderFromSheet = async (parentPath?: string) => {
+    cancelActionSheetRelockTimer();
+    const cleanParent = normalizeFolderPath(parentPath);
+    if (cleanParent && isFolderEffectivelyLocked(cleanParent, folders, unlockedFolderPaths)) {
+      setIsActionSheetOpen(false);
+      const preFolderPaths = new Set(unlockedFolderPaths);
+      const unlocked = await promptUnlockFolder(cleanParent, folders);
+      if (!unlocked) return;
+      if (
+        securityConfig.autoRelockSeconds === 0 &&
+        !isSameOrDescendantPath(queryRequest.folderPath, cleanParent)
+      ) {
+        const added = getAncestorFolderPaths(cleanParent).filter((p) => !preFolderPaths.has(p));
+        actionSheetEphemeralFoldersRef.current = Array.from(
+          new Set([...actionSheetEphemeralFoldersRef.current, ...added])
+        );
+      }
+    }
+    setSelectedParentPath(cleanParent);
     setNewFolderName('');
     setIsFolderModalOpen(true);
   };
 
   const handleConfirmRenameFolder = async (newName: string) => {
-    if (!actionSheetFolder?.id) return;
-    await renameFolder(actionSheetFolder.id, newName);
+    const cleanNewName = newName.trim().replace(/^\/+|\/+$/g, '');
+    if (!actionSheetFolder?.id || !cleanNewName) return;
+    const oldPath = normalizeFolderPath(actionSheetFolder.path);
+    const sheetEphemeral = consumeActionSheetEphemeralSet();
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(
+      Array.from(unlockedFolderPaths).filter((p) => !sheetEphemeral.has(p))
+    );
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>(sheetEphemeral);
+
+    let verified = false;
+    try {
+      verified = await verifyFolderSubtreeUnlocked(oldPath, {
+        includeTrashedNotes: true,
+        beforePrompt: () => setIsRenameModalOpen(false),
+        touchedNoteIds: touchedNotes,
+        touchedFolderPaths: touchedFolders,
+      });
+      if (!verified) return;
+
+      const parentSlashIndex = oldPath.lastIndexOf('/');
+      const newPath =
+        parentSlashIndex !== -1
+          ? `${oldPath.slice(0, parentSlashIndex + 1)}${cleanNewName}`
+          : cleanNewName;
+      const wasActiveSubtree = isSameOrDescendantPath(queryRequest.folderPath, oldPath);
+
+      await renameFolder(actionSheetFolder.id, cleanNewName);
+
+      const candidatePaths = new Set<string>(
+        Array.from(unlockedFolderPaths).filter((p) => isSameOrDescendantPath(p, oldPath))
+      );
+      for (const fp of touchedFolders) {
+        if (isSameOrDescendantPath(fp, oldPath)) {
+          candidatePaths.add(fp);
+        }
+      }
+      for (const f of folders) {
+        const fp = normalizeFolderPath(f.path || f.name);
+        if (f.is_locked === 1 && fp && isSameOrDescendantPath(fp, oldPath)) {
+          candidatePaths.add(fp);
+        }
+      }
+
+      for (const stalePath of candidatePaths) {
+        relockFolderSession(stalePath);
+        const suffix = stalePath.slice(oldPath.length);
+        const newDescendantPath = `${newPath}${suffix}`;
+        const isInActiveViewPath = isSameOrDescendantPath(queryRequest.folderPath, stalePath);
+        const shouldKeepUnlocked =
+          securityConfig.autoRelockSeconds === 0
+            ? isInActiveViewPath
+            : isInActiveViewPath || preFolderPaths.has(stalePath) || touchedFolders.has(stalePath);
+        if (shouldKeepUnlocked) {
+          markFolderUnlocked(newDescendantPath);
+        }
+      }
+
+      const activeAfterRename = wasActiveSubtree
+        ? `${newPath}${normalizeFolderPath(queryRequest.folderPath).slice(oldPath.length)}`
+        : queryRequest.folderPath;
+      const nonSubtreeFolders = Array.from(touchedFolders).filter(
+        (fp) => !isSameOrDescendantPath(fp, oldPath)
+      );
+      restoreEphemeralUnlocks(
+        preNoteIds,
+        preFolderPaths,
+        touchedNotes,
+        nonSubtreeFolders,
+        activeAfterRename
+      );
+
+      setActionSheetFolder((prev) => (prev ? { ...prev, path: newPath } : null));
+    } finally {
+      if (!verified) {
+        restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+      }
+    }
   };
 
   const handleConfirmMoveFolder = async (newParentPath: string | null) => {
     if (!actionSheetFolder?.id) return;
-    await moveFolder(actionSheetFolder.id, newParentPath);
+    const oldPath = normalizeFolderPath(actionSheetFolder.path);
+    const cleanDest = normalizeFolderPath(newParentPath);
+    const sheetEphemeral = consumeActionSheetEphemeralSet();
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(
+      Array.from(unlockedFolderPaths).filter((p) => !sheetEphemeral.has(p))
+    );
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>(sheetEphemeral);
+
+    let verified = false;
+    try {
+      verified = await verifyFolderSubtreeUnlocked(oldPath, {
+        targetParentPath: cleanDest || null,
+        includeTrashedNotes: true,
+        beforePrompt: () => setIsMoveFolderReparentModalOpen(false),
+        touchedNoteIds: touchedNotes,
+        touchedFolderPaths: touchedFolders,
+      });
+      if (!verified) return;
+
+      const leafName = oldPath.split('/').filter(Boolean).pop() || oldPath;
+      const newPath = cleanDest ? `${cleanDest}/${leafName}` : leafName;
+      const wasActiveSubtree = isSameOrDescendantPath(queryRequest.folderPath, oldPath);
+
+      await moveFolder(actionSheetFolder.id, newParentPath);
+
+      const candidatePaths = new Set<string>(
+        Array.from(unlockedFolderPaths).filter((p) => isSameOrDescendantPath(p, oldPath))
+      );
+      for (const fp of touchedFolders) {
+        if (isSameOrDescendantPath(fp, oldPath)) {
+          candidatePaths.add(fp);
+        }
+      }
+      for (const f of folders) {
+        const fp = normalizeFolderPath(f.path || f.name);
+        if (f.is_locked === 1 && fp && isSameOrDescendantPath(fp, oldPath)) {
+          candidatePaths.add(fp);
+        }
+      }
+
+      for (const stalePath of candidatePaths) {
+        relockFolderSession(stalePath);
+        const suffix = stalePath.slice(oldPath.length);
+        const newDescendantPath = `${newPath}${suffix}`;
+        const isInActiveViewPath = isSameOrDescendantPath(queryRequest.folderPath, stalePath);
+        const shouldKeepUnlocked =
+          securityConfig.autoRelockSeconds === 0
+            ? isInActiveViewPath
+            : isInActiveViewPath || preFolderPaths.has(stalePath) || touchedFolders.has(stalePath);
+        if (shouldKeepUnlocked) {
+          markFolderUnlocked(newDescendantPath);
+        }
+      }
+
+      const activeAfterMove = wasActiveSubtree
+        ? `${newPath}${normalizeFolderPath(queryRequest.folderPath).slice(oldPath.length)}`
+        : queryRequest.folderPath;
+      const nonSubtreeFolders = Array.from(touchedFolders).filter(
+        (fp) => !isSameOrDescendantPath(fp, oldPath)
+      );
+      restoreEphemeralUnlocks(
+        preNoteIds,
+        preFolderPaths,
+        touchedNotes,
+        nonSubtreeFolders,
+        activeAfterMove
+      );
+
+      setActionSheetFolder((prev) => (prev ? { ...prev, path: newPath } : null));
+    } finally {
+      if (!verified) {
+        restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+      }
+    }
   };
 
   const handleConfirmDuplicateFolder = async (folderPath: string, folderId?: string) => {
     const idToUse = folderId || actionSheetFolder?.id;
     if (!idToUse) return;
-    await duplicateFolder(idToUse, folderPath);
+    const cleanPath = normalizeFolderPath(folderPath);
+    const sheetEphemeral = consumeActionSheetEphemeralSet();
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(
+      Array.from(unlockedFolderPaths).filter((p) => !sheetEphemeral.has(p))
+    );
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>(sheetEphemeral);
+
+    try {
+      const ok = await verifyFolderSubtreeUnlocked(cleanPath, {
+        beforePrompt: () => setIsActionSheetOpen(false),
+        touchedNoteIds: touchedNotes,
+        touchedFolderPaths: touchedFolders,
+      });
+      if (!ok) return;
+      await duplicateFolder(idToUse, folderPath);
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
   };
 
   const handleConfirmDeleteFolder = async (noteAction: 'moveToGeneral' | 'trash') => {
     if (!actionSheetFolder) return;
     const idToUse = actionSheetFolder.id || '';
-    await deleteFolderWithOptions(idToUse, actionSheetFolder.path, noteAction);
+    const cleanPath = normalizeFolderPath(actionSheetFolder.path);
+    const sheetEphemeral = consumeActionSheetEphemeralSet();
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(
+      Array.from(unlockedFolderPaths).filter((p) => !sheetEphemeral.has(p))
+    );
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>(sheetEphemeral);
+
+    try {
+      const verified = await verifyFolderSubtreeUnlocked(cleanPath, {
+        includeTrashedNotes: true,
+        beforePrompt: () => setIsDeleteFolderModalOpen(false),
+        touchedNoteIds: touchedNotes,
+        touchedFolderPaths: touchedFolders,
+      });
+      if (!verified) return;
+
+      await deleteFolderWithOptions(idToUse, actionSheetFolder.path, noteAction);
+
+      for (const unlockedPath of new Set([...unlockedFolderPaths, ...touchedFolders])) {
+        if (isSameOrDescendantPath(unlockedPath, cleanPath)) {
+          relockFolderSession(unlockedPath);
+        }
+      }
+      for (const f of folders) {
+        const fp = normalizeFolderPath(f.path || f.name);
+        if (fp && isSameOrDescendantPath(fp, cleanPath)) {
+          relockFolderSession(fp);
+        }
+      }
+      setActionSheetFolder(null);
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
+  };
+
+  const handleUnarchiveFolderSafe = async (
+    folderId: string
+  ): Promise<{ affectedNotes: number; affectedFolders: number }> => {
+    const targetFolder = folders.find((f) => f.id === folderId);
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      if (targetFolder) {
+        const verified = await verifyFolderSubtreeUnlocked(
+          normalizeFolderPath(targetFolder.path || targetFolder.name),
+          {
+            touchedNoteIds: touchedNotes,
+            touchedFolderPaths: touchedFolders,
+          }
+        );
+        if (!verified) return { affectedNotes: 0, affectedFolders: 0 };
+      }
+      return await unarchiveFolder(folderId);
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
   };
 
   const handleChangeFolderColor = async (colorToken: string) => {
@@ -350,19 +972,35 @@ export const NotesView: React.FC = () => {
 
   const handleExportFolderNotes = async (folderPath: string) => {
     const clean = folderPath.trim().replace(/^\/+|\/+$/g, '');
-    const folderNotes = notes.filter(
-      (n) => n.status !== 'trashed' && (n.folderPath === clean || n.folderPath?.startsWith(`${clean}/`))
+    const sheetEphemeral = consumeActionSheetEphemeralSet();
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(
+      Array.from(unlockedFolderPaths).filter((p) => !sheetEphemeral.has(p))
     );
-    if (folderNotes.length === 0) return;
-    const bundleText = folderNotes
-      .map((n) => `# ${n.title || 'Untitled'}\n\n${n.contentMarkdown || ''}`)
-      .join('\n\n---\n\n');
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>(sheetEphemeral);
+
     try {
-      await Share.share({
-        title: `ScribeX - /${clean} Export`,
-        message: bundleText,
-      });
-    } catch (_) { }
+      const folderNotes = notes.filter(
+        (n) => n.status !== 'trashed' && (n.folderPath === clean || n.folderPath?.startsWith(`${clean}/`))
+      );
+      if (folderNotes.length === 0) return;
+
+      const ok = await collectAndVerifyNotes(folderNotes, touchedNotes, touchedFolders);
+      if (!ok) return;
+
+      const bundleText = folderNotes
+        .map((n) => `# ${n.title || 'Untitled'}\n\n${n.contentMarkdown || ''}`)
+        .join('\n\n---\n\n');
+      try {
+        await Share.share({
+          title: `ScribeX - /${clean} Export`,
+          message: bundleText,
+        });
+      } catch (_) { }
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
   };
 
   // Derive folders matching current status scope (active vs archived)
@@ -501,11 +1139,132 @@ export const NotesView: React.FC = () => {
   const handleBatchDelete = async () => {
     const ids = Array.from(selectedNoteIds);
     if (ids.length === 0) return;
-    if (queryRequest.statusScope === 'trashed') {
-      await batchPermanentlyDeleteNotes(ids);
-    } else {
-      await batchDeleteNotes(ids);
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      const ok = await collectAndVerifyNotes(selectedNotes, touchedNotes, touchedFolders);
+      if (!ok) return;
+      if (queryRequest.statusScope === 'trashed') {
+        await batchPermanentlyDeleteNotes(ids);
+      } else {
+        await batchDeleteNotes(ids);
+      }
+      handleClearSelection();
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
     }
+  };
+
+  const handleBatchLock = async () => {
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedFolders = new Set<string>();
+
+    try {
+      // 1. Verify any locked ancestor folders protecting selected notes
+      const checkedFolders = new Set<string>();
+      for (const n of selectedNotes) {
+        const fp = normalizeFolderPath(n.folderPath);
+        if (!checkedFolders.has(fp) && isFolderEffectivelyLocked(fp, folders, unlockedFolderPaths)) {
+          for (const anc of getAncestorFolderPaths(fp)) {
+            touchedFolders.add(anc);
+          }
+          const ok = await promptUnlockFolder(fp, folders);
+          if (!ok) return;
+        }
+        checkedFolders.add(fp);
+      }
+
+      // 2. Enforce strict credential verification before replacing any already-locked note
+      let masterVerified = false;
+      for (const n of selectedNotes) {
+        if (!n.isLocked) continue;
+        if (n.lockType === 'custom') {
+          const ok = await promptVerifyTargetCredential({
+            title: `Replace Lock: "${n.title || 'Untitled Note'}"`,
+            subtitle: 'Custom PIN/Password required before changing this note’s lock.',
+            lockType: 'custom',
+            credentialKind: n.lockCredentialKind,
+            customHash: n.lockHash,
+            customSalt: n.lockSalt,
+            hint: n.lockHint,
+            rateLimitKey: `note:${n.id}`,
+            confirmLabel: 'Verify',
+          });
+          if (!ok) return;
+        } else if (!masterVerified) {
+          const ok = await promptVerifyTargetCredential({
+            title: 'Replace Lock on Master-Locked Notes',
+            subtitle: 'Verify your Master credential before overwriting existing note locks.',
+            lockType: 'master',
+            rateLimitKey: 'batch_master_relock',
+            confirmLabel: 'Verify',
+          });
+          if (!ok) return;
+          masterVerified = true;
+        }
+      }
+
+      const payload = await promptConfigureLock({
+        targetLabel: `${ids.length} selected note${ids.length === 1 ? '' : 's'}`,
+        entityType: 'batch_notes',
+      });
+      if (!payload) return;
+      await batchLockNotes(ids, payload);
+      handleClearSelection();
+    } finally {
+      restoreEphemeralUnlocks(new Set(), preFolderPaths, [], touchedFolders);
+    }
+  };
+
+  const handleBatchUnlock = async () => {
+    const directlyLocked = notes.filter(
+      (n) => selectedNoteIds.has(n.id) && Boolean(n.isLocked)
+    );
+    if (directlyLocked.length === 0) return;
+
+    const verifiedIds: string[] = [];
+    let masterVerified = false;
+
+    for (const n of directlyLocked) {
+      if (n.lockType === 'custom') {
+        const ok = await promptVerifyTargetCredential({
+          title: `Unlock "${n.title || 'Untitled Note'}"`,
+          subtitle: 'Custom PIN/Password required to remove lock.',
+          lockType: 'custom',
+          credentialKind: n.lockCredentialKind,
+          customHash: n.lockHash,
+          customSalt: n.lockSalt,
+          hint: n.lockHint,
+          rateLimitKey: `note:${n.id}`,
+          confirmLabel: 'Remove Lock',
+        });
+        if (!ok) return;
+        verifiedIds.push(n.id);
+      } else {
+        if (!masterVerified) {
+          const ok = await promptVerifyTargetCredential({
+            title: 'Remove Lock from Master-Locked Notes',
+            subtitle: 'Verify your Workspace Master credential to unlock selected Master-locked notes.',
+            lockType: 'master',
+            rateLimitKey: 'batch_master_unlock',
+            confirmLabel: 'Remove Lock',
+          });
+          if (!ok) return;
+          masterVerified = true;
+        }
+        verifiedIds.push(n.id);
+      }
+    }
+
+    await batchUnlockNotesForever(verifiedIds);
     handleClearSelection();
   };
 
@@ -513,23 +1272,58 @@ export const NotesView: React.FC = () => {
     const ids = Array.from(selectedNoteIds);
     if (ids.length === 0) return;
     const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
-    const allPinned = selectedNotes.length > 0 && selectedNotes.every((n) => n.isPinned);
-    await batchTogglePin(ids, !allPinned);
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      const ok = await collectAndVerifyNotes(selectedNotes, touchedNotes, touchedFolders);
+      if (!ok) return;
+      const allPinned = selectedNotes.length > 0 && selectedNotes.every((n) => n.isPinned);
+      await batchTogglePin(ids, !allPinned);
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
   };
 
   const handleBatchArchive = async () => {
     const ids = Array.from(selectedNoteIds);
     if (ids.length === 0) return;
-    const isArchivedScope = queryRequest.statusScope === 'archived';
-    await batchArchiveNotes(ids, !isArchivedScope);
-    handleClearSelection();
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      const ok = await collectAndVerifyNotes(selectedNotes, touchedNotes, touchedFolders);
+      if (!ok) return;
+      const isArchivedScope = queryRequest.statusScope === 'archived';
+      await batchArchiveNotes(ids, !isArchivedScope);
+      handleClearSelection();
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
   };
 
   const handleBatchRestore = async () => {
     const ids = Array.from(selectedNoteIds);
     if (ids.length === 0) return;
-    await batchRestoreNotes(ids);
-    handleClearSelection();
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      const ok = await collectAndVerifyNotes(selectedNotes, touchedNotes, touchedFolders);
+      if (!ok) return;
+      await batchRestoreNotes(ids);
+      handleClearSelection();
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
   };
 
   const getSortLabel = (sortBy?: string) => {
@@ -553,47 +1347,120 @@ export const NotesView: React.FC = () => {
     const ids = Array.from(selectedNoteIds);
     if (ids.length === 0) return;
     const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
-    const combined = selectedNotes
-      .map((n) => `# ${n.title}\n\n${n.contentMarkdown || ''}`)
-      .join('\n\n---\n\n');
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
 
-    if (Platform.OS === 'web') {
-      if (typeof navigator !== 'undefined' && navigator.share) {
-        try {
-          await navigator.share({
-            title: `${selectedNotes.length} Notes from ScribeX`,
-            text: combined,
-          });
-          return;
-        } catch (_) { }
+    try {
+      const ok = await collectAndVerifyNotes(selectedNotes, touchedNotes, touchedFolders);
+      if (!ok) return;
+
+      const combined = selectedNotes
+        .map((n) => `# ${n.title}\n\n${n.contentMarkdown || ''}`)
+        .join('\n\n---\n\n');
+
+      if (Platform.OS === 'web') {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+          try {
+            await navigator.share({
+              title: `${selectedNotes.length} Notes from ScribeX`,
+              text: combined,
+            });
+            return;
+          } catch (_) { }
+        }
+        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+          await navigator.clipboard.writeText(combined);
+        }
+      } else {
+        await Share.share({
+          title: `${selectedNotes.length} Notes from ScribeX`,
+          message: combined,
+        });
       }
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(combined);
-      }
-    } else {
-      await Share.share({
-        title: `${selectedNotes.length} Notes from ScribeX`,
-        message: combined,
-      });
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
     }
   };
 
   const handleExecuteBatchMove = async (targetFolder: string) => {
     const ids = Array.from(selectedNoteIds);
     if (ids.length === 0) return;
-    const folderObj = folders.find((f) => (f.path || f.name) === targetFolder);
-    await batchMoveNotesToFolder(ids, targetFolder, folderObj?.id);
-    setIsMoveFolderModalOpen(false);
-    handleClearSelection();
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const cleanTarget = normalizeFolderPath(targetFolder);
+
+    const hasLockedNote = selectedNotes.some((n) => lockedNoteIds.has(n.id));
+    const hasLockedTarget = Boolean(
+      cleanTarget && isFolderEffectivelyLocked(cleanTarget, folders, unlockedFolderPaths)
+    );
+    if (hasLockedNote || hasLockedTarget) {
+      setIsMoveFolderModalOpen(false);
+    }
+
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      // Prevent moving locked/folder-locked notes out to bypass locks
+      const notesOk = await collectAndVerifyNotes(selectedNotes, touchedNotes, touchedFolders);
+      if (!notesOk) return;
+
+      // Also verify target folder if moving into a locked folder
+      if (cleanTarget && isFolderEffectivelyLocked(cleanTarget, folders, unlockedFolderPaths)) {
+        for (const anc of getAncestorFolderPaths(cleanTarget)) {
+          touchedFolders.add(anc);
+        }
+        const ok = await promptUnlockFolder(cleanTarget, folders);
+        if (!ok) return;
+      }
+
+      const folderObj = folders.find((f) => (f.path || f.name) === targetFolder);
+      await batchMoveNotesToFolder(ids, targetFolder, folderObj?.id);
+      setIsMoveFolderModalOpen(false);
+      handleClearSelection();
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
   };
 
   const handleCreateAndMove = async () => {
     const clean = quickNewFolderName.trim().replace(/^\/+|\/+$/g, '');
     if (!clean) return;
-    const created = await createFolder(clean);
-    const targetPath = created?.path || clean;
-    setQuickNewFolderName('');
-    await handleExecuteBatchMove(targetPath);
+    const ids = Array.from(selectedNoteIds);
+    if (ids.length === 0) return;
+    const selectedNotes = notes.filter((n) => selectedNoteIds.has(n.id));
+    const cleanTarget = normalizeFolderPath(clean);
+
+    setIsMoveFolderModalOpen(false);
+
+    const preNoteIds = new Set(unlockedNoteIds);
+    const preFolderPaths = new Set(unlockedFolderPaths);
+    const touchedNotes = new Set<string>();
+    const touchedFolders = new Set<string>();
+
+    try {
+      const notesOk = await collectAndVerifyNotes(selectedNotes, touchedNotes, touchedFolders);
+      if (!notesOk) return;
+
+      if (cleanTarget && isFolderEffectivelyLocked(cleanTarget, folders, unlockedFolderPaths)) {
+        for (const anc of getAncestorFolderPaths(cleanTarget)) {
+          touchedFolders.add(anc);
+        }
+        const ok = await promptUnlockFolder(cleanTarget, folders);
+        if (!ok) return;
+      }
+
+      const created = await createFolder(clean);
+      const targetPath = created?.path || clean;
+      setQuickNewFolderName('');
+      await batchMoveNotesToFolder(ids, targetPath, created?.id);
+      handleClearSelection();
+    } finally {
+      restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
+    }
   };
 
   return (
@@ -605,10 +1472,13 @@ export const NotesView: React.FC = () => {
         isDark={isDark}
         isAllVisibleSelected={isAllVisibleSelected}
         statusScope={queryRequest.statusScope}
+        hasLockedSelected={notes.some((n) => selectedNoteIds.has(n.id) && Boolean(n.isLocked))}
         onClearSelection={handleClearSelection}
         onToggleSelectAll={handleToggleSelectAll}
         onOpenMoveFolderModal={() => setIsMoveFolderModalOpen(true)}
         onBatchTogglePin={handleBatchTogglePin}
+        onBatchLock={handleBatchLock}
+        onBatchUnlock={handleBatchUnlock}
         onBatchArchive={handleBatchArchive}
         onBatchShare={handleBatchShare}
         onBatchRestore={handleBatchRestore}
@@ -714,13 +1584,14 @@ export const NotesView: React.FC = () => {
           queryRequest={queryRequest}
           partitionCounts={partitionCounts}
           isDark={isDark}
+          folders={folders}
           pinnedFolders={pinnedFolders}
           activeFolderObj={activeFolderObj}
           activeFolderColor={activeFolderColor}
           renderFolderIcon={renderFolderIcon}
           tags={tags}
-          setStatusScopeFilter={setStatusScopeFilter}
-          setFolderFilter={setFolderFilter}
+          setStatusScopeFilter={handleSetStatusScopeWithSecurity}
+          setFolderFilter={handleSelectFolderWithSecurity}
           toggleTagFilter={toggleTagFilter}
           onOpenFolderDropdown={() => setIsFolderDropdownOpen(true)}
           onOpenFolderExplorer={() => setIsFolderExplorerOpen(true)}
@@ -733,12 +1604,21 @@ export const NotesView: React.FC = () => {
           partitionCounts={partitionCounts}
           feedCardsCount={feedCards.length}
           pinnedCardsCount={pinnedCards.length}
-          emptyTrash={emptyTrash}
+          emptyTrash={handleEmptyTrashSafe}
           isDark={isDark}
+          folders={folders}
           activeFolderObj={activeFolderObj}
           onOpenFolderActions={handleOpenFolderActions}
-          setFolderFilter={setFolderFilter}
-          unarchiveFolder={unarchiveFolder}
+          onRelockFolder={(folderPath) => {
+            const ancestors = getAncestorFolderPaths(folderPath);
+            for (const anc of ancestors) {
+              relockFolderSession(anc);
+            }
+            relockFolderSession(folderPath);
+            setFolderFilter(null);
+          }}
+          setFolderFilter={handleSelectFolderWithSecurity}
+          unarchiveFolder={handleUnarchiveFolderSafe}
           favoriteFolders={favoriteFolders}
           renderFolderIcon={renderFolderIcon}
         />
@@ -761,12 +1641,14 @@ export const NotesView: React.FC = () => {
                   isPinnedShelfCard
                   isSelectionMode={isSelectionMode}
                   isSelected={selectedNoteIds.has(vm.note.id)}
+                  isEffectivelyLocked={lockedNoteIds.has(vm.note.id)}
                   onOpenNote={handleOpenNote}
-                  onTogglePin={togglePin}
-                  onToggleFavorite={toggleFavorite}
-                  onRestoreNote={restoreNote}
-                  onPermanentlyDeleteNote={permanentlyDeleteNote}
-                  onUnarchiveNote={unarchiveNote}
+                  onTogglePin={handleTogglePinSafe}
+                  onToggleFavorite={handleToggleFavoriteSafe}
+                  onToggleLock={handleToggleCardLock}
+                  onRestoreNote={handleRestoreNoteSafe}
+                  onPermanentlyDeleteNote={handlePermanentlyDeleteNoteSafe}
+                  onUnarchiveNote={handleUnarchiveNoteSafe}
                   onToggleSelect={handleToggleSelectNote}
                   onLongPressNote={handleLongPressNote}
                 />
@@ -806,12 +1688,14 @@ export const NotesView: React.FC = () => {
               viewModel={vm}
               isSelectionMode={isSelectionMode}
               isSelected={selectedNoteIds.has(vm.note.id)}
+              isEffectivelyLocked={lockedNoteIds.has(vm.note.id)}
               onOpenNote={handleOpenNote}
-              onTogglePin={togglePin}
-              onToggleFavorite={toggleFavorite}
-              onRestoreNote={restoreNote}
-              onPermanentlyDeleteNote={permanentlyDeleteNote}
-              onUnarchiveNote={unarchiveNote}
+              onTogglePin={handleTogglePinSafe}
+              onToggleFavorite={handleToggleFavoriteSafe}
+              onToggleLock={handleToggleCardLock}
+              onRestoreNote={handleRestoreNoteSafe}
+              onPermanentlyDeleteNote={handlePermanentlyDeleteNoteSafe}
+              onUnarchiveNote={handleUnarchiveNoteSafe}
               onToggleSelect={handleToggleSelectNote}
               onLongPressNote={handleLongPressNote}
             />
@@ -884,7 +1768,10 @@ export const NotesView: React.FC = () => {
       {/* Create New Folder Modal (Recursive Directory Explorer) */}
       <CreateFolderModal
         isOpen={isFolderModalOpen}
-        onClose={() => setIsFolderModalOpen(false)}
+        onClose={() => {
+          setIsFolderModalOpen(false);
+          flushActionSheetEphemeralRelock();
+        }}
         isDark={isDark}
         selectedParentPath={selectedParentPath}
         setSelectedParentPath={setSelectedParentPath}
@@ -921,13 +1808,127 @@ export const NotesView: React.FC = () => {
           isFavorite={actionSheetFolder.isFavorite}
           isPinned={actionSheetFolder.isPinned}
           isArchived={actionSheetFolder.isArchived}
+          isLocked={actionSheetFolder.isLocked}
+          lockType={actionSheetFolder.lockType}
           stats={activeFolderStats}
-          onClose={() => setIsActionSheetOpen(false)}
+          onClose={() => {
+            setIsActionSheetOpen(false);
+            cancelActionSheetRelockTimer();
+            if (actionSheetEphemeralFoldersRef.current.length > 0) {
+              actionSheetRelockTimerRef.current = setTimeout(() => {
+                actionSheetRelockTimerRef.current = null;
+                flushActionSheetEphemeralRelock();
+              }, 220);
+            }
+          }}
+          onLockFolder={async () => {
+            if (!actionSheetFolder.id) return;
+            cancelActionSheetRelockTimer();
+            try {
+              const payload = await promptConfigureLock({
+                targetLabel: `Folder: ${actionSheetFolder.path}`,
+                entityType: 'folder',
+              });
+              if (!payload) return;
+              await lockFolder(actionSheetFolder.id, actionSheetFolder.path, payload);
+              setActionSheetFolder((prev) =>
+                prev ? { ...prev, isLocked: true, lockType: payload.lockType } : null
+              );
+              if (isSameOrDescendantPath(queryRequest.folderPath, actionSheetFolder.path)) {
+                setFolderFilter(null);
+              }
+            } finally {
+              flushActionSheetEphemeralRelock();
+            }
+          }}
+          onChangeFolderLock={async () => {
+            if (!actionSheetFolder.id) return;
+            const target = folders.find((f) => f.id === actionSheetFolder.id);
+            if (!target) return;
+            cancelActionSheetRelockTimer();
+            try {
+              const lt = target.lock_type === 'custom' ? 'custom' : 'master';
+              const ok = await promptVerifyTargetCredential({
+                title: `Verify "${target.name}"`,
+                subtitle:
+                  lt === 'custom'
+                    ? 'Custom PIN/Password required before changing lock.'
+                    : 'Verify Master credential before changing lock.',
+                lockType: lt,
+                credentialKind: target.lock_credential_kind,
+                customHash: target.lock_hash,
+                customSalt: target.lock_salt,
+                hint: target.lock_hint,
+                rateLimitKey: `folder:${target.id}`,
+                confirmLabel: 'Verify',
+              });
+              if (!ok) return;
+              const payload = await promptConfigureLock({
+                targetLabel: `Change Lock — Folder: ${target.path}`,
+                entityType: 'folder',
+                initialLockType: lt,
+                initialHint: target.lock_hint,
+              });
+              if (!payload) return;
+              await lockFolder(target.id, target.path, payload);
+              setActionSheetFolder((prev) =>
+                prev ? { ...prev, isLocked: true, lockType: payload.lockType } : null
+              );
+            } finally {
+              flushActionSheetEphemeralRelock();
+            }
+          }}
+          onUnlockFolderForever={async () => {
+            if (!actionSheetFolder.id) return;
+            const target = folders.find((f) => f.id === actionSheetFolder.id);
+            if (!target) return;
+            cancelActionSheetRelockTimer();
+            try {
+              const lt = target.lock_type === 'custom' ? 'custom' : 'master';
+              const ok = await promptVerifyTargetCredential({
+                title: `Remove Lock: "${target.name}"`,
+                subtitle:
+                  lt === 'custom'
+                    ? 'Custom PIN/Password required to permanently unlock this folder.'
+                    : 'Enter your Master credential to permanently unlock this folder.',
+                lockType: lt,
+                credentialKind: target.lock_credential_kind,
+                customHash: target.lock_hash,
+                customSalt: target.lock_salt,
+                hint: target.lock_hint,
+                rateLimitKey: `folder:${target.id}`,
+                confirmLabel: 'Unlock Forever',
+              });
+              if (!ok) return;
+              await unlockFolderForever(target.id);
+              setActionSheetFolder((prev) =>
+                prev ? { ...prev, isLocked: false, lockType: null } : null
+              );
+            } finally {
+              flushActionSheetEphemeralRelock();
+            }
+          }}
+          onRelockFolderSession={() => {
+            consumeActionSheetEphemeralSet();
+            relockFolderSession(actionSheetFolder.path);
+            if (isSameOrDescendantPath(queryRequest.folderPath, actionSheetFolder.path)) {
+              setFolderFilter(null);
+            }
+          }}
           onOpenCreateSubfolder={(parent) => handleOpenCreateSubfolderFromSheet(parent)}
-          onOpenRename={() => setIsRenameModalOpen(true)}
-          onOpenMove={() => setIsMoveFolderReparentModalOpen(true)}
+          onOpenRename={() => {
+            cancelActionSheetRelockTimer();
+            setIsRenameModalOpen(true);
+          }}
+          onOpenMove={() => {
+            cancelActionSheetRelockTimer();
+            setIsMoveFolderReparentModalOpen(true);
+          }}
           onDuplicate={(p, id) => handleConfirmDuplicateFolder(p, id)}
-          onOpenDelete={() => setIsDeleteFolderModalOpen(true)}
+          onOpenDelete={() => {
+            cancelActionSheetRelockTimer();
+            setIsDeleteFolderModalOpen(true);
+          }}
           onToggleFavorite={async () => {
             if (actionSheetFolder.id) {
               const nextFav = await toggleFolderFavorite(actionSheetFolder.id);
@@ -942,12 +1943,33 @@ export const NotesView: React.FC = () => {
           }}
           onToggleArchive={async () => {
             if (actionSheetFolder.id) {
-              if (actionSheetFolder.isArchived) {
-                await unarchiveFolder(actionSheetFolder.id);
-                setActionSheetFolder((prev) => (prev ? { ...prev, isArchived: false } : null));
-              } else {
-                await archiveFolder(actionSheetFolder.id);
-                setActionSheetFolder((prev) => (prev ? { ...prev, isArchived: true } : null));
+              const sheetEphemeral = consumeActionSheetEphemeralSet();
+              const preNoteIds = new Set(unlockedNoteIds);
+              const preFolderPaths = new Set(
+                Array.from(unlockedFolderPaths).filter((p) => !sheetEphemeral.has(p))
+              );
+              const touchedNotes = new Set<string>();
+              const touchedFolders = new Set<string>(sheetEphemeral);
+
+              try {
+                const verified = await verifyFolderSubtreeUnlocked(
+                  normalizeFolderPath(actionSheetFolder.path),
+                  {
+                    beforePrompt: () => setIsActionSheetOpen(false),
+                    touchedNoteIds: touchedNotes,
+                    touchedFolderPaths: touchedFolders,
+                  }
+                );
+                if (!verified) return;
+                if (actionSheetFolder.isArchived) {
+                  await unarchiveFolder(actionSheetFolder.id);
+                  setActionSheetFolder((prev) => (prev ? { ...prev, isArchived: false } : null));
+                } else {
+                  await archiveFolder(actionSheetFolder.id);
+                  setActionSheetFolder((prev) => (prev ? { ...prev, isArchived: true } : null));
+                }
+              } finally {
+                restoreEphemeralUnlocks(preNoteIds, preFolderPaths, touchedNotes, touchedFolders);
               }
             }
           }}
@@ -965,7 +1987,10 @@ export const NotesView: React.FC = () => {
           folderId={actionSheetFolder.id}
           folderPath={actionSheetFolder.path}
           stats={activeFolderStats}
-          onClose={() => setIsDeleteFolderModalOpen(false)}
+          onClose={() => {
+            setIsDeleteFolderModalOpen(false);
+            flushActionSheetEphemeralRelock();
+          }}
           onConfirmDelete={(noteAction) => handleConfirmDeleteFolder(noteAction)}
         />
       )}
@@ -976,7 +2001,10 @@ export const NotesView: React.FC = () => {
           visible={isRenameModalOpen}
           folderId={actionSheetFolder.id}
           currentPath={actionSheetFolder.path}
-          onClose={() => setIsRenameModalOpen(false)}
+          onClose={() => {
+            setIsRenameModalOpen(false);
+            flushActionSheetEphemeralRelock();
+          }}
           onConfirmRename={(newName) => handleConfirmRenameFolder(newName)}
         />
       )}
@@ -988,7 +2016,10 @@ export const NotesView: React.FC = () => {
           folderId={actionSheetFolder.id}
           folderPath={actionSheetFolder.path}
           allFolderPaths={allFolderNames}
-          onClose={() => setIsMoveFolderReparentModalOpen(false)}
+          onClose={() => {
+            setIsMoveFolderReparentModalOpen(false);
+            flushActionSheetEphemeralRelock();
+          }}
           onConfirmMove={(newParent) => handleConfirmMoveFolder(newParent)}
         />
       )}
@@ -1002,15 +2033,15 @@ export const NotesView: React.FC = () => {
         onClose={() => setIsFolderExplorerOpen(false)}
         onSelectFolder={(folderPath) => {
           setIsFolderExplorerOpen(false);
-          setFolderFilter(folderPath);
+          setTimeout(() => handleSelectFolderWithSecurity(folderPath), 60);
         }}
         onOpenFolderActions={(folderPath) => {
           setIsFolderExplorerOpen(false);
-          handleOpenFolderActions(folderPath);
+          setTimeout(() => handleOpenFolderActions(folderPath), 60);
         }}
         onOpenCreateSubfolder={(parentPath) => {
           setIsFolderExplorerOpen(false);
-          handleOpenCreateSubfolderFromSheet(parentPath);
+          setTimeout(() => handleOpenCreateSubfolderFromSheet(parentPath), 60);
         }}
       />
 
@@ -1022,7 +2053,7 @@ export const NotesView: React.FC = () => {
         selectedFolderPath={queryRequest.folderPath}
         notes={notes}
         onClose={() => setIsFolderDropdownOpen(false)}
-        onSelectFolder={(folderPath) => setFolderFilter(folderPath)}
+        onSelectFolder={(folderPath) => handleSelectFolderWithSecurity(folderPath)}
         onOpenFolderActions={(folderPath) => handleOpenFolderActions(folderPath)}
         onOpenCreateFolder={handleOpenFolderModal}
         onOpenFolderTree={() => setIsFolderExplorerOpen(true)}
@@ -1045,8 +2076,8 @@ export const NotesView: React.FC = () => {
         onClose={() => setIsFilterModalOpen(false)}
         onToggleBlockType={toggleBlockTypeFilter}
         onToggleTag={toggleTagFilter}
-        onSelectFolder={setFolderFilter}
-        onSelectStatusScope={setStatusScopeFilter}
+        onSelectFolder={(fp) => handleSelectFolderWithSecurity(fp)}
+        onSelectStatusScope={(sc) => handleSetStatusScopeWithSecurity(sc)}
         onResetFilters={resetQueryRequest}
       />
     </View>

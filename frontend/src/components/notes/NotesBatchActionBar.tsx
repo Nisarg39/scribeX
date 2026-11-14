@@ -9,6 +9,8 @@ import {
   Share2,
   Trash2,
   RotateCcw,
+  Lock,
+  Unlock,
 } from 'lucide-react-native';
 
 export interface NotesBatchActionBarProps {
@@ -17,10 +19,13 @@ export interface NotesBatchActionBarProps {
   isDark: boolean;
   isAllVisibleSelected: boolean;
   statusScope: string;
+  hasLockedSelected?: boolean;
   onClearSelection: () => void;
   onToggleSelectAll: () => void;
   onOpenMoveFolderModal: () => void;
   onBatchTogglePin: () => void;
+  onBatchLock?: () => void;
+  onBatchUnlock?: () => void;
   onBatchArchive: () => void;
   onBatchShare: () => void;
   onBatchRestore: () => void;
@@ -33,10 +38,13 @@ export const NotesBatchActionBar: React.FC<NotesBatchActionBarProps> = ({
   isDark,
   isAllVisibleSelected,
   statusScope,
+  hasLockedSelected = false,
   onClearSelection,
   onToggleSelectAll,
   onOpenMoveFolderModal,
   onBatchTogglePin,
+  onBatchLock,
+  onBatchUnlock,
   onBatchArchive,
   onBatchShare,
   onBatchRestore,
@@ -116,6 +124,30 @@ export const NotesBatchActionBar: React.FC<NotesBatchActionBarProps> = ({
         >
           <Pin size={16} color={isDark ? '#E5E7EB' : '#1F2937'} />
         </Pressable>
+
+        {/* Lock Selected Notes */}
+        {onBatchLock && (
+          <Pressable
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            onPress={onBatchLock}
+            accessibilityLabel="Lock Selected Notes"
+            className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+          >
+            <Lock size={16} color={isDark ? '#E5E7EB' : '#1F2937'} />
+          </Pressable>
+        )}
+
+        {/* Unlock Selected Notes */}
+        {onBatchUnlock && hasLockedSelected && (
+          <Pressable
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            onPress={onBatchUnlock}
+            accessibilityLabel="Unlock Selected Notes"
+            className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 active:scale-95"
+          >
+            <Unlock size={16} color="#B18AF3" />
+          </Pressable>
+        )}
 
         {/* Archive / Unarchive */}
         <Pressable
