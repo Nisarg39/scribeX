@@ -40,6 +40,7 @@ import {
   buildCanonicalNoteQueryRequest,
 } from '../core/noteQueryEngine';
 import { PASTEL_PALETTE, INITIAL_NOTES, INITIAL_TASKS } from './seedData';
+import { ensureWelcomeStarterNote, WELCOME_STARTER_NOTE_ID } from './starterNote';
 import { useFolderStoreActions } from './slices/useFolderStoreActions';
 import { useReminderStoreActions } from './slices/useReminderStoreActions';
 import { useWorkspaceBackupActions } from './slices/useWorkspaceBackupActions';
@@ -755,10 +756,29 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         trashedNotes = await notesRepo.listNotes({ status: 'trashed' });
       } catch (_) {}
 
+      let resolvedNotes = allNotes;
+      let resolvedTasks = allTasks;
+
+      // Point 37: Pre-Seeded Interactive 'Welcome to ScribeX' Starter Note
+      // Automatically seed when database is empty (0 active notes), or when new user visits home first time (login or guest)
+      if (allNotes.length === 0) {
+        const seeded = await ensureWelcomeStarterNote(notesRepo, tasksRepo, true);
+        if (seeded) {
+          resolvedNotes = await notesRepo.listNotes();
+          resolvedTasks = await tasksRepo.listTasks();
+        }
+      } else if (!allNotes.some((n) => n.id === WELCOME_STARTER_NOTE_ID)) {
+        const seeded = await ensureWelcomeStarterNote(notesRepo, tasksRepo, false);
+        if (seeded) {
+          resolvedNotes = await notesRepo.listNotes();
+          resolvedTasks = await tasksRepo.listTasks();
+        }
+      }
+
       // Combine into unified store
-      const combinedNotes = [...allNotes, ...trashedNotes];
+      const combinedNotes = [...resolvedNotes, ...trashedNotes];
       setNotes(combinedNotes);
-      setTasks(allTasks);
+      setTasks(resolvedTasks);
       setFolders(fetchedFolders);
       setReminders(activeReminders);
       setNotifications(fetchedNotifs);

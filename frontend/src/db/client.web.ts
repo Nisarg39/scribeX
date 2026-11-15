@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import initSqlJs from 'sql.js/dist/sql-wasm-inline.js';
 import type { Database, SqlJsStatic } from 'sql.js';
 import { SCHEMA_SQL } from './schema';
+import { WELCOME_STARTER_BLOCKS } from '../state/starterNote';
 
 const IDB_NAME = 'scribex_web_vault';
 const IDB_VERSION = 1;
@@ -317,10 +318,19 @@ export class WebDatabaseClient {
         ('folder-research', 'user-default', 'Research', 'Research', 'lavender');
     `);
 
+    const starterBlocksJson = JSON.stringify(WELCOME_STARTER_BLOCKS).replace(/'/g, "''");
+
     db.run(`
       INSERT INTO notes (
         id, user_id, folder_path, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, created_at, updated_at
       ) VALUES 
+      (
+        'note-welcome-starter', 'user-default', 'General',
+        'Welcome to ScribeX 👋',
+        'Welcome to ScribeX: The Local-First Spatial Notebook.\n\nScribeX unites 42 composable input blocks, local SQLite WAL storage, interactive checklists, KaTeX mathematics, and zero-knowledge security vaults.',
+        '${starterBlocksJson}',
+        'lavender', 1, 1, 'Today', 'Just now'
+      ),
       (
         'note-1', 'user-default', 'Work/Projects/ScribeX', 
         'Sprint Checklist & Action Items', 
@@ -353,10 +363,22 @@ export class WebDatabaseClient {
 
     db.run(`
       INSERT INTO tasks (
-        id, user_id, note_id, note_title, note_color_token, title, is_completed, priority, due_date
+        id, user_id, note_id, note_title, note_color_token, block_id, title, is_completed, priority, due_date
       ) VALUES 
       (
-        'task-1', 'user-default', 'note-1', 'Sprint Checklist', 'lime', 
+        'starter-task-1', 'user-default', 'note-welcome-starter', 'Welcome to ScribeX 👋', 'lavender', 'wb-checklist-1',
+        'Tap any checkbox to test instant task state updates', 1, 'high', 'Today'
+      ),
+      (
+        'starter-task-2', 'user-default', 'note-welcome-starter', 'Welcome to ScribeX 👋', 'lavender', 'wb-checklist-1',
+        'Priority tasks synchronize automatically to your global Tasks dock', 0, 'urgent', 'Today'
+      ),
+      (
+        'starter-task-3', 'user-default', 'note-welcome-starter', 'Welcome to ScribeX 👋', 'lavender', 'wb-checklist-1',
+        'Set due dates and offline alarms directly on checklist items', 0, 'medium', 'Tomorrow'
+      ),
+      (
+        'task-1', 'user-default', 'note-1', 'Sprint Checklist', 'lime', 'b1-2',
         'Configure SQLite WAL mode for sub-5ms latency', 1, 'high', 'Today'
       ),
       (
