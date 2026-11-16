@@ -90,9 +90,26 @@
 
 ## Upcoming Phases Summary
 
-### Phase 2: Supabase Realtime Sync, Shared RPC Pipeline & Two-Tier Reminders
-- **Supabase Cloud Schema & RLS:** PostgreSQL migrations mirroring local SQLite schema with Row Level Security (`auth.uid() = user_id`).
-- **Action Pipeline Symmetry (Shared Supabase RPC Pipeline):** Strongly typed Supabase PostgreSQL Stored Procedures (`rpc_create_note`, `rpc_update_note`, `rpc_create_task`, `rpc_toggle_task`, `rpc_schedule_reminder`, `rpc_search_vault`) serving as the single action pipeline for both frontend direct client sync and backend AI tool execution.
+### Phase 2: Authenticated Supabase Realtime Sync, Shared RPC Pipeline & Two-Tier Reminders
+
+#### Implementation Steps
+- [x] **Step 1: Local SQLite & Cloud Schema Parity (`ai_context_excluded`)**
+  - Added `ai_context_excluded INTEGER NOT NULL DEFAULT 0` and performance indexes to local SQLite `notes` and `folders` (`frontend/src/db/schema.ts`).
+  - Added safe, non-destructive migration statements to `client.native.ts` and `client.web.ts`.
+  - Updated TypeScript DTOs and interfaces (`DBFolder`, `DBNote`, `CreateNoteDTO`, `UpdateNoteDTO`, `CreateFolderDTO`, `FolderTreeNode`, `NoteItem`).
+  - Integrated into `notesRepo.ts`, `foldersRepo.ts` (`toggleFolderAiContextExcluded`), and `workspaceBackupService.ts`.
+  - Verified with 0 TypeScript errors and passing test suites.
+- [ ] **Step 2: Supabase Client, Google OAuth-Only Sign-In & Guest Vault Migration**
+- [ ] **Step 3: Auth-Gated Realtime Sync Engine & UI Controls**
+
+#### Architecture & Invariants
+- **Google OAuth Only Sign-In (Dual Purpose: Auth + Media Sync):** Authentication uses **Google OAuth exclusively** (via Supabase Auth Google provider). Signing in with Google fulfills two critical functions:
+  1. Authenticating user identity (`auth.uid()`) to unlock Supabase Realtime sync, cloud PIN sync, and backend AI features.
+  2. Securing Google Drive OAuth scopes (`drive.file`) for personal Google Drive media synchronization (zero-cost storage for images, audio recordings, and videos).
+- **Global UI & Runtime Auth Gate (No Sync or AI Until Logged In):** **Both Cloud Sync and all AI features are strictly disabled in the UI and runtime unless the user is logged in (`isAuthenticated === true`).** Users who skip sign-in during onboarding remain 100% manual and offline on-device (`isGuest`). Completing the Google OAuth sign-in flow atomically migrates existing local guest notes (`user-default` $\rightarrow$ `auth.uid()`) and unlocks Cloud Sync & AI features.
+- **Master PIN Cloud Sync vs. Device-Only Biometrics:** Master PIN/Password credentials (`workspace_security` hash/salt/hint) and note/folder locks sync across devices via Supabase, while `biometrics_enabled` remains strictly device-local.
+- **Full SQLite $\leftrightarrow$ Supabase Schema Parity & RLS:** PostgreSQL migrations mirroring all local SQLite columns (`folders` pin/fav/archive/cover/lock columns, `notes` lock columns, `tasks` recurrence, `reminders` title/body/recurrence, `in_app_notifications`, `workspace_security`, and `ai_context_excluded` privacy flags) with Row Level Security (`auth.uid() = user_id`).
+- **Action Pipeline Symmetry (Shared Supabase RPC Pipeline):** Strongly typed Supabase PostgreSQL Stored Procedures (`rpc_create_note`, `rpc_update_note`, `rpc_create_task`, `rpc_toggle_task`, `rpc_schedule_reminder`, `rpc_search_vault`, `rpc_upsert_folder`, `rpc_upsert_workspace_security`) preserving client-generated IDs (`ON CONFLICT (id) DO UPDATE`) for both frontend direct client sync and backend AI tool execution.
 - **Two-Tier Hardware Push Notifications:**
   - *Tier 1 (Logged-Out / Guest):* Reminders operate 100% locally on the device (saved in local SQLite, scheduled directly to native hardware `AlarmManager` / `UNUserNotificationCenter` / Web Notifications) with zero network calls and zero syncing.
   - *Tier 2 (Logged-In):* Reminders commit to Supabase `reminders` table and `sync_changelog`, broadcasting via Supabase Realtime CDC in ~50ms to ring hardware alarms across all user devices, with cross-device auto-cancellation on task completion.
@@ -100,18 +117,22 @@
 - **Zero-Cost Google Drive Media Vault:** Binary assets stream to user's Google Drive (`ScribeX_Vault/`), storing only lightweight metadata in `assets` table.
 - **Next.js Serverless Micro-Routes (Vercel):** Route handlers for heavy external tasks (`/api/ai/transcribe` for Whisper, `/api/clip-webpage`, OAuth token exchange, Stripe webhooks).
 
-### Phase 3: Unified Backend AI Engine, Ephemeral BYOK & Universal MCP Connector
+### Phase 3: Unified Backend AI Engine, In-Editor Co-Pilot, Scoped Multi-Agents & Universal MCP Connector
 - **Unified Backend AI Engine:** Single backend gateway (`/api/ai/chat` & `/api/ai/agent` on Next.js / Edge Functions) powering Mobile Friday, Web Friday, Claude Desktop MCP, and ChatGPT Custom Actions with zero dual-codebase drift.
+- **In-Editor AI Assistant (Canvas Co-Pilot):** Prompt-driven AI assistant inside the Note Editor capable of drafting, editing, summarizing, and restructuring blocks in the active note with full Undo/Redo support.
+- **Scoped Multi-Agent Orchestration:** Main agent (Friday) can spawn specialized sub-agents assigned to a specific note or folder/group of notes with strictly scoped context access.
+- **Note & Folder AI Context Exclusion (`ai_context_excluded`):** Per-note and per-folder toggle persisted in SQLite and Supabase that prevents Friday, sub-agents, and MCP clients from reading or indexing excluded notes/folders.
 - **Frontend BYOK via Ephemeral Request Headers:** Users enter model keys in frontend UI (`SecureStore` on mobile, encrypted storage on web). Client sends key in ephemeral headers (`x-gemini-key`, `x-anthropic-key`, `x-openai-key`). Backend uses key in volatile memory and discards it immediately ($0 server token spend, zero backend `.env` key storage).
 - **Universal Invocation Platform Context (`PlatformContext`):** Metadata envelope (`mobile_native`, `web_browser`, `desktop_mcp`, `chatgpt_custom_action`) passed into all prompts and Supabase RPCs.
 - **Ask-Before-Write Ambiguity Gate:** Pauses and requests clarification if `clarity_score < 0.85` or contradictions are detected.
 - **4-Layer Cognitive Memory:** Layer 1 (Identity), Layer 2 (Living Vault & `pgvector`), Layer 3 (Versions of Me temporal timeline), Layer 4 (Behavioral Ledger & noise-filtered edit learner).
 - **Universal AI Connector (`connector/`):** Standalone Node.js MCP server exposing identical tools and 4-layer context to external AIs (Claude Desktop, Cursor, ChatGPT).
 
-### Phase 4: Remote PC Agent Bridge Daemon & Pluggable CLI Execution
-- Outbound WebSocket tunnel daemon (`pc-agent-bridge`) running on personal PC.
-- Configurable CLI Agent Provider Registry (`cli_agents.yaml`: Claude Code, Gemini CLI, Codex, Aider).
-- 3-stage independent verification & self-correction loop (process telemetry, git diff, AI review).
+### Phase 4: External Connectors Hub, GitHub Integration, Outbound WhatsApp Reminders & PC Agent Bridge
+- **Universal App & Service Connectors Hub:** In-app Connectors manager to authenticate and sync with external APIs and services.
+- **GitHub Connector:** Manage repositories, issues, PRs, and commits directly from ScribeX notes and tasks.
+- **Outbound WhatsApp Task/Note Reminders:** Scheduled via Supabase `pg_cron` & Edge Functions on reminder trigger, delivering interactive alerts to the user's WhatsApp number via Meta Cloud API.
+- **Remote PC Bridge Daemon (`pc-agent-bridge`):** Outbound WebSocket tunnel daemon running on personal PC with Configurable CLI Agent Provider Registry (`cli_agents.yaml`: Claude Code, Gemini CLI, Codex, Aider) and 3-stage independent verification & self-correction loop.
 
 ### Phase 5: SaaS Multi-Tenancy, Commercial Billing & Production Scaling
 - Production authentication & multi-tenant isolation.

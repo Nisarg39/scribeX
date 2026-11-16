@@ -1,58 +1,63 @@
-# Implementation Plan: iOS Share Sheet Parity for WhatsApp Exports & Universal Media Shares (Zero-Device Verified)
+# Implementation Plan: Phase 2 Backend Integration (Managed Supabase Option A, Google OAuth Only, Auth-Gated Cloud Sync & Schema Parity)
 
-## 1. Architectural Strategy (Dual-Path iOS Guarantee Without Physical Device Testing)
-To ensure iOS has 100% identical Share Sheet behavior to Android (intact `.zip`/`.txt` WhatsApp chat exports, individual photos, videos, `.opus` voice notes, PDFs, URLs, and text messages, all prompting the **New Note vs Existing Note** modal) and works reliably without manual device debugging, we implement a **Dual-Path iOS Architecture**:
+## 1. Finalized Phase 2 Architecture & Rules
 
-1. **Path A — iOS `Documents/Inbox` Direct File Handoff (`CFBundleDocumentTypes` + `Linking`):**
-   - When exporting a chat from WhatsApp on iOS (`.zip` or `.txt`) or sharing any media/document file via `UIActivityViewController`, iOS natively lists apps matching `CFBundleDocumentTypes`.
-   - By setting `LSSupportsOpeningDocumentsInPlace: false` in `app.json` and registering explicit UTIs (`com.pkware.zip-archive`, `public.zip-archive`, `public.plain-text`, `public.image`, `public.movie`, `public.audiovisual-content`, `public.audio`, `org.xiph.opus`, `com.adobe.pdf`, `public.data`, `public.content`), iOS automatically copies the shared file into ScribeX's readable `Documents/Inbox/` directory and opens ScribeX with a `file:///.../Documents/Inbox/...` URL via `Linking`.
-   - `ShareIngestService.ts` intercepts incoming `file://` URLs from `Linking.getInitialURL()` and `Linking.addEventListener('url')`, moves the file from `Documents/Inbox/` into persistent `FileSystem.documentDirectory + 'shared_media/'`, constructs a `NormalizedSharePayload`, and opens `ShareDestinationModal` (**Save in New Note** vs **Add to Existing Note**).
-   - *Advantage:* Works on 100% of iOS builds immediately without requiring multi-target Xcode Share Extension provisioning.
-
-2. **Path B — iOS Share Extension + Native `ScribeXShareIntent` Bridge (`App Group` + `scribex://share-ingest`):**
-   - For text-only shares, web links, and multi-item bundles on iOS, we provide the complete native iOS module and Share Extension:
-     - `frontend/ios-native-share/ScribeXShareIntentModule.swift` & `.m`: Implements the `ScribeXShareIntent` React Native bridge (`getPendingSharePayload`, `clearPendingSharePayload`, `onSharePayloadReceived`) reading staged payloads from the `group.com.nashtech.scribex` App Group container and copying intact files into `Documents/shared_media/`.
-     - `frontend/ios-native-share/ShareViewController.swift` & `ShareExtension-Info.plist`: Extracts shared text, URLs, and intact files/archives from `NSExtensionContext`, writes `pending_share.json` into the App Group container, and deep-links into `scribex://share-ingest?batchId=...`.
-     - `frontend/plugins/withScribeXShare.js`: An automated Expo Config Plugin wired in `app.json` that configures iOS entitlements (`com.apple.security.application-groups`) and links the native iOS share files during `expo prebuild --platform ios`.
+1. **Managed Multi-Tenant Cloud Architecture (Option A):**
+   - Single managed Supabase project for instant zero-configuration Realtime CDC synchronization. Users never have to manually input Supabase URLs or API keys.
+   - The cloud database stores user authentication identity (`auth.users`, `public.users`) to authenticate users and authorize backend/RPC actions, while strictly protecting user records through PostgreSQL Row-Level Security (`auth.uid() = user_id`).
+2. **Google OAuth Only Sign-In (Dual Purpose: Auth + Google Drive Media Sync):**
+   - ScribeX uses **Google OAuth exclusively** (via Supabase Auth Google provider) as its sole authentication method across Mobile and Web.
+   - **Strategic Dual Role:**
+     - Authenticates cloud identity (`auth.uid()`) for Supabase Realtime sync, cloud Master PIN/locks, and AI features.
+     - Acquires Google OAuth scopes (`drive.file`) for personal Google Drive media synchronization (zero-cost media storage for user attachments, audio, and images).
+3. **Strict Auth-Gated Cloud Sync & AI Features (Disabled in UI Until Logged In):**
+   - If the user skips sign-in during onboarding (`isGuest === true` / `!isAuthenticated`), all notes, folders, tasks, reminders, and media remain **100% offline on-device** (`user_id = 'user-default'`).
+   - **Both Cloud Sync and all AI features** (Friday Assistant, In-Editor AI Co-Pilot, Multi-Agents, BYOK AI settings, and Cloud Connectors) **must be disabled in the UI** until the user completes the Google OAuth sign-in flow (`/signin`).
+   - Upon signing in with Google for the first time, all local `user-default` SQLite records are atomically migrated to the user's `auth.uid()`, unlocking Cloud Sync and AI features in the UI.
+4. **Master PIN Cloud Sync vs. Device-Only Biometrics:**
+   - `workspace_security` (Master PIN/Password hash, salt, hint, `app_lock_enabled`, `auto_relock_seconds`) and all note/folder lock fields (`is_locked`, `lock_type`, `lock_credential_kind`, `lock_hash`, `lock_salt`, `lock_hint`) sync to Supabase via `rpc_upsert_workspace_security`.
+   - `biometrics_enabled` remains **strictly a device-only setting** in local storage and is never synced to the cloud database.
+5. **Note & Folder AI Context Exclusion (`ai_context_excluded`):**
+   - Persisted on `notes` and `folders` in both local SQLite and Supabase, and strictly filtered out in `rpc_search_vault` and AI context retrieval.
 
 ---
 
 ## 2. Implementation Steps
 
-### Step 1: Harden iOS `CFBundleDocumentTypes` & Config Plugin in `app.json`
-- **Files:**
-  - [`frontend/app.json`](frontend/app.json)
-  - [`frontend/plugins/withScribeXShare.js`](frontend/plugins/withScribeXShare.js) *(New)*
-- **Changes:**
-  - Set `"LSSupportsOpeningDocumentsInPlace": false` in `ios.infoPlist` so iOS copies shared files into `Documents/Inbox/` with full sandbox read permissions instead of passing restricted external security-scoped URLs.
-  - Expand `CFBundleDocumentTypes` to explicitly include `public.image`, `public.jpeg`, `public.png`, `public.movie`, `public.mpeg-4`, `public.audiovisual-content`, `public.audio`, `public.mp3`, `org.xiph.opus`, `com.adobe.pdf`, `com.pkware.zip-archive`, `public.zip-archive`, `public.text`, `public.plain-text`, `public.data`, `public.content`, and `public.item`.
-  - Create `frontend/plugins/withScribeXShare.js` and register it in `app.json` `plugins` to automatically inject the `group.com.nashtech.scribex` App Group entitlement and stage native iOS share bridge sources on `expo prebuild`.
-
-### Step 2: Native iOS `ScribeXShareIntent` Module & Share Extension Sources
-- **Files:**
-  - [`frontend/ios-native-share/ScribeXShareIntentModule.swift`](frontend/ios-native-share/ScribeXShareIntentModule.swift) *(New)*
-  - [`frontend/ios-native-share/ScribeXShareIntentModule.m`](frontend/ios-native-share/ScribeXShareIntentModule.m) *(New)*
-  - [`frontend/ios-native-share/ShareViewController.swift`](frontend/ios-native-share/ShareViewController.swift) *(New)*
-  - [`frontend/ios-native-share/ShareExtension-Info.plist`](frontend/ios-native-share/ShareExtension-Info.plist) *(New)*
-- **Changes:**
-  - Implement `ScribeXShareIntentModule` (`RCTEventEmitter`) exposing `getPendingSharePayload` and `clearPendingSharePayload`, reading from `FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.nashtech.scribex")`, copying intact `.zip`, `.txt`, and media files to `Documents/shared_media/`, and returning the exact `NormalizedSharePayload` schema used on Android.
-  - Implement `ShareViewController` to accept all `public.item`, `public.url`, and `public.text` attachments without unpacking `.zip` archives (preventing iOS Share Extension 120MB memory limit crashes) and trigger `scribex://share-ingest`.
-
-### Step 3: iOS `file://` (`Documents/Inbox/`) & Deep-Link Ingestion in `ShareIngestService.ts`
-- **File:** [`frontend/src/services/share/ShareIngestService.ts`](frontend/src/services/share/ShareIngestService.ts)
-- **Changes:**
-  - Add `ingestIosFileUrl(fileUrl: string)` to handle incoming `file://` URLs delivered by iOS `Linking` when a user shares a WhatsApp `.zip`/`.txt` export or media file via `CFBundleDocumentTypes`.
-  - Decode the percent-encoded filename, copy the file from `Documents/Inbox/` into persistent `FileSystem.documentDirectory + 'shared_media/'`, remove the temporary `Inbox` copy, infer the accurate MIME type (`.zip`, `.txt`, `.opus`, `.mp4`, `.jpg`, `.png`, `.pdf`), and invoke `ingestSharePayload()` so `ShareDestinationModal` (**Save in New Note** vs **Add to Existing Note**) opens identically on iOS and Android.
-
-### Step 4: Zero-Device iOS Parity Automated Test Suite
-- **Files:**
-  - [`scripts/test_inbound_share_pipeline.mjs`](scripts/test_inbound_share_pipeline.mjs)
+### Step 1: Local SQLite Schema & Types Update (`ai_context_excluded`) [COMPLETED]
+- **Files Modified:**
+  - [`frontend/src/db/schema.ts`](frontend/src/db/schema.ts)
+  - [`frontend/src/db/client.native.ts`](frontend/src/db/client.native.ts)
+  - [`frontend/src/db/client.web.ts`](frontend/src/db/client.web.ts)
+  - [`frontend/src/db/types.ts`](frontend/src/db/types.ts)
+  - [`frontend/src/types/note.ts`](frontend/src/types/note.ts)
+  - [`frontend/src/db/notesRepo.ts`](frontend/src/db/notesRepo.ts)
+  - [`frontend/src/db/foldersRepo.ts`](frontend/src/db/foldersRepo.ts)
+  - [`frontend/src/services/workspaceBackupService.ts`](frontend/src/services/workspaceBackupService.ts)
   - [`.agents/project-map.json`](.agents/project-map.json)
+- **Status:** Done. Added `ai_context_excluded` to SQLite tables with safe migrations, mapped in DTOs and repos, verified via `npx tsc --noEmit` and test suites.
+
+### Step 2: Supabase Client, Google OAuth-Only Sign-In & Guest Vault Migration [NEXT]
+- **Files:**
+  - [`frontend/src/services/supabase/supabaseClient.ts`](frontend/src/services/supabase/supabaseClient.ts) *(New)*
+  - [`frontend/src/context/AuthContext.tsx`](frontend/src/context/AuthContext.tsx)
+  - [`frontend/app/signin.tsx`](frontend/app/signin.tsx)
+  - [`frontend/src/db/vaultMigration.ts`](frontend/src/db/vaultMigration.ts) *(New)*
 - **Changes:**
-  - Add an iOS Share Sheet Parity test suite (`Suite 7`) in `scripts/test_inbound_share_pipeline.mjs` that programmatically verifies:
-    - `app.json` iOS `CFBundleDocumentTypes` UTI completeness and `LSSupportsOpeningDocumentsInPlace: false`.
-    - iOS `file:///.../Documents/Inbox/` URL parsing, percent-decoding (`WhatsApp%20Chat%20with%20Alice.zip`), MIME mapping, and `NormalizedSharePayload` construction.
-    - Verification of `ScribeXShareIntentModule.swift`, `ShareViewController.swift`, and `withScribeXShare.js` contracts.
+  - Create `supabaseClient.ts` backed by `@supabase/supabase-js` and `AsyncStorage` session persistence.
+  - Update `signin.tsx` to offer **Continue with Google** (Google OAuth only) and **Skip for now (Offline Mode)**, removing email/password or other mock providers.
+  - Implement `migrateGuestVaultToUser(userId: string)` in `vaultMigration.ts` to atomically re-assign local `user-default` rows across all SQLite tables to the authenticated Google `auth.uid()` upon sign-in.
+
+### Step 3: Auth-Gated `SyncEngine` (Notes, Folders, Tasks, Reminders & Master PIN)
+- **Files:**
+  - [`frontend/src/services/sync/syncEngine.ts`](frontend/src/services/sync/syncEngine.ts)
+  - [`frontend/src/state/useNotesStore.tsx`](frontend/src/state/useNotesStore.tsx)
+  - [`frontend/src/context/SecurityContext.tsx`](frontend/src/context/SecurityContext.tsx)
+  - [`frontend/src/components/navigation/SideNavbarModal.tsx`](frontend/src/components/navigation/SideNavbarModal.tsx)
+- **Changes:**
+  - Gate `syncEngine` in `useNotesStore.tsx` so it only runs when `isAuthenticated === true` with a valid `userId`. When `isGuest === true`, `syncEngine` stays strictly offline (`status: 'offline_guest'`).
+  - Sync Master PIN changes in `SecurityContext.tsx` to Supabase (`rpc_upsert_workspace_security`) when authenticated, while keeping `biometrics_enabled` strictly local to the device.
+  - Update `SideNavbarModal.tsx` and Workspace Settings so guest users see **"Offline Mode · Sign in with Google to Sync"** which navigates to `/signin`.
 
 ---
 
@@ -60,7 +65,7 @@ To ensure iOS has 100% identical Share Sheet behavior to Android (intact `.zip`/
 
 | Command | Fit | Reasoning |
 | :--- | :--- | :--- |
-| `/plan` | **Best Fit** | Reviews and approves the Dual-Path iOS Share Sheet architecture (`Documents/Inbox` `file://` ingestion + Native Share Extension & Config Plugin + Zero-Device Verification Suite) before generating the files. |
-| `/boost` | Medium | Useful if extra static verification passes are needed, though `Suite 7` in `test_inbound_share_pipeline.mjs` will deterministically test every iOS contract. |
-| `/teamwork` / `/swarm` | Low | Tightly coupled configuration between `app.json`, `withScribeXShare.js`, and `ShareIngestService.ts`. |
-| `/compact` | Medium | Can be used after execution to compact conversation history. |
+| `/plan` | **Best Fit** | Reviews and approves the 3-step Phase 2 implementation across SQLite schema, Google OAuth-only `AuthContext`, Guest-to-Account vault migration, and auth-gated `SyncEngine`. |
+| `/boost` | High | Great fit for executing and stress-testing the multi-table guest-to-account migration and sync engine delta reconciliation. |
+| `/teamwork` / `/swarm` | Low | Tightly coupled state between `AuthContext`, `SecurityContext`, `useNotesStore`, and `syncEngine`. |
+| `/compact` | Medium | Recommended if you want to compact the conversation context before starting Phase 2 implementation. |

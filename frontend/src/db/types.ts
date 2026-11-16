@@ -52,6 +52,7 @@ export interface DBFolder {
   lock_hash?: string | null;
   lock_salt?: string | null;
   lock_hint?: string | null;
+  ai_context_excluded?: number; // 0 or 1
   sync_rev: number;
   created_at: string;
   updated_at: string;
@@ -86,6 +87,7 @@ export interface DBNote {
   lock_hash?: string | null;
   lock_salt?: string | null;
   lock_hint?: string | null;
+  ai_context_excluded?: number; // 0 or 1
   sync_rev: number;
   created_at: string;
   updated_at: string;
@@ -215,6 +217,7 @@ export interface CreateNoteDTO {
   isPinned?: boolean;
   reminderAt?: string;
   tags?: string[];
+  aiContextExcluded?: boolean;
 }
 
 export interface UpdateNoteDTO {
@@ -229,6 +232,7 @@ export interface UpdateNoteDTO {
   status?: 'active' | 'archived' | 'trashed';
   reminderAt?: string | null;
   tags?: string[];
+  aiContextExcluded?: boolean;
 }
 
 export interface CreateTaskDTO {
@@ -264,6 +268,7 @@ export interface CreateFolderDTO {
   isFavorite?: boolean | number;
   isPinned?: boolean | number;
   isArchived?: boolean | number;
+  aiContextExcluded?: boolean | number;
 }
 
 export interface CreateRelationDTO {
@@ -304,6 +309,7 @@ export interface FolderTreeNode {
   isArchived?: boolean;
   isLocked?: boolean;
   lockType?: LockType | null;
+  aiContextExcluded?: boolean;
   children: FolderTreeNode[];
   noteCount?: number;
 }

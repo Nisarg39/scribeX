@@ -107,6 +107,7 @@ export interface NoteItem {
   lockHash?: string | null;
   lockSalt?: string | null;
   lockHint?: string | null;
+  aiContextExcluded?: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -23,6 +23,7 @@ The project is governed by two authoritative Single Sources of Truth (SSOT), sup
 
 | Document | Purpose | Description |
 | :--- | :---: | :--- |
+| **[Supabase_and_Google_OAuth_Setup_Guide.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Supabase_and_Google_OAuth_Setup_Guide.md)** | **Backend & Auth** | Production setup guide for Supabase PostgreSQL schema, API key retrieval, Google Cloud Console OAuth 2.0 configuration, and frontend environment integration. |
 | **[Offline_Notifications_and_InApp_Notification_Center_Plan.md](file:///Users/nash/Documents/FrontEnd%20Development/ai_projects/scribeX/docs/Offline_Notifications_and_InApp_Notification_Center_Plan.md)** | **Active Plan** | Hardware alarm hardening (Android exact alarms, iOS alignment, Web SW/toast), Date/Time picker upgrade, remaining duration countdown, overlapping In-App Notification Center, and deep linking. |
 | **[Master_Tasks_Tracker.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/Master_Tasks_Tracker.md)** | **Roadmap** | Multi-phase progress tracker detailing certified Phase 1 milestones and roadmap phases. |
 | **[UI_UX_Cross_Platform_Inconsistencies_Report.md](file:///c:/Users/Nash/Documents/codebase/scribeX/docs/UI_UX_Cross_Platform_Inconsistencies_Report.md)** | **Audit** | Live automated static analysis report ensuring full-bleed layouts, hitSlop touch targets, and React Native flex safety (13/13 passing). |

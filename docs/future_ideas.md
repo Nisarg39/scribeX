@@ -49,21 +49,21 @@ Remaining Tasks to fix
 
 
 
-Long term Ideas
+Long term Ideas (Mapped to Official Delivery Phases in docs/Master_Tasks_Tracker.md & docs/Unified_Backend_and_AI_Master_Specification.md)
 
-1 - [] Use Supabase SDK for realtime database update and backup / cloud sync for the user data, use Next.js for AI API calls hosted on Vercel for maintaining free hosting, and use Google Drive API for zero-cost media storage on Google Drive (Supabase/SQLite stores metadata & links). (ADOPTED AS OFFICIAL BACKEND SPECIFICATION )
+1 - [ ] [Phase 2] Use Supabase SDK for realtime database update and backup / cloud sync for the user data (strictly gated behind authenticated login; skipped/guest users remain 100% offline on-device until completing the onboarding sign-in flow), use Next.js for AI API calls hosted on Vercel for maintaining free hosting, and use Google Drive API for zero-cost media storage on Google Drive (Supabase/SQLite stores metadata & links). (ADOPTED IN PHASE 2 SPECIFICATION)
 
-2 - [ ] AI assistant inside the note editor where we can give prompt and it starts editing the existing note.
+2 - [ ] [Phase 3] AI assistant inside the note editor where we can give prompt and it starts editing the existing note. (ADOPTED IN PHASE 3 SPECIFICATION)
 
-3 - [ ] Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes. These multi agents will be added using the help of the main agent (Friday) that has all the context of the user and the system, with scoped access to context.
+3 - [ ] [Phase 3] Adding multi agent support if the user wants a specific agent to perform any task from a particular note or group notes. These multi agents will be added using the help of the main agent (Friday) that has all the context of the user and the system, with scoped access to context. (ADOPTED IN PHASE 3 SPECIFICATION)
 
-4 - [] ScribeX Universal AI Connector & MCP Server: Dual-surface unified cognitive engine providing identical 4-layer context, agentic tools (search, create/update note, task toggle, reminder alarm scheduling), and Ask-Before-Write safety gates to both the In-App Friday assistant and external AI apps (Claude Desktop, Gemini CLI, ChatGPT, Cursor, local Ollama) via MCP and OpenAI/Anthropic REST proxy. (ADOPTED & SPECIFIED IN docs/Universal_AI_Connector_and_MCP_Architecture.md) 
+4 - [ ] [Phase 3] ScribeX Universal AI Connector & MCP Server: Dual-surface unified cognitive engine providing identical 4-layer context, agentic tools (search, create/update note, task toggle, reminder alarm scheduling), and Ask-Before-Write safety gates to both the In-App Friday assistant and external AI apps (Claude Desktop, Gemini CLI, ChatGPT, Cursor, local Ollama) via MCP and OpenAI/Anthropic REST proxy. (ADOPTED IN PHASE 3 SPECIFICATION) 
 
-5 - [] Adding github connector so that i can manage repo's from the app itslef .
+5 - [ ] [Phase 4] Adding github connector so that i can manage repo's from the app itself. (ADOPTED IN PHASE 4 SPECIFICATION)
 
-6 - [] Adding a section of connector in the system where the app can connect to various apps and services to fetch or send data to them, using APIs.
+6 - [ ] [Phase 4] Adding a section of connector in the system where the app can connect to various apps and services to fetch or send data to them, using APIs. (ADOPTED IN PHASE 4 SPECIFICATION)
 
-7 - [ ] Outbound WhatsApp Task/Note Reminders via Meta Cloud API: Scheduled via Supabase pg_cron & Edge Functions on reminder trigger, delivering interactive alerts directly to user's configured WhatsApp number
+7 - [ ] [Phase 4] Outbound WhatsApp Task/Note Reminders via Meta Cloud API: Scheduled via Supabase pg_cron & Edge Functions on reminder trigger, delivering interactive alerts directly to user's configured WhatsApp number. (ADOPTED IN PHASE 4 SPECIFICATION)
 
-8 - [ ] giving an option to the user to manage the context provided to AI assistant on notes and folder level which will stored in database so that AI assistant cannot have context of that note or folder which you dont want it to analyse 
+8 - [ ] [Phase 2 Schema / Phase 3 AI] Giving an option to the user to manage the context provided to AI assistant on notes and folder level (`ai_context_excluded`) which will be stored in database so that AI assistant cannot have context of that note or folder which you dont want it to analyse. (ADOPTED IN PHASE 2 & PHASE 3 SPECIFICATION) 
 

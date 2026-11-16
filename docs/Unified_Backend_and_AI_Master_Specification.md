@@ -99,6 +99,32 @@ To completely prevent codebase duplication and prompt drift between mobile/web i
 * **Ephemeral Header Passthrough:** When invoking an AI action, the client app passes the key in an encrypted request header (`x-gemini-key`, `x-anthropic-key`, `x-openai-key`). The backend engine extracts the key into volatile memory for the duration of the LLM call, routes the request to the upstream AI provider, processes the response or tool calls, and immediately drops the key from memory.
 * **Cost & Privacy Invariant:** Zero token markup, zero server token spend ($0 baseline hosting), and absolute user privacy.
 
+### 3.1.1. Architectural Model (Option A: Managed Multi-Tenant Supabase with RLS & Realtime CDC) & Strict Auth Gate
+
+* **Managed Multi-Tenant Cloud Architecture (Option A):**
+  * ScribeX operates on a **single, managed Supabase project** providing instant, zero-friction Realtime CDC (Change Data Capture) synchronization out of the box. Users never have to manually generate, configure, or paste Supabase URLs or API keys.
+  * **Database Responsibility:** The cloud database primarily stores user authentication credentials and profile state (`auth.users`, `public.users`) to authenticate users, issue secure JWTs, and authorize backend and RPC actions.
+  * **Data Privacy & Isolation via RLS:** All user data (`notes`, `folders`, `tasks`, `reminders`, `workspace_security`) is strictly isolated using PostgreSQL Row-Level Security (`auth.uid() = user_id`). Notes and folders support client-side PIN encryption and Master PIN hashing for zero-knowledge privacy.
+* **Google OAuth as the Exclusive Sign-In Provider (Dual-Purpose Auth & Media Sync):**
+  * ScribeX uses **Google OAuth exclusively** (via Supabase Auth Google provider) as its sole sign-in method across Mobile and Web.
+  * **Strategic Dual Purpose:**
+    1. **Authentication & Identity:** Secures the user's cloud session, issuing an authenticated `auth.uid()` that unlocks Supabase Realtime synchronization, cloud-backed Master PIN/locks, and backend AI features.
+    2. **Zero-Cost Google Drive Media Sync:** The Google OAuth token seamlessly provisions Google Drive OAuth scopes (`drive.file` / `drive.appdata`), enabling ScribeX to sync heavy media attachments (images, audio recordings, video, PDFs) directly to the user's personal Google Drive without incurring server storage costs or requiring secondary authentication.
+* **Global Invariant — No Cloud Sync or AI Access Without Login:**
+  * A user who has not signed in (`!isAuthenticated` / `isGuest === true`) **cannot access Cloud Sync or any AI features** (Friday Assistant, In-Editor AI Co-Pilot, Scoped Multi-Agents, BYOK AI execution, or Cloud Connectors). Whenever any implementation plan is drafted or code is written for Sync or AI features, those controls **must be disabled/locked in the UI** for unauthenticated/guest users, displaying a clear prompt to sign in with Google (`/signin`) to unlock them.
+* **Strict Auth Requirement for Cloud Sync & AI:** Cloud synchronization (Supabase RPC sync, Realtime CDC subscriptions, and Google Drive media upload) and all AI endpoints (`/api/ai/chat`, `/api/ai/agent`, `/api/ai/transcribe`) are **strictly disabled unless the user is authenticated via Google OAuth (`isAuthenticated === true`)**.
+* **Skipped Sign-In (Guest Mode = 100% Manual Offline On-Device):** If the user skips sign-in during onboarding (`isGuest === true`), ScribeX operates strictly as a 100% manual offline notebook in local SQLite (`user_id = 'user-default'`) with zero background network calls, zero cloud sync attempts, and all AI/Sync UI entry points disabled.
+* **Completing Onboarding Sign-In to Unlock Cloud Sync & AI:** Whenever a guest user taps a disabled Cloud Sync or AI control in the Sidebar, Note Editor, or Workspace Settings, the app routes them to complete the Google OAuth sign-in flow (`/signin`).
+* **Lossless Guest-to-Account Vault Claim:** Upon completing Google OAuth sign-in for the first time on a device with existing guest notes (`user_id = 'user-default'`), the client atomically re-assigns all local SQLite records (`notes`, `folders`, `tags`, `tasks`, `reminders`, `in_app_notifications`, `entity_relations`, `workspace_security`, `sync_changelog`) to the authenticated `auth.uid()` and queues an initial delta sync push so zero offline data is lost.
+* **Master PIN Cloud Sync vs. Device-Only Biometrics:**
+  * **Synced to Cloud (`workspace_security`, `notes`, `folders`):** The user's Master PIN/Password cryptographic hash/salt/hint (`workspace_security`), `app_lock_enabled`, `auto_relock_seconds`, and per-note/per-folder lock configurations (`is_locked`, `lock_type`, `lock_credential_kind`, `lock_hash`, `lock_salt`, `lock_hint`) are synced to Supabase so protected notes, folders, and master credentials remain consistent across all signed-in devices.
+  * **Device-Only (`biometrics_enabled`):** Biometric unlock preference (`biometrics_enabled` — Face ID, Touch ID, Fingerprint) is **strictly a device-local setting** (stored on-device only and excluded from Supabase `workspace_security` sync) because biometric hardware and enrollment vary per physical device.
+
+### 3.1.2. In-Editor AI Assistant, Scoped Multi-Agent Orchestration & Note/Folder AI Context Exclusion
+* **In-Editor AI Co-Pilot (Direct Note Editing):** Inside the Note Editor (`note/[id].tsx`), users can invoke the AI assistant with a natural-language prompt to draft, rewrite, summarize, or restructure blocks directly inside the active note via AST diff mutations (tracked in the 50-step Undo/Redo history).
+* **Hierarchical Multi-Agent Support (Friday + Scoped Sub-Agents):** Users can spawn specialized task sub-agents scoped to a specific note or folder/group of notes. The main assistant (**Friday**, holding global 4-layer context) orchestrates and delegates bounded tasks to these sub-agents while enforcing strict **scoped context boundaries** (a sub-agent can only read/write within its assigned note or folder scope).
+* **Note & Folder Level AI Context Privacy Controls (`ai_context_excluded`):** Users can toggle **"Exclude from AI Context"** on any individual note or folder. This flag is persisted in both local SQLite and Supabase (`notes.ai_context_excluded`, `folders.ai_context_excluded`). Any note (or note inside an excluded folder, or locked note/folder) with `ai_context_excluded = true` is strictly filtered out from Layer 1/2 memory injection, `pgvector` semantic search (`rpc_search_vault`), Friday prompts, sub-agents, and external MCP queries.
+
 ### 3.2. Action Pipeline Symmetry (Shared Supabase PostgreSQL RPC Pipeline)
 To ensure complete consistency across human actions and autonomous AI operations:
 * **Direct Client Sync for Manual Actions (Zero Custom Backend Hop):** Whatever the user does manually on the device (typing notes, reordering blocks, toggling checklists, creating folders, setting reminders) saves optimistically to local SQLite (1.5ms) and syncs **directly from the client device to Supabase PostgreSQL RPCs** (`rpc_create_note`, `rpc_update_note`, `rpc_toggle_task`, `rpc_schedule_reminder`, `rpc_search_vault`) via `@supabase/supabase-js`. Our custom Next.js backend server is NEVER involved in manual note-taking or canvas edits.
@@ -337,6 +363,11 @@ The orchestrator never assumes a worker agent succeeded just because it finished
    * If errors or missing criteria are found, it dispatches targeted corrective feedback back to the agent session (up to 3 retries).
    * If verified, it marks tasks complete in Supabase, logs changes in Layer 3 (Task History), updates project notes in Layer 2, and notifies the user.
 
+### 7.4. External App Connectors Hub, GitHub Integration & Outbound WhatsApp Reminders
+* **Universal App & Service Connectors Hub:** A dedicated Connectors section in ScribeX where users can connect external services and APIs to fetch data into notes or push actions outward.
+* **GitHub Connector:** Allows users to link their GitHub account/repositories to browse issues, PRs, commits, and trigger repository management actions directly from ScribeX notes and tasks.
+* **Outbound WhatsApp Task/Note Reminders (Meta Cloud API + `pg_cron`):** For logged-in users who configure their WhatsApp number, scheduled reminders stored in Supabase (`reminders` table) are evaluated by a Supabase `pg_cron` job & Edge Function dispatcher that delivers interactive WhatsApp reminder alerts via the Meta Cloud API when a task or note reminder triggers.
+
 ---
 
 ## 8. Multi-Tenancy, Commercial Billing & Security
@@ -358,12 +389,12 @@ The orchestrator never assumes a worker agent succeeded just because it finished
 ## 9. Phased Delivery Roadmap
 
 * **Phase 1: Universal Manual Note Engine (COMPLETED & AUDITED):**  
-  42 input blocks, local SQLite with sub-2ms speed, nested checklists, habits, kanban, full-bleed canvas, drag-and-drop, hierarchical folders, search, and Tier 1 serverless local push notification reminders.
-* **Phase 2: Supabase Realtime Sync, Shared RPC Pipeline & Google Drive Media Vault (NEXT IN QUEUE):**  
-  Supabase PostgreSQL schema, RLS policies, Shared Supabase PostgreSQL RPC Pipeline (`rpc_create_note`, `rpc_update_note`, `rpc_toggle_task`, `rpc_schedule_reminder`, `rpc_search_vault`), Tier 2 multi-device CDC reminder synchronization, `@supabase/supabase-js` bidirectional sync, and Google Drive API v3 media storage.
-* **Phase 3: Unified Backend AI Engine, Ephemeral BYOK Passthrough & Universal MCP Connector (PENDING):**  
-  Unified Backend AI Gateway (`/api/ai/chat` & `/api/ai/agent`) on Next.js/Edge Functions, ephemeral client BYOK header ingestion, 4-layer cognitive memory stack, Ask-Before-Write Ambiguity Gate, and `connector/` MCP server exposing identical tools and memory to Claude Desktop, Cursor, and ChatGPT Actions.
-* **Phase 4: Remote PC Agent Bridge Daemon & Pluggable CLI Loop (PENDING):**  
-  `pc-agent-bridge` outbound WebSocket daemon, `cli_agents.yaml` adapter registry, and 3-stage independent verification loop.
+  42 input blocks, local SQLite with sub-2ms speed, nested checklists, habits, kanban, full-bleed canvas, drag-and-drop, hierarchical folders, search, PIN/password + native biometrics, cross-platform Share Sheet ingestion, and Tier 1 serverless local push notification reminders.
+* **Phase 2: Authenticated Supabase Realtime Sync, Shared RPC Pipeline & Google Drive Media Vault (NEXT IN QUEUE):**  
+  Strict Auth-Gated Cloud Sync (offline-only for skipped/guest users; requires completing onboarding login flow with automatic Guest-to-Account local vault migration), full schema parity between local SQLite and Supabase PostgreSQL (`folders` flags/locks, `notes` locks, `in_app_notifications`, `workspace_security`, `recurrence_rule`, and `ai_context_excluded`), Shared Supabase PostgreSQL RPC Pipeline preserving client IDs (`rpc_create_note`, `rpc_update_note`, `rpc_toggle_task`, `rpc_schedule_reminder`, `rpc_search_vault`), Tier 2 multi-device CDC reminder synchronization, `@supabase/supabase-js` bidirectional sync, and Google Drive API v3 media storage.
+* **Phase 3: Unified Backend AI Engine, In-Editor Co-Pilot, Scoped Multi-Agents & Universal MCP Connector (PENDING):**  
+  Unified Backend AI Gateway (`/api/ai/chat` & `/api/ai/agent`) on Next.js/Edge Functions, In-Editor AI Assistant for prompt-driven live note editing, Multi-Agent orchestration (Friday spawning note/folder-scoped sub-agents), strict Note/Folder AI Context Exclusion enforcement (`ai_context_excluded`), ephemeral client BYOK header ingestion, 4-layer cognitive memory stack, Ask-Before-Write Ambiguity Gate, and `connector/` MCP server.
+* **Phase 4: External Connectors Hub, GitHub Integration, Outbound WhatsApp Reminders & Remote PC Agent Bridge (PENDING):**  
+  Universal Connectors Hub in UI, GitHub repository management connector, Outbound WhatsApp Task/Note Reminders via Supabase `pg_cron` + Edge Functions + Meta Cloud API, `pc-agent-bridge` outbound WebSocket daemon, `cli_agents.yaml` adapter registry, and 3-stage independent verification loop.
 * **Phase 5: SaaS Multi-Tenancy, Commercial Billing & Production Scaling (PENDING):**  
   Production authentication, Stripe subscription billing, LiteLLM token spend quotas, and Docker Compose deployment with Caddy reverse proxy.

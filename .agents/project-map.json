@@ -88,7 +88,17 @@
       "appLockOverlay": "frontend/src/components/security/AppLockScreenOverlay.tsx",
       "pinPasswordPromptModal": "frontend/src/components/security/PinPasswordPromptModal.tsx"
     },
+    "backendAndDatabase": {
+      "initialSchemaSql": "supabase/migrations/001_initial_schema.sql",
+      "coreRpcsSql": "supabase/migrations/002_core_rpcs.sql",
+      "sqliteSchema": "frontend/src/db/schema.ts",
+      "sqliteNativeClient": "frontend/src/db/client.native.ts",
+      "sqliteWebClient": "frontend/src/db/client.web.ts",
+      "dbTypes": "frontend/src/db/types.ts"
+    },
     "docsAndReports": {
+      "envExample": "frontend/.env.example",
+      "supabaseAuthSetupGuide": "docs/Supabase_and_Google_OAuth_Setup_Guide.md",
       "implementationPlan": "implementation_plan.md",
       "index": "docs/README.md",
       "masterTracker": "docs/Master_Tasks_Tracker.md",

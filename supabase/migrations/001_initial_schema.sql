@@ -1,5 +1,5 @@
 -- =============================================================================
--- ScribeX Supabase PostgreSQL Schema Definition
+-- ScribeX Supabase PostgreSQL Schema Definition (100% Local SQLite Parity)
 -- Migration: 001_initial_schema.sql
 -- Source of Truth: docs/Unified_Backend_and_AI_Master_Specification.md
 -- Parity Reference: frontend/src/db/schema.ts
@@ -21,6 +21,17 @@ CREATE TABLE IF NOT EXISTS folders (
   path TEXT NOT NULL,
   color_token TEXT NOT NULL DEFAULT 'apricot',
   icon TEXT,
+  cover_image TEXT,
+  is_favorite BOOLEAN NOT NULL DEFAULT FALSE,
+  is_pinned BOOLEAN NOT NULL DEFAULT FALSE,
+  is_archived BOOLEAN NOT NULL DEFAULT FALSE,
+  is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+  lock_type TEXT CHECK (lock_type IN ('master', 'custom')) DEFAULT NULL,
+  lock_credential_kind TEXT CHECK (lock_credential_kind IN ('pin', 'password')) DEFAULT NULL,
+  lock_hash TEXT DEFAULT NULL,
+  lock_salt TEXT DEFAULT NULL,
+  lock_hint TEXT DEFAULT NULL,
+  ai_context_excluded BOOLEAN NOT NULL DEFAULT FALSE,
   sync_rev BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -56,6 +67,13 @@ CREATE TABLE IF NOT EXISTS notes (
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived', 'trashed')),
   priority_score REAL NOT NULL DEFAULT 0.0,
   reminder_at TIMESTAMPTZ,
+  is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+  lock_type TEXT CHECK (lock_type IN ('master', 'custom')) DEFAULT NULL,
+  lock_credential_kind TEXT CHECK (lock_credential_kind IN ('pin', 'password')) DEFAULT NULL,
+  lock_hash TEXT DEFAULT NULL,
+  lock_salt TEXT DEFAULT NULL,
+  lock_hint TEXT DEFAULT NULL,
+  ai_context_excluded BOOLEAN NOT NULL DEFAULT FALSE,
   embedding vector(1536), -- Compatible with OpenAI text-embedding-3-small & Gemini Embeddings
   sync_rev BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -87,6 +105,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   priority TEXT NOT NULL DEFAULT 'none' CHECK (priority IN ('none', 'low', 'medium', 'high', 'urgent')),
   due_date TEXT,
   reminder_at TIMESTAMPTZ,
+  recurrence_rule TEXT,
   sync_rev BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -164,7 +183,10 @@ CREATE TABLE IF NOT EXISTS reminders (
   target_type TEXT NOT NULL CHECK (target_type IN ('task', 'note', 'event', 'checklist_point')),
   target_id TEXT NOT NULL,
   note_id TEXT,
+  title TEXT NOT NULL DEFAULT 'Reminder',
+  body TEXT NOT NULL DEFAULT '',
   trigger_at TIMESTAMPTZ NOT NULL,
+  recurrence_rule TEXT,
   notification_id TEXT,
   channel_id TEXT NOT NULL DEFAULT 'scribex_reminders',
   is_dismissed BOOLEAN NOT NULL DEFAULT FALSE,
@@ -177,12 +199,54 @@ CREATE TABLE IF NOT EXISTS reminders (
 );
 
 -- =============================================================================
--- 11. High-Performance Query & Search Indexes
+-- 11. In-App Notification Center Ledger
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS in_app_notifications (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  reminder_id TEXT,
+  target_type TEXT NOT NULL CHECK (target_type IN ('task', 'note', 'system')),
+  target_id TEXT NOT NULL,
+  note_id TEXT,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  trigger_at TIMESTAMPTZ NOT NULL,
+  recurrence_rule TEXT,
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  read_at TIMESTAMPTZ,
+  is_cleared BOOLEAN NOT NULL DEFAULT FALSE,
+  cleared_at TIMESTAMPTZ,
+  sync_rev BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- 12. Workspace Security Table (Master PIN/Password Synced; Biometrics Device-Only)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS workspace_security (
+  user_id TEXT PRIMARY KEY,
+  app_lock_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  master_credential_type TEXT CHECK (master_credential_type IN ('pin', 'password')) DEFAULT NULL,
+  master_hash TEXT DEFAULT NULL,
+  master_salt TEXT DEFAULT NULL,
+  master_hint TEXT DEFAULT NULL,
+  auto_relock_seconds INTEGER NOT NULL DEFAULT 0,
+  sync_rev BIGINT NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- 13. High-Performance Query & Search Indexes
 -- =============================================================================
 CREATE INDEX IF NOT EXISTS idx_notes_user_folder ON notes(user_id, folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_user_status ON notes(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_notes_user_favorite ON notes(user_id, is_favorite);
 CREATE INDEX IF NOT EXISTS idx_notes_user_updated ON notes(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_user_locked ON notes(user_id, is_locked);
+CREATE INDEX IF NOT EXISTS idx_notes_user_ai_context ON notes(user_id, ai_context_excluded);
+CREATE INDEX IF NOT EXISTS idx_folders_user_flags ON folders(user_id, is_favorite, is_pinned, is_archived);
+CREATE INDEX IF NOT EXISTS idx_folders_user_locked ON folders(user_id, is_locked);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_note ON tasks(user_id, note_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_user_completed ON tasks(user_id, is_completed);
 CREATE INDEX IF NOT EXISTS idx_relations_user_source ON entity_relations(user_id, source_id);
@@ -190,6 +254,7 @@ CREATE INDEX IF NOT EXISTS idx_relations_user_target ON entity_relations(user_id
 CREATE INDEX IF NOT EXISTS idx_changelog_user_rev ON sync_changelog(user_id, sync_rev);
 CREATE INDEX IF NOT EXISTS idx_reminders_user_target ON reminders(user_id, target_type, target_id);
 CREATE INDEX IF NOT EXISTS idx_reminders_user_trigger ON reminders(user_id, trigger_at, is_dismissed);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON in_app_notifications(user_id, is_read, is_cleared);
 CREATE INDEX IF NOT EXISTS idx_search_history_user ON search_history(user_id, last_used_at DESC);
 
 -- GIN Index for fast Full-Text Search in PostgreSQL
@@ -199,7 +264,7 @@ CREATE INDEX IF NOT EXISTS idx_notes_fts ON notes USING GIN (to_tsvector('englis
 CREATE INDEX IF NOT EXISTS idx_notes_embedding ON notes USING hnsw (embedding vector_cosine_ops);
 
 -- =============================================================================
--- 12. Row-Level Security (RLS) Tenant Isolation
+-- 14. Row-Level Security (RLS) Tenant Isolation
 -- Enforces auth.uid() = user_id on all tables with zero data leakage
 -- =============================================================================
 ALTER TABLE folders ENABLE ROW LEVEL SECURITY;
@@ -212,6 +277,8 @@ ALTER TABLE entity_relations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sync_changelog ENABLE ROW LEVEL SECURITY;
 ALTER TABLE search_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE in_app_notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspace_security ENABLE ROW LEVEL SECURITY;
 
 -- Tenant Isolation Policies
 CREATE POLICY "Folders tenant isolation" ON folders FOR ALL TO authenticated USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id);
@@ -223,12 +290,13 @@ CREATE POLICY "Relations tenant isolation" ON entity_relations FOR ALL TO authen
 CREATE POLICY "Changelog tenant isolation" ON sync_changelog FOR ALL TO authenticated USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id);
 CREATE POLICY "Search history tenant isolation" ON search_history FOR ALL TO authenticated USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id);
 CREATE POLICY "Reminders tenant isolation" ON reminders FOR ALL TO authenticated USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id);
+CREATE POLICY "In-app notifications tenant isolation" ON in_app_notifications FOR ALL TO authenticated USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id);
+CREATE POLICY "Workspace security tenant isolation" ON workspace_security FOR ALL TO authenticated USING (auth.uid()::text = user_id) WITH CHECK (auth.uid()::text = user_id);
 
 CREATE POLICY "Note tags tenant isolation" ON note_tags FOR ALL TO authenticated 
 USING (EXISTS (SELECT 1 FROM notes WHERE notes.id = note_tags.note_id AND notes.user_id = auth.uid()::text));
 
 -- =============================================================================
--- 13. Supabase Realtime CDC Publication
+-- 15. Supabase Realtime CDC Publication
 -- =============================================================================
-ALTER PUBLICATION supabase_realtime ADD TABLE notes, folders, tasks, reminders, sync_changelog;
-
+ALTER PUBLICATION supabase_realtime ADD TABLE notes, folders, tasks, reminders, in_app_notifications, workspace_security, sync_changelog;

@@ -93,9 +93,17 @@ for (const relPath of filesToVerify) {
 console.log('\n▶ STAGE 2: SQLite Schema & Event-Sourcing Ledger Tests');
 
 const schemaFile = fs.readFileSync(path.join(feDir, 'src/db/schema.ts'), 'utf-8');
+const tablesMatch = schemaFile.match(/export const SCHEMA_TABLES_SQL = `([\s\S]*?)`;/);
+const indexesMatch = schemaFile.match(/export const SCHEMA_INDEXES_SQL = `([\s\S]*?)`;/);
 const schemaMatch = schemaFile.match(/export const SCHEMA_SQL = `([\s\S]*?)`;/);
-assert.ok(schemaMatch, 'Failed to extract SCHEMA_SQL from schema.ts');
-const rawSchemaSql = schemaMatch[1];
+
+let rawSchemaSql = '';
+if (tablesMatch) {
+  rawSchemaSql = `${tablesMatch[1]}\n${indexesMatch ? indexesMatch[1] : ''}`;
+} else if (schemaMatch) {
+  rawSchemaSql = schemaMatch[1];
+}
+assert.ok(rawSchemaSql.length > 0, 'Failed to extract SCHEMA_SQL from schema.ts');
 
 const db = new DatabaseSync(':memory:');
 db.exec(rawSchemaSql);

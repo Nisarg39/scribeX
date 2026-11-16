@@ -176,3 +176,10 @@ ALTER TABLE folders ADD COLUMN lock_hint TEXT DEFAULT NULL;
 - **Cross-Platform UI/UX Audit:** `npm --prefix frontend run test:uiux` (Update assertions for top-left Hamburger Menu and Side Navbar badge placement)
 - **Headless Security & Cascade Unit Suite:** `node scripts/test_pin_password_security.mjs` verifying Master vs. Custom isolation, folder cascade locking, search/task redaction, and auto-relock lifecycle.
 
+---
+
+## 7. Cloud Sync Boundary: Synced Master PIN & Locks vs. Device-Only Biometrics (Phase 2)
+- **Synced to Supabase (`workspace_security`, `notes`, `folders`):** When authenticated via Google OAuth, `master_credential_type`, `master_hash`, `master_salt`, `master_hint`, `app_lock_enabled`, `auto_relock_seconds`, and all note/folder lock fields (`is_locked`, `lock_type`, `lock_credential_kind`, `lock_hash`, `lock_salt`, `lock_hint`) are synchronized to Supabase PostgreSQL so the user's Master PIN/Password and locked items work seamlessly across all signed-in devices.
+- **Strictly Device-Local (`biometrics_enabled`):** Biometric unlock (`biometrics_enabled` via `expo-local-authentication`) is **never synced to the database/cloud**; it remains strictly a per-device local setting configured independently on each mobile device.
+
+

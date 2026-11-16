@@ -173,8 +173,8 @@ class WorkspaceBackupService {
              id, user_id, name, parent_id, path, color_token, icon,
              is_favorite, is_pinned, is_archived,
              is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
-             sync_rev, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+             ai_context_excluded, sync_rev, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           [
             f.id,
             f.user_id || 'user-default',
@@ -192,6 +192,7 @@ class WorkspaceBackupService {
             f.lock_hash || null,
             f.lock_salt || null,
             f.lock_hint || null,
+            f.ai_context_excluded ? 1 : 0,
             f.sync_rev || 0,
             f.created_at || new Date().toISOString(),
             f.updated_at || new Date().toISOString(),
@@ -229,8 +230,8 @@ class WorkspaceBackupService {
              id, user_id, folder_id, folder_path, group_name, title, content_markdown,
              blocks_json, color_token, is_favorite, is_pinned, status, priority_score,
              reminder_at, is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
-             sync_rev, created_at, updated_at, trashed_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+             ai_context_excluded, sync_rev, created_at, updated_at, trashed_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           [
             n.id,
             n.user_id || 'user-default',
@@ -252,6 +253,7 @@ class WorkspaceBackupService {
             n.lock_hash || null,
             n.lock_salt || null,
             n.lock_hint || null,
+            n.ai_context_excluded ? 1 : 0,
             n.sync_rev || 0,
             n.created_at || new Date().toISOString(),
             n.updated_at || new Date().toISOString(),

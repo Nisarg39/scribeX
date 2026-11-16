@@ -40,6 +40,7 @@ export class NotesRepository {
       lockHash: dbNote.lock_hash || undefined,
       lockSalt: dbNote.lock_salt || undefined,
       lockHint: dbNote.lock_hint || undefined,
+      aiContextExcluded: dbNote.ai_context_excluded === 1,
       createdAt: dbNote.created_at,
       updatedAt: dbNote.updated_at,
     };
@@ -59,8 +60,8 @@ export class NotesRepository {
 
     const insertSql = `
       INSERT INTO notes (
-        id, user_id, folder_id, folder_path, group_name, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, reminder_at, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active');
+        id, user_id, folder_id, folder_path, group_name, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, reminder_at, ai_context_excluded, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active');
     `;
 
     await dbClient.run(insertSql, [
@@ -76,6 +77,7 @@ export class NotesRepository {
       dto.isFavorite ? 1 : 0,
       dto.isPinned ? 1 : 0,
       dto.reminderAt || null,
+      dto.aiContextExcluded ? 1 : 0,
     ]);
 
     // Handle tags if provided
@@ -217,6 +219,10 @@ export class NotesRepository {
     if (dto.reminderAt !== undefined) {
       updates.push('reminder_at = ?');
       params.push(dto.reminderAt);
+    }
+    if (dto.aiContextExcluded !== undefined) {
+      updates.push('ai_context_excluded = ?');
+      params.push(dto.aiContextExcluded ? 1 : 0);
     }
 
     updates.push("updated_at = CURRENT_TIMESTAMP");

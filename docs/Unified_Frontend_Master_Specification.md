@@ -22,6 +22,8 @@ The frontend is guided by four non-negotiable principles:
    * **Part 2 — Tasks (The Execution Ledger):** Unified task board linking embedded note checklists to the global task ledger.
 4. **Local-First SQLite Engine with Optimistic UI:**  
    Every user action (keystroke, block insert, task toggle, reminder scheduling) commits to local SQLite in under 2ms with optimistic UI updates. Changes append to `sync_changelog` with a monotonic `sync_rev`, making the local database cloud-sync ready for Phase 2 Supabase CDC.
+5. **Strict UI & Runtime Authentication Gate for Cloud Sync & AI Features:**  
+   Users who skip sign-in during onboarding (`isGuest === true` / `!isAuthenticated`) operate strictly in **100% manual offline mode**. All Cloud Sync controls and all AI features (Friday assistant, In-Editor AI co-pilot, multi-agents, BYOK AI settings, and connectors) **must be disabled in the UI** until the user completes the Google OAuth sign-in flow (`/signin`).
 
 ---
 

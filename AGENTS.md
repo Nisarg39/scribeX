@@ -33,6 +33,7 @@ To preserve user model quotas and avoid re-sending long conversation histories, 
 - **Context Compaction:** When the main conversation exceeds ~30 turns, remind the user they can run `/compact` to free up context tokens.
 
 ## 3. Non-Negotiable Project Invariants (ScribeX)
+- **Strict Auth Gate for Cloud Sync & AI Features (UI & Runtime):** Users who are not logged in (`!isAuthenticated` / `isGuest === true` after skipping sign-in) **cannot access Cloud Sync or any AI features** (Friday assistant, In-Editor AI co-pilot, multi-agents, BYOK AI calls, or cloud connectors). Whenever you create an `implementation_plan.md` or implement code for Cloud Sync or AI features, you **MUST** keep those features disabled/locked in the UI for unauthenticated/guest users and prompt them to complete the Google OAuth login flow (`/signin`) before enabling them.
 - **No Browser Tool for Verification:** Verify strictly via TypeScript (`cd frontend && npx tsc --noEmit`) and project scripts (`npm --prefix frontend run test:uiux`, `audit:all`, `test:interactions`).
 - **Full-Bleed Native Canvas:** Do **not** wrap screens (`home.tsx`, `note/[id].tsx`) in artificial outer card containers (`rounded-3xl` with outer borders). Avoid generic boxed card layouts.
 - **React Native Flex Safety:**

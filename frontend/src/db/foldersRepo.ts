@@ -23,10 +23,11 @@ export class FoldersRepository {
     const isFavorite = dto.isFavorite ? 1 : 0;
     const isPinned = dto.isPinned ? 1 : 0;
     const isArchived = dto.isArchived ? 1 : 0;
+    const aiContextExcluded = dto.aiContextExcluded ? 1 : 0;
 
     const insertSql = `
-      INSERT INTO folders (id, user_id, name, parent_id, path, color_token, icon, is_favorite, is_pinned, is_archived)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      INSERT INTO folders (id, user_id, name, parent_id, path, color_token, icon, is_favorite, is_pinned, is_archived, ai_context_excluded)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `;
 
     await dbClient.run(insertSql, [
@@ -40,6 +41,7 @@ export class FoldersRepository {
       isFavorite,
       isPinned,
       isArchived,
+      aiContextExcluded,
     ]);
 
     await dbClient.run(
@@ -86,6 +88,7 @@ export class FoldersRepository {
         isArchived: Boolean(f.is_archived),
         isLocked: Boolean(f.is_locked),
         lockType: f.lock_type || null,
+        aiContextExcluded: Boolean(f.ai_context_excluded),
         children: [],
       });
     }
@@ -608,6 +611,33 @@ export class FoldersRepository {
         folder.sync_rev + 1,
         id,
         JSON.stringify({ action: 'toggle_pin', isPinned: Boolean(nextVal) }),
+      ]
+    );
+
+    return Boolean(nextVal);
+  }
+
+  public async toggleFolderAiContextExcluded(id: string): Promise<boolean> {
+    const folder = await this.getFolderById(id);
+    if (!folder) {
+      throw new Error(`Folder with id ${id} not found.`);
+    }
+
+    const nextVal = folder.ai_context_excluded ? 0 : 1;
+    await dbClient.run(
+      `UPDATE folders SET ai_context_excluded = ?, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+      [nextVal, id]
+    );
+
+    await dbClient.run(
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+       VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
+      [
+        createLogId(),
+        folder.user_id,
+        folder.sync_rev + 1,
+        id,
+        JSON.stringify({ action: 'toggle_ai_context_excluded', aiContextExcluded: Boolean(nextVal) }),
       ]
     );
 

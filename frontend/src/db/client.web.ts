@@ -175,6 +175,7 @@ export class WebDatabaseClient {
           'ALTER TABLE notes ADD COLUMN lock_hash TEXT DEFAULT NULL;',
           'ALTER TABLE notes ADD COLUMN lock_salt TEXT DEFAULT NULL;',
           'ALTER TABLE notes ADD COLUMN lock_hint TEXT DEFAULT NULL;',
+          'ALTER TABLE notes ADD COLUMN ai_context_excluded INTEGER NOT NULL DEFAULT 0;',
           'ALTER TABLE folders ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0;',
           'ALTER TABLE folders ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0;',
           'ALTER TABLE folders ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0;',
@@ -184,6 +185,7 @@ export class WebDatabaseClient {
           'ALTER TABLE folders ADD COLUMN lock_hash TEXT DEFAULT NULL;',
           'ALTER TABLE folders ADD COLUMN lock_salt TEXT DEFAULT NULL;',
           'ALTER TABLE folders ADD COLUMN lock_hint TEXT DEFAULT NULL;',
+          'ALTER TABLE folders ADD COLUMN ai_context_excluded INTEGER NOT NULL DEFAULT 0;',
         ];
 
         for (const stmt of columnMigrations) {

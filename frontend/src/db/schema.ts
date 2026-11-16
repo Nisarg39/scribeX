@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS folders (
   lock_hash TEXT DEFAULT NULL,
   lock_salt TEXT DEFAULT NULL,
   lock_hint TEXT DEFAULT NULL,
+  ai_context_excluded INTEGER NOT NULL DEFAULT 0,
   sync_rev INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -59,6 +60,7 @@ CREATE TABLE IF NOT EXISTS notes (
   lock_hash TEXT DEFAULT NULL,
   lock_salt TEXT DEFAULT NULL,
   lock_hint TEXT DEFAULT NULL,
+  ai_context_excluded INTEGER NOT NULL DEFAULT 0,
   sync_rev INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -220,6 +222,8 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON in_app_notifications(u
 CREATE INDEX IF NOT EXISTS idx_notifications_trigger ON in_app_notifications(trigger_at);
 CREATE INDEX IF NOT EXISTS idx_folders_flags ON folders(is_favorite, is_pinned, is_archived);
 CREATE INDEX IF NOT EXISTS idx_folders_locked ON folders(is_locked);
+CREATE INDEX IF NOT EXISTS idx_notes_ai_context_excluded ON notes(ai_context_excluded);
+CREATE INDEX IF NOT EXISTS idx_folders_ai_context_excluded ON folders(ai_context_excluded);
 `;
 
 export const SCHEMA_SQL = `${SCHEMA_TABLES_SQL}\n${SCHEMA_INDEXES_SQL}`;
