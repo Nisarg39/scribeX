@@ -37,18 +37,20 @@
   - [`.agents/project-map.json`](.agents/project-map.json)
 - **Status:** Done. Added `ai_context_excluded` to SQLite tables with safe migrations, mapped in DTOs and repos, verified via `npx tsc --noEmit` and test suites.
 
-### Step 2: Supabase Client, Google OAuth-Only Sign-In & Guest Vault Migration [NEXT]
-- **Files:**
+### Step 2: Supabase Client, Google OAuth-Only Sign-In & Lossless Guest Vault Migration [COMPLETED]
+- **Files Created / Modified:**
   - [`frontend/src/services/supabase/supabaseClient.ts`](frontend/src/services/supabase/supabaseClient.ts) *(New)*
+  - [`frontend/src/db/vaultMigration.ts`](frontend/src/db/vaultMigration.ts) *(New)*
   - [`frontend/src/context/AuthContext.tsx`](frontend/src/context/AuthContext.tsx)
   - [`frontend/app/signin.tsx`](frontend/app/signin.tsx)
-  - [`frontend/src/db/vaultMigration.ts`](frontend/src/db/vaultMigration.ts) *(New)*
-- **Changes:**
-  - Create `supabaseClient.ts` backed by `@supabase/supabase-js` and `AsyncStorage` session persistence.
-  - Update `signin.tsx` to offer **Continue with Google** (Google OAuth only) and **Skip for now (Offline Mode)**, removing email/password or other mock providers.
-  - Implement `migrateGuestVaultToUser(userId: string)` in `vaultMigration.ts` to atomically re-assign local `user-default` rows across all SQLite tables to the authenticated Google `auth.uid()` upon sign-in.
+  - [`scripts/test_guest_vault_migration.mjs`](scripts/test_guest_vault_migration.mjs) *(New)*
+  - [`.agents/project-map.json`](.agents/project-map.json)
+  - [`docs/Master_Tasks_Tracker.md`](docs/Master_Tasks_Tracker.md)
+- **Status:** Done. Initialized Supabase client with AsyncStorage persistence, implemented atomic lossless guest-to-account migration across all 10 user-scoped SQLite tables, wired Google OAuth-only sign-in across Web and Mobile (`scribex://auth/callback`), and verified with `npx tsc --noEmit` (0 errors) + 13/13 Guest Migration + 13/13 UI/UX + 39/39 Reminder/Notification checks.
 
-### Step 3: Auth-Gated `SyncEngine` (Notes, Folders, Tasks, Reminders & Master PIN)
+---
+
+### Step 3: Auth-Gated `SyncEngine` (Notes, Folders, Tasks, Reminders & Master PIN) [NEXT]
 - **Files:**
   - [`frontend/src/services/sync/syncEngine.ts`](frontend/src/services/sync/syncEngine.ts)
   - [`frontend/src/state/useNotesStore.tsx`](frontend/src/state/useNotesStore.tsx)

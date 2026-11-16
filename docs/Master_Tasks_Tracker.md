@@ -99,7 +99,12 @@
   - Updated TypeScript DTOs and interfaces (`DBFolder`, `DBNote`, `CreateNoteDTO`, `UpdateNoteDTO`, `CreateFolderDTO`, `FolderTreeNode`, `NoteItem`).
   - Integrated into `notesRepo.ts`, `foldersRepo.ts` (`toggleFolderAiContextExcluded`), and `workspaceBackupService.ts`.
   - Verified with 0 TypeScript errors and passing test suites.
-- [ ] **Step 2: Supabase Client, Google OAuth-Only Sign-In & Guest Vault Migration**
+- [x] **Step 2: Supabase Client, Google OAuth-Only Sign-In & Guest Vault Migration**
+  - Created `frontend/src/services/supabase/supabaseClient.ts` with AsyncStorage session persistence, PKCE/auto-refresh, and safe placeholder fallback when env credentials are unconfigured.
+  - Created `frontend/src/db/vaultMigration.ts` implementing atomic `migrateGuestVaultToUser(authenticatedUserId)` across all 10 user-scoped SQLite tables and queueing `sync_changelog` deltas without duplication.
+  - Upgraded `frontend/src/context/AuthContext.tsx` to authenticate exclusively via Google OAuth (`signInWithGoogle`), handle Web & Native deep links (`scribex://auth/callback`), subscribe to `onAuthStateChange`, and trigger guest vault migration on login.
+  - Updated `frontend/app/signin.tsx` with **Continue with Google**, **Skip & Use Offline Mode**, loading states, error banner, and Strict Auth Gate caption.
+  - Verified with 0 TypeScript errors (`npx tsc --noEmit`), 13/13 Guest Migration harness tests (`scripts/test_guest_vault_migration.mjs`), 13/13 UI/UX audit checks, and 39/39 Reminder/Notification checks.
 - [ ] **Step 3: Auth-Gated Realtime Sync Engine & UI Controls**
 
 #### Architecture & Invariants

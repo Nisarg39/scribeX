@@ -89,6 +89,9 @@
       "pinPasswordPromptModal": "frontend/src/components/security/PinPasswordPromptModal.tsx"
     },
     "backendAndDatabase": {
+      "supabaseClient": "frontend/src/services/supabase/supabaseClient.ts",
+      "vaultMigration": "frontend/src/db/vaultMigration.ts",
+      "authContext": "frontend/src/context/AuthContext.tsx",
       "initialSchemaSql": "supabase/migrations/001_initial_schema.sql",
       "coreRpcsSql": "supabase/migrations/002_core_rpcs.sql",
       "sqliteSchema": "frontend/src/db/schema.ts",
@@ -118,6 +121,7 @@
     "interactionsAndUndoAudit": "npm --prefix frontend run test:interactions",
     "maestroFlowsValidate": "npm --prefix frontend run test:e2e:validate",
     "sharePipelineTest": "cd frontend && npx tsx ../scripts/test_inbound_share_pipeline.mjs",
+    "guestMigrationTest": "node scripts/test_guest_vault_migration.mjs",
     "allSuites": "npm --prefix frontend run test:all"
   }
 }

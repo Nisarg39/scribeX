@@ -1,29 +1,68 @@
-import React from 'react';
-import { View, Text, Pressable } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '../src/theme';
 import { useAuth } from '../src/context';
-import { Sun, Moon, LogIn, ArrowRight } from 'lucide-react-native';
+import { Sun, Moon, ArrowRight, AlertCircle, X, ShieldCheck } from 'lucide-react-native';
+
+const GoogleMark: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24">
+    <Path
+      fill="#4285F4"
+      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
+    />
+    <Path
+      fill="#34A853"
+      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.11-6.72-4.96H1.29v3.14C3.26 21.3 7.31 24 12 24Z"
+    />
+    <Path
+      fill="#FBBC05"
+      d="M5.28 14.24c-.24-.72-.38-1.49-.38-2.24s.14-1.52.38-2.24V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.99-3.14Z"
+    />
+    <Path
+      fill="#EA4335"
+      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.99 3.14c.95-2.85 3.6-4.96 6.72-4.96Z"
+    />
+  </Svg>
+);
 
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isDark, toggleTheme } = useTheme();
-  const { signIn, continueAsGuest } = useAuth();
+  const {
+    signInWithGoogle,
+    continueAsGuest,
+    isSigningIn,
+    authError,
+    clearAuthError,
+    isAuthenticated,
+  } = useAuth();
+
+  // Automatically enter workspace once Google OAuth completes
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/home');
+    }
+  }, [isAuthenticated, router]);
 
   const handleSkip = async () => {
+    clearAuthError();
     await continueAsGuest();
     router.replace('/home');
   };
 
-  const handleSignIn = async () => {
-    await signIn();
-    router.replace('/home');
+  const handleGoogleSignIn = async () => {
+    const ok = await signInWithGoogle();
+    if (ok && Platform.OS !== 'web') {
+      router.replace('/home');
+    }
   };
 
   return (
-    <View 
+    <View
       className="flex-1 bg-light-appBg dark:bg-dark-appBg justify-between px-8 py-6"
       style={{
         paddingTop: Math.max(insets.top, 24),
@@ -35,9 +74,10 @@ export default function SignInScreen() {
         <Text className="text-xs uppercase tracking-widest font-semibold text-light-textMuted dark:text-dark-textMuted">
           Authentication
         </Text>
-        
+
         <Pressable
           onPress={toggleTheme}
+          hitSlop={8}
           accessibilityRole="button"
           accessibilityLabel="Toggle color scheme"
           className="w-10 h-10 rounded-full bg-light-iconBg dark:bg-dark-iconBg items-center justify-center active:scale-95"
@@ -53,38 +93,74 @@ export default function SignInScreen() {
       {/* Main Editorial Prompt */}
       <View className="max-w-md w-full self-center">
         <Text className="text-5xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight mb-4">
-          Welcome back.
+          Welcome to ScribeX.
         </Text>
-        <Text className="text-base text-light-textSecondary dark:text-dark-textSecondary leading-relaxed">
-          Open your local vault and resume your stream of thoughts offline with sub-2ms speed.
+        <Text className="text-base text-light-textSecondary dark:text-dark-textSecondary leading-relaxed mb-6">
+          Sign in with Google to unlock real-time Cloud Sync across devices, Google Drive media backups, and Friday AI.
         </Text>
+
+        {authError ? (
+          <View
+            accessibilityRole="alert"
+            className="flex-row items-start gap-2.5 p-3.5 rounded-2xl border border-red-400/40 bg-red-500/10"
+          >
+            <AlertCircle size={18} color="#EF4444" strokeWidth={2} style={{ marginTop: 2 }} />
+            <Text className="flex-1 text-xs leading-relaxed text-red-600 dark:text-red-400 font-medium">
+              {authError}
+            </Text>
+            <Pressable
+              onPress={clearAuthError}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss sign-in error"
+              className="p-1 active:opacity-70"
+            >
+              <X size={16} color="#EF4444" strokeWidth={2} />
+            </Pressable>
+          </View>
+        ) : null}
       </View>
 
-      {/* Action Buttons: Primary Skip as Guest & Secondary Sign In */}
+      {/* Action Buttons: Google OAuth Primary & Offline Skip Secondary */}
       <View className="max-w-md w-full self-center gap-3">
         <Pressable
-          onPress={handleSkip}
+          onPress={handleGoogleSignIn}
+          disabled={isSigningIn}
           accessibilityRole="button"
-          accessibilityLabel="Skip and continue as guest"
-          className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-2 active:scale-98 shadow-sm"
+          accessibilityLabel="Continue with Google"
+          className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-3 active:scale-98 shadow-sm"
+          style={{ opacity: isSigningIn ? 0.75 : 1, minHeight: 54 }}
         >
+          {isSigningIn ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <GoogleMark size={19} />
+          )}
           <Text className="text-base font-semibold text-white">
-            Skip & Open Vault
+            {isSigningIn ? 'Connecting to Google...' : 'Continue with Google'}
           </Text>
-          <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.2} />
         </Pressable>
 
         <Pressable
-          onPress={handleSignIn}
+          onPress={handleSkip}
+          disabled={isSigningIn}
           accessibilityRole="button"
-          accessibilityLabel="Sign in with account"
+          accessibilityLabel="Skip and use offline mode"
           className="w-full py-3.5 rounded-2xl border border-light-border dark:border-dark-border flex-row items-center justify-center gap-2 active:scale-98"
+          style={{ minHeight: 50 }}
         >
-          <LogIn size={16} color={isDark ? '#9CA3AF' : '#6B7280'} strokeWidth={2} />
           <Text className="text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary">
-            Sign In with Account
+            Skip & Use Offline Mode
           </Text>
+          <ArrowRight size={16} color={isDark ? '#9CA3AF' : '#6B7280'} strokeWidth={2} />
         </Pressable>
+
+        <View className="flex-row items-center justify-center gap-1.5 pt-2">
+          <ShieldCheck size={14} color={isDark ? '#6B7280' : '#9CA3AF'} strokeWidth={2} />
+          <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center">
+            Cloud Sync and Friday AI require Google Sign-In. Skipping keeps your vault 100% local on this device.
+          </Text>
+        </View>
       </View>
     </View>
   );
