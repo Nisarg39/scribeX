@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, Pressable, Platform, DimensionValue, Image, Linking } from 'react-native';
 import { WebView } from 'react-native-webview';
+import * as Sharing from 'expo-sharing';
 import { useTheme } from '../../../theme';
 import { 
   Play, 
@@ -79,10 +80,14 @@ function getEmbedUrl(rawUrl: string): {
     };
   }
 
-  // 4. Direct video link (mp4, webm, mov)
+  // 4. Direct video link (mp4, webm, mov, 3gp, mkv, or local file:// / content:// video)
+  const isLocalOrDirect =
+    /^file:\/\//i.test(rawUrl) ||
+    /^content:\/\//i.test(rawUrl) ||
+    /\.(mp4|webm|ogg|mov|3gp|mkv|m4v)(\?.*)?$/i.test(rawUrl);
   return {
     embedUrl: rawUrl,
-    isEmbeddable: /\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(rawUrl),
+    isEmbeddable: isLocalOrDirect,
     type: 'direct',
   };
 }
@@ -112,10 +117,29 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({
 
   const embedInfo = useMemo(() => getEmbedUrl(videoUrl), [videoUrl]);
 
+  React.useEffect(() => {
+    if (url && url !== videoUrl) {
+      setVideoUrl(url);
+      setUrlInput(url);
+      setIsEditingUrl(false);
+    }
+  }, [url]);
+
   // Reset isPlayingMobile when videoUrl changes
   React.useEffect(() => {
     setIsPlayingMobile(false);
   }, [videoUrl]);
+
+  const handleOpenExternalVideo = async () => {
+    if (!videoUrl) return;
+    if (Platform.OS !== 'web' && /^file:\/\//i.test(videoUrl)) {
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(videoUrl).catch(() => {});
+        return;
+      }
+    }
+    Linking.openURL(videoUrl).catch(() => {});
+  };
 
   const handleSaveUrl = () => {
     const next = urlInput.trim() || DEFAULT_VIDEO;
@@ -251,13 +275,40 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({
                 {/* Quick External Open Pill in bottom-right */}
                 <Pressable
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  onPress={() => {
-                    if (videoUrl) Linking.openURL(videoUrl).catch(() => {});
-                  }}
+                  onPress={handleOpenExternalVideo}
                   className="absolute bottom-2.5 right-2.5 flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-black/75 border border-white/15 active:scale-95 z-10"
                 >
                   <ExternalLink size={10} color="#06B6D4" />
                   <Text className="text-[10px] font-bold text-white">Open App</Text>
+                </Pressable>
+              </View>
+            ) : embedInfo.type === 'direct' ? (
+              <View className="w-full h-full relative bg-black">
+                <WebView
+                  source={{
+                    html: `<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><style>*{margin:0;padding:0;background:#000;overflow:hidden;}video{width:100vw;height:100vh;object-fit:contain;background:#000;}</style></head><body><video src="${embedInfo.embedUrl}" controls playsinline preload="metadata"></video></body></html>`,
+                    baseUrl: embedInfo.embedUrl.startsWith('file://')
+                      ? embedInfo.embedUrl.substring(0, embedInfo.embedUrl.lastIndexOf('/') + 1)
+                      : undefined,
+                  }}
+                  originWhitelist={['*']}
+                  allowFileAccess={true}
+                  allowFileAccessFromFileURLs={true}
+                  allowUniversalAccessFromFileURLs={true}
+                  style={{ flex: 1, backgroundColor: '#000000' }}
+                  allowsFullscreenVideo
+                  allowsInlineMediaPlayback
+                  mediaPlaybackRequiresUserAction={false}
+                  javaScriptEnabled
+                  domStorageEnabled
+                />
+                <Pressable
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={handleOpenExternalVideo}
+                  className="absolute top-2.5 left-2.5 flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-black/75 border border-white/15 active:scale-95"
+                >
+                  <ExternalLink size={10} color="#06B6D4" />
+                  <Text className="text-[10px] font-bold text-white">Open Player</Text>
                 </Pressable>
               </View>
             ) : (
@@ -278,9 +329,7 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({
                 {/* Quick External Open Pill in bottom-right */}
                 <Pressable
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  onPress={() => {
-                    if (videoUrl) Linking.openURL(videoUrl).catch(() => {});
-                  }}
+                  onPress={handleOpenExternalVideo}
                   className="absolute bottom-2.5 right-2.5 flex-row items-center gap-1 px-2.5 py-1 rounded-full bg-black/75 border border-white/15 active:scale-95"
                 >
                   <ExternalLink size={10} color="#06B6D4" />
@@ -293,8 +342,8 @@ export const VideoBlock: React.FC<VideoBlockProps> = ({
               onPress={() => {
                 if (Platform.OS === 'web' && typeof window !== 'undefined') {
                   window.open(videoUrl, '_blank');
-                } else if (videoUrl) {
-                  Linking.openURL(videoUrl).catch(() => {});
+                } else {
+                  handleOpenExternalVideo();
                 }
               }}
               className="w-full h-full items-center justify-center p-6 relative"

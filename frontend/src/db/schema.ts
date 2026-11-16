@@ -3,7 +3,7 @@
  * Source of Truth: docs/Universal_Note_Input_Structure_and_Relations.md
  */
 
-export const SCHEMA_SQL = `
+export const SCHEMA_TABLES_SQL = `
 -- 1. Folders Hierarchy Table
 CREATE TABLE IF NOT EXISTS folders (
   id TEXT PRIMARY KEY,
@@ -198,7 +198,9 @@ CREATE TABLE IF NOT EXISTS workspace_security (
   auto_relock_seconds INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+`;
 
+export const SCHEMA_INDEXES_SQL = `
 -- Sub-5ms Performance Query Indexes
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status);
@@ -219,3 +221,5 @@ CREATE INDEX IF NOT EXISTS idx_notifications_trigger ON in_app_notifications(tri
 CREATE INDEX IF NOT EXISTS idx_folders_flags ON folders(is_favorite, is_pinned, is_archived);
 CREATE INDEX IF NOT EXISTS idx_folders_locked ON folders(is_locked);
 `;
+
+export const SCHEMA_SQL = `${SCHEMA_TABLES_SQL}\n${SCHEMA_INDEXES_SQL}`;

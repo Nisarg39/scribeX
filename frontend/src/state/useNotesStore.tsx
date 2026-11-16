@@ -111,6 +111,11 @@ interface NotesContextValue {
     folderPath?: string;
     tags?: string[];
   }) => Promise<NoteItem>;
+  appendBlocksToNote: (
+    noteId: string,
+    newBlocks: ComposableBlock[],
+    additionalTags?: string[]
+  ) => Promise<NoteItem | null>;
   updateNote: (updated: NoteItem) => void;
   deleteNote: (noteId: string) => Promise<void>;
   toggleFavorite: (noteId: string) => Promise<void>;
@@ -241,6 +246,7 @@ const NotesContext = createContext<NotesContextValue>({
   setActiveFilter: () => {},
   addNote: async () => ({} as NoteItem),
   addNoteWithBlocks: async () => ({} as NoteItem),
+  appendBlocksToNote: async () => null,
   updateNote: () => {},
   deleteNote: async () => {},
   toggleFavorite: async () => {},
@@ -968,6 +974,45 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  const appendBlocksToNote = async (
+    noteId: string,
+    newBlocks: ComposableBlock[],
+    additionalTags: string[] = []
+  ): Promise<NoteItem | null> => {
+    const existing = notes.find((n) => n.id === noteId) || (await notesRepo.getNoteById(noteId));
+    if (!existing) return null;
+
+    const mergedBlocks = [...(existing.blocks || []), ...newBlocks];
+    const contentMarkdown = serializeBlocksToMarkdown(mergedBlocks);
+    const mergedTags = Array.from(new Set([...(existing.tags || []), ...additionalTags]));
+
+    const optimisticUpdated: NoteItem = {
+      ...existing,
+      blocks: mergedBlocks,
+      contentMarkdown,
+      tags: mergedTags,
+      updatedAt: 'Just now',
+    };
+
+    setNotes((prev) => prev.map((n) => (n.id === noteId ? optimisticUpdated : n)));
+
+    try {
+      const persisted = await notesRepo.updateNote(noteId, {
+        blocks: mergedBlocks,
+        contentMarkdown,
+        tags: mergedTags,
+      });
+      setNotes((prev) => prev.map((n) => (n.id === noteId ? persisted : n)));
+      if (additionalTags.length > 0) {
+        setTags((prev) => Array.from(new Set([...prev, ...additionalTags])));
+      }
+      return persisted;
+    } catch (err) {
+      console.warn('Failed to append blocks to note via notesRepo:', err);
+      return optimisticUpdated;
+    }
+  };
+
   const deleteNote = async (noteId: string) => {
     // Soft delete to trash
     setNotes((prev) =>
@@ -1334,6 +1379,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setActiveFilter,
         addNote,
         addNoteWithBlocks,
+        appendBlocksToNote,
         updateNote,
         deleteNote,
         toggleFavorite,

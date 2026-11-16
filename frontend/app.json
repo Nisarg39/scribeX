@@ -30,7 +30,36 @@
         "USE_EXACT_ALARM",
         "RECEIVE_BOOT_COMPLETED",
         "WAKE_LOCK",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT"
+      ],
+      "intentFilters": [
+        {
+          "action": "SEND",
+          "category": ["DEFAULT"],
+          "data": [
+            { "mimeType": "*/*" },
+            { "mimeType": "text/*" },
+            { "mimeType": "image/*" },
+            { "mimeType": "video/*" },
+            { "mimeType": "audio/*" },
+            { "mimeType": "application/pdf" },
+            { "mimeType": "application/zip" },
+            { "mimeType": "application/octet-stream" },
+            { "mimeType": "application/x-zip-compressed" }
+          ]
+        },
+        {
+          "action": "SEND_MULTIPLE",
+          "category": ["DEFAULT"],
+          "data": [
+            { "mimeType": "*/*" },
+            { "mimeType": "image/*" },
+            { "mimeType": "video/*" },
+            { "mimeType": "audio/*" }
+          ]
+        }
       ]
     },
     "ios": {
@@ -38,7 +67,40 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "ScribeX uses your camera to scan documents, notes, and receipts.",
-        "NSMicrophoneUsageDescription": "ScribeX uses your microphone to record voice notes and audio memos."
+        "NSMicrophoneUsageDescription": "ScribeX uses your microphone to record voice notes and audio memos.",
+        "NSFaceIDUsageDescription": "ScribeX uses Face ID to securely unlock your private notes, folders, and workspace.",
+        "LSSupportsOpeningDocumentsInPlace": true,
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Text Document",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.text",
+              "public.plain-text",
+              "public.utf8-plain-text"
+            ]
+          },
+          {
+            "CFBundleTypeName": "ZIP Archive",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "com.pkware.zip-archive",
+              "public.zip-archive"
+            ]
+          },
+          {
+            "CFBundleTypeName": "All Files",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.data",
+              "public.content",
+              "public.item"
+            ]
+          }
+        ]
       }
     },
     "web": {

@@ -223,18 +223,15 @@ OPTION: Thursday (15 votes)
     assert.strictEqual(checklistBlock.metadata?.items?.length, 2);
   });
 
-  test('WF-14: Synthesizes Export Chat with media attachments (opus audio + png + pdf)', () => {
+  test('WF-14: Synthesizes individual media attachments (opus audio + png + mp4 + pdf) preserving file:// URI in content', () => {
     const payload = {
       batchId: 'batch-test-3',
-      text: `
-[14/11/26, 10:15 AM] Sarah: Sending the sprint files
-[14/11/26, 10:16 AM] Marcus: Received
-`,
+      text: 'Sprint artifacts attached',
       files: [
         {
           uri: 'file:///shared_media/PTT-20261114-WA0001.opus',
           fileName: 'PTT-20261114-WA0001.opus',
-          mimeType: 'audio/ogg; codecs=opus',
+          mimeType: 'audio/ogg',
           fileSize: 45000,
         },
         {
@@ -242,6 +239,12 @@ OPTION: Thursday (15 votes)
           fileName: 'sprint-diagram.png',
           mimeType: 'image/png',
           fileSize: 120000,
+        },
+        {
+          uri: 'file:///shared_media/demo.mp4',
+          fileName: 'demo.mp4',
+          mimeType: 'video/mp4',
+          fileSize: 640000,
         },
         {
           uri: 'file:///shared_media/spec.pdf',
@@ -254,14 +257,48 @@ OPTION: Thursday (15 votes)
 
     const result = synthesizeShareBlocks(payload);
     assert.ok(result !== null);
-    assert.strictEqual(result.blocks[0].type, 'message_thread');
-    assert.ok(result.blocks.some((b) => b.type === 'audio'));
-    assert.ok(result.blocks.some((b) => b.type === 'image'));
-    assert.ok(result.blocks.some((b) => b.type === 'file'));
+    const audioBlock = result.blocks.find((b) => b.type === 'audio');
+    const imageBlock = result.blocks.find((b) => b.type === 'image');
+    const videoBlock = result.blocks.find((b) => b.type === 'video');
+    const fileBlock = result.blocks.find((b) => b.type === 'file');
+    assert.ok(audioBlock !== undefined);
+    assert.strictEqual(audioBlock.content, 'file:///shared_media/PTT-20261114-WA0001.opus');
+    assert.ok(imageBlock !== undefined);
+    assert.strictEqual(imageBlock.content, 'file:///shared_media/sprint-diagram.png');
+    assert.ok(videoBlock !== undefined);
+    assert.strictEqual(videoBlock.content, 'file:///shared_media/demo.mp4');
+    assert.ok(fileBlock !== undefined);
+    assert.strictEqual(fileBlock.content, 'file:///shared_media/spec.pdf');
   });
 
-  test('WF-15: Synthesizes Export Chat from _chat.txt file with explicit transcript', () => {
-    const payload = {
+  test('WF-15: Stores WhatsApp Export Chat .zip and .txt files as intact FileBlocks (OOM prevention)', () => {
+    const zipPayload = {
+      batchId: 'batch-test-zip',
+      subject: 'WhatsApp Chat with Engineering Team',
+      files: [
+        {
+          uri: 'file:///shared_media/WhatsApp_Chat_with_Engineering_Team.zip',
+          fileName: 'WhatsApp Chat with Engineering Team.zip',
+          mimeType: 'application/zip',
+          fileSize: 48500000,
+        },
+      ],
+    };
+
+    const zipResult = synthesizeShareBlocks(zipPayload);
+    assert.ok(zipResult !== null);
+    assert.strictEqual(zipResult.blocks.length, 1);
+    assert.strictEqual(zipResult.blocks[0].type, 'file');
+    assert.strictEqual(
+      zipResult.blocks[0].content,
+      'file:///shared_media/WhatsApp_Chat_with_Engineering_Team.zip'
+    );
+    assert.strictEqual(
+      zipResult.blocks[0].metadata?.fileName,
+      'WhatsApp Chat with Engineering Team.zip'
+    );
+
+    const txtPayload = {
       batchId: 'batch-test-4',
       files: [
         {
@@ -273,45 +310,43 @@ OPTION: Thursday (15 votes)
       ],
     };
 
-    const explicitTranscript = `
-[14/11/26, 11:00 AM] Alex: Let's finalize the v1 release
-[14/11/26, 11:05 AM] Taylor: All tests are passing green.
-`;
-
-    const result = synthesizeShareBlocks(payload, explicitTranscript);
-    assert.ok(result !== null);
-    assert.strictEqual(result.title, 'WhatsApp Chat · Alex & Taylor');
-    assert.strictEqual(result.blocks[0].type, 'message_thread');
-    // Ensure _chat.txt is NOT duplicated as a redundant file block
-    assert.ok(!result.blocks.some((b) => b.type === 'file'));
+    const txtResult = synthesizeShareBlocks(txtPayload);
+    assert.ok(txtResult !== null);
+    assert.strictEqual(txtResult.blocks.length, 1);
+    assert.strictEqual(txtResult.blocks[0].type, 'file');
+    assert.strictEqual(txtResult.blocks[0].content, 'file:///shared_media/_chat.txt');
   });
 
-  console.log('\n--- Suite 5: Strict Rejection of Generic Share Sheet Payloads ---');
+  console.log('\n--- Suite 5: Universal Individual Share Sheet Detection ---');
 
-  test('WF-16: Rejects generic standalone URL / video link', () => {
+  test('WF-16: Synthesizes standalone URL / video link as bookmark block', () => {
     const payload = {
       batchId: 'generic-url',
       text: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       files: [],
     };
     assert.strictEqual(isWhatsAppExportPayload(payload), false);
-    assert.strictEqual(synthesizeShareBlocks(payload), null);
+    const result = synthesizeShareBlocks(payload);
+    assert.ok(result !== null);
+    assert.strictEqual(result.blocks[0].type, 'bookmark');
+    assert.strictEqual(result.blocks[0].content, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   });
 
-  test('WF-17: Rejects generic location share URL', () => {
+  test('WF-17: Synthesizes shared message with location URL as paragraph block', () => {
     const payload = {
       batchId: 'generic-loc',
       text: 'Meeting: https://maps.google.com/?q=37.7749,-122.4194',
       files: [],
     };
-    assert.strictEqual(isWhatsAppExportPayload(payload), false);
-    assert.strictEqual(synthesizeShareBlocks(payload), null);
+    const result = synthesizeShareBlocks(payload);
+    assert.ok(result !== null);
+    assert.strictEqual(result.blocks[0].type, 'paragraph');
   });
 
-  test('WF-18: Rejects standalone contact card (.vcf)', () => {
+  test('WF-18: Synthesizes standalone contact card (.vcf) as file block', () => {
     const payload = {
       batchId: 'generic-vcf',
-      text: 'BEGIN:VCARD\nVERSION:3.0\nFN:John Doe\nEND:VCARD',
+      text: '',
       files: [
         {
           uri: 'file:///contacts/contact.vcf',
@@ -320,14 +355,16 @@ OPTION: Thursday (15 votes)
         },
       ],
     };
-    assert.strictEqual(isWhatsAppExportPayload(payload), false);
-    assert.strictEqual(synthesizeShareBlocks(payload), null);
+    const result = synthesizeShareBlocks(payload);
+    assert.ok(result !== null);
+    assert.strictEqual(result.blocks[0].type, 'file');
+    assert.strictEqual(result.blocks[0].content, 'file:///contacts/contact.vcf');
   });
 
-  test('WF-19: Rejects standalone iCalendar (.ics) invite', () => {
+  test('WF-19: Synthesizes standalone iCalendar (.ics) invite as file block', () => {
     const payload = {
       batchId: 'generic-ics',
-      text: 'BEGIN:VCALENDAR\nBEGIN:VEVENT\nSUMMARY:Meeting\nEND:VEVENT\nEND:VCALENDAR',
+      text: '',
       files: [
         {
           uri: 'file:///events/invite.ics',
@@ -336,21 +373,28 @@ OPTION: Thursday (15 votes)
         },
       ],
     };
-    assert.strictEqual(isWhatsAppExportPayload(payload), false);
-    assert.strictEqual(synthesizeShareBlocks(payload), null);
+    const result = synthesizeShareBlocks(payload);
+    assert.ok(result !== null);
+    assert.strictEqual(result.blocks[0].type, 'file');
+    assert.strictEqual(result.blocks[0].content, 'file:///events/invite.ics');
   });
 
-  test('WF-20: Rejects arbitrary non-WhatsApp plain text message', () => {
+  test('WF-20: Synthesizes individual shared plain text message', () => {
     const payload = {
       batchId: 'generic-text',
       text: 'Remember to pick up groceries and milk on the way home.',
       files: [],
     };
-    assert.strictEqual(isWhatsAppExportPayload(payload), false);
-    assert.strictEqual(synthesizeShareBlocks(payload), null);
+    const result = synthesizeShareBlocks(payload);
+    assert.ok(result !== null);
+    assert.strictEqual(result.blocks[0].type, 'paragraph');
+    assert.strictEqual(
+      result.blocks[0].content,
+      'Remember to pick up groceries and milk on the way home.'
+    );
   });
 
-  test('WF-21: Rejects generic single photo share without chat transcript', () => {
+  test('WF-21: Synthesizes individual photo share with preserved file:// URI', () => {
     const payload = {
       batchId: 'generic-photo',
       text: '',
@@ -363,8 +407,10 @@ OPTION: Thursday (15 votes)
         },
       ],
     };
-    assert.strictEqual(isWhatsAppExportPayload(payload), false);
-    assert.strictEqual(synthesizeShareBlocks(payload), null);
+    const result = synthesizeShareBlocks(payload);
+    assert.ok(result !== null);
+    assert.strictEqual(result.blocks[0].type, 'image');
+    assert.strictEqual(result.blocks[0].content, 'file:///dcim/photo123.jpg');
   });
 
   console.log('\n--- Suite 6: Advanced Edge Cases & Cross-Platform Resiliency ---');
@@ -459,15 +505,24 @@ Messages and calls are end-to-end encrypted. No one outside of this chat can rea
     assert.strictEqual(parsed.messages[0].attachmentName, 'sprint diagram final (1).png');
   });
 
-  test('WF-29: Rejects non-WhatsApp subject shares (e.g. Email thread or generic file share)', () => {
-    const invalidPayload = {
-      batchId: 'not-wa',
+  test('WF-29: Rejects empty share payload and synthesizes subject + text share cleanly', () => {
+    const emptyPayload = {
+      batchId: 'empty-share',
+      text: '   ',
+      files: [],
+    };
+    assert.strictEqual(synthesizeShareBlocks(emptyPayload), null);
+
+    const subjectPayload = {
+      batchId: 'subject-share',
       subject: 'Project Status Update',
       text: 'Just an update on deliverables.',
       files: [],
     };
-    assert.strictEqual(isWhatsAppExportPayload(invalidPayload), false);
-    assert.strictEqual(synthesizeShareBlocks(invalidPayload), null);
+    const res = synthesizeShareBlocks(subjectPayload);
+    assert.ok(res !== null);
+    assert.strictEqual(res.title, 'Project Status Update');
+    assert.strictEqual(res.blocks[0].type, 'paragraph');
   });
 
   console.log('\n=================================================================');

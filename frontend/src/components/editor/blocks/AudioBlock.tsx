@@ -120,6 +120,15 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
   // Keep internal state aligned with props
   useEffect(() => {
     if (audioUrl && audioUrl !== currentAudioUrl) {
+      if (nativeSoundRef.current) {
+        try {
+          nativeSoundRef.current.pause();
+          nativeSoundRef.current.remove();
+        } catch (_) {}
+        nativeSoundRef.current = null;
+      }
+      setIsPlaying(false);
+      setPlaybackPos(0);
       setCurrentAudioUrl(audioUrl);
     }
   }, [audioUrl]);
@@ -521,11 +530,21 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
 
     if (Platform.OS !== 'web') {
       try {
+        setErrorMessage(null);
+        await setAudioModeAsync({
+          allowsRecording: false,
+          playsInSilentMode: true,
+        }).catch(() => {});
+
         if (nativeSoundRef.current) {
           if (isPlaying) {
             nativeSoundRef.current.pause();
             setIsPlaying(false);
           } else {
+            if (currentDuration > 0 && playbackPos >= currentDuration - 0.2) {
+              await nativeSoundRef.current.seekTo(0).catch(() => {});
+              setPlaybackPos(0);
+            }
             nativeSoundRef.current.setPlaybackRate(speed);
             nativeSoundRef.current.play();
             setIsPlaying(true);
@@ -537,10 +556,15 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
         player.setPlaybackRate(speed);
         (player as any).addListener?.('playbackStatusUpdate', (status: any) => {
           if (!status.isLoaded) return;
+          if (status.duration && status.duration > 0) {
+            const detectedDur = Math.max(1, Math.round(status.duration));
+            setCurrentDuration((prev) => (prev !== detectedDur ? detectedDur : prev));
+          }
           setPlaybackPos(status.currentTime || 0);
           if (status.didJustFinish) {
             setIsPlaying(false);
             setPlaybackPos(0);
+            player.seekTo(0).catch(() => {});
           }
         });
         player.play();
@@ -548,7 +572,7 @@ export const AudioBlock: React.FC<AudioBlockProps> = ({
         setIsPlaying(true);
       } catch (err) {
         console.warn('Native audio playback error:', err);
-        setErrorMessage('Playback error on mobile device.');
+        setErrorMessage('Inline decoder unavailable for this audio format. Tap Download/Share to open externally.');
       }
       return;
     }

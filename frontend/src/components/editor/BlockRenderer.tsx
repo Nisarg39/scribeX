@@ -500,7 +500,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       {/* Audio Block */}
       {block.type === 'audio' && (
         <AudioBlock
-          audioUrl={block.content || block.metadata?.url}
+          audioUrl={block.content || block.metadata?.url || block.metadata?.audioUrl}
           assetId={block.metadata?.assetId}
           title={block.metadata?.title || ''}
           caption={block.metadata?.caption || block.metadata?.title || ''}
@@ -549,7 +549,7 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
       {block.type === 'file' && (
         <FileBlock
           fileName={block.metadata?.fileName || 'Attachment.pdf'}
-          sizeBytes={block.metadata?.sizeBytes || 1845600}
+          sizeBytes={block.metadata?.sizeBytes ?? 1845600}
           url={block.content || block.metadata?.url || '#'}
           isSelected={isActive}
           isDragging={isDragging}

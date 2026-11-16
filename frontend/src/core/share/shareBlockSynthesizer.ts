@@ -4,19 +4,31 @@ import { NormalizedSharePayload, SharedFileItem, SynthesizedNoteResult } from '.
 import {
   isWhatsAppChatTranscript,
   parseWhatsAppChat,
+  parseWhatsAppPoll,
   isWhatsAppSelfSender,
+  normalizeWhatsAppMarkdown,
 } from './whatsappChatParser';
 import { ThreadMessage } from '../../components/editor/blocks/MessageThreadBlock';
 
-export const CHAT_FILE_REGEX = /(_chat\.txt|.*whatsapp.*\.txt)$/i;
+export const CHAT_FILE_REGEX = /(_chat\.txt|.*whatsapp.*\.(txt|zip))$/i;
 
 function generateBlockId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 }
 
 /**
- * Validates whether an inbound share payload corresponds to a native WhatsApp Export Chat.
- * Checks for transcript header signatures in text or presence of an export chat text file.
+ * Checks if an inbound payload is a valid share (either files or text/subject).
+ */
+export function isValidSharePayload(payload: NormalizedSharePayload | null | undefined): boolean {
+  if (!payload) return false;
+  const hasText = Boolean((payload.text || '').trim());
+  const hasFiles = Array.isArray(payload.files) && payload.files.length > 0;
+  return hasText || hasFiles;
+}
+
+/**
+ * Identifies whether an inbound share payload comes from a WhatsApp Export Chat
+ * (.zip archive, .txt file, subject header, or copied multi-message transcript).
  */
 export function isWhatsAppExportPayload(payload: NormalizedSharePayload): boolean {
   if (!payload) return false;
@@ -35,188 +47,316 @@ export function isWhatsAppExportPayload(payload: NormalizedSharePayload): boolea
 }
 
 /**
- * Synthesizes a WhatsApp Export Chat payload into ScribeX ComposableBlocks.
- * Returns null if the payload is not a valid WhatsApp Export Chat.
+ * Universal Share Block Synthesizer:
+ * 1. WhatsApp Export Chat files (.zip or .txt): Stored strictly as intact `file` blocks (zero OOM risk).
+ * 2. Individual shared media/files (images, videos, .opus/.mp3 audio, PDFs/docs): Stored with `content = file.uri`
+ *    so local sandbox URIs survive Markdown serialization and play/render natively.
+ * 3. Shared text messages, polls, or links: Synthesized into `bookmark`, `message_thread`, `checklist`, or `paragraph` blocks.
  */
 export function synthesizeShareBlocks(
-  payload: NormalizedSharePayload,
-  explicitTranscript?: string
+  payload: NormalizedSharePayload
 ): SynthesizedNoteResult | null {
-  const rawText = (explicitTranscript || payload.text || '').trim();
-  const files = payload.files || [];
-
-  const hasTranscriptText = isWhatsAppChatTranscript(rawText);
-  let chatFile = files.find((f) => CHAT_FILE_REGEX.test(f.fileName));
-  if (!chatFile && payload.subject && /whatsapp/i.test(payload.subject)) {
-    chatFile = files.find((f) => /\.txt$/i.test(f.fileName));
-  }
-  const hasSubjectSignal = Boolean(payload.subject && /whatsapp\s*chat/i.test(payload.subject));
-
-  // Strictly reject non-WhatsApp export payloads
-  if (!hasTranscriptText && !chatFile && !hasSubjectSignal) {
+  if (!isValidSharePayload(payload)) {
     return null;
   }
 
+  const rawText = (payload.text || '').trim();
+  const files = payload.files || [];
   const blocks: ComposableBlock[] = [];
-  const tags: string[] = ['whatsapp', 'chat-capture'];
-  let noteTitle = '';
-  const colorToken: NoteColorToken = 'lime';
 
-  if (hasTranscriptText) {
-    const parsedChat = parseWhatsAppChat(rawText, payload.subject);
-    const threadMessages: ThreadMessage[] = parsedChat.messages.map((m) => ({
-      id: m.id,
-      sender: m.sender,
-      senderEmail: m.senderEmail,
-      timestamp: m.timestamp,
-      content: m.content,
-      isMe: m.isMe ?? isWhatsAppSelfSender(m.sender),
-      attachmentName: m.attachmentName,
-      replyTo: m.replyTo,
-    }));
+  const isWhatsAppFileExport =
+    files.some((f) => CHAT_FILE_REGEX.test(f.fileName) || /\.(zip|txt)$/i.test(f.fileName)) &&
+    (files.some((f) => CHAT_FILE_REGEX.test(f.fileName)) ||
+      Boolean(payload.subject && /whatsapp/i.test(payload.subject)));
 
-    // Primary message thread block
-    blocks.push({
-      id: generateBlockId('thread'),
-      type: 'message_thread',
-      content: '',
-      metadata: {
-        channel: 'whatsapp',
-        subject:
-          parsedChat.subject ||
-          (parsedChat.participants.length > 0
-            ? `Chat with ${parsedChat.participants.join(', ')}`
-            : 'WhatsApp Chat'),
-        date: parsedChat.messages[0]?.timestamp || new Date().toLocaleDateString(),
-        participants: parsedChat.participants,
-        messages: threadMessages,
-      },
-    });
-
-    // Check if any message contained a Poll
-    for (const msg of parsedChat.messages) {
-      if (msg.poll) {
-        blocks.push({
-          id: generateBlockId('poll-hdr'),
-          type: 'heading',
-          content: `Poll: ${msg.poll.question}`,
-          metadata: { level: 2 },
-        });
-
-        blocks.push({
-          id: generateBlockId('poll-checklist'),
-          type: 'checklist',
-          content: '',
-          metadata: {
-            items: msg.poll.options.map((opt) => ({
-              id: generateBlockId('poll-opt'),
-              text: opt.votes !== undefined ? `${opt.text} (${opt.votes} votes)` : opt.text,
-              checked: false,
-            })),
-          },
-        });
-      }
-    }
-
-    // Append exported media attachments (excluding the transcript text file itself)
+  // Case 1: File attachments exist (WhatsApp .zip/.txt export OR individual shared media/documents)
+  if (files.length > 0) {
     for (const file of files) {
-      if (CHAT_FILE_REGEX.test(file.fileName)) {
-        continue;
-      }
-      const mediaBlock = createBlockFromFile(file);
-      if (mediaBlock) {
-        blocks.push(mediaBlock);
+      const block = createBlockFromFile(file);
+      if (block) {
+        blocks.push(block);
       }
     }
 
-    // Title generation
-    const otherParticipants = parsedChat.participants.filter((p) => !isWhatsAppSelfSender(p));
-    if (parsedChat.subject) {
-      noteTitle = `WhatsApp Chat · ${parsedChat.subject}`;
-    } else if (parsedChat.participants.length === 2 && !parsedChat.participants.some(isWhatsAppSelfSender)) {
-      noteTitle = `WhatsApp Chat · ${parsedChat.participants[0]} & ${parsedChat.participants[1]}`;
-    } else if (otherParticipants.length === 1) {
-      noteTitle = `WhatsApp · ${otherParticipants[0]}`;
-    } else if (otherParticipants.length > 1) {
-      noteTitle = `WhatsApp Chat · ${otherParticipants.slice(0, 2).join(' & ')}`;
-    } else if (parsedChat.participants.length === 1) {
-      noteTitle = `WhatsApp · ${parsedChat.participants[0]}`;
-    } else {
-      noteTitle = 'WhatsApp Chat Transcript';
+    // If the user shared individual media/files along with a caption/message text
+    // (and it is not a WhatsApp export file blurb or identical to the filename), append the caption text.
+    if (rawText && !isWhatsAppFileExport) {
+      const isDuplicateFileName = files.some((f) => f.fileName === rawText);
+      if (!isDuplicateFileName) {
+        appendTextBlocks(rawText, payload.subject, blocks);
+      }
     }
 
-    return { title: noteTitle, blocks, tags, colorToken };
+    const tags = isWhatsAppFileExport
+      ? ['whatsapp', 'chat-export']
+      : deriveTagsForFiles(files);
+    const colorToken: NoteColorToken = isWhatsAppFileExport ? 'lime' : 'sky';
+    const title = deriveTitleForFileShare(files, payload.subject, rawText, isWhatsAppFileExport);
+
+    return { title, blocks, tags, colorToken };
   }
 
-  // Fallback if chatFile was passed without extracted rawText
-  if (chatFile) {
-    blocks.push({
-      id: generateBlockId('file'),
-      type: 'file',
-      content: chatFile.fileName,
-      metadata: {
-        url: chatFile.uri,
-        fileName: chatFile.fileName,
-        sizeBytes: chatFile.fileSize || 0,
-      },
-    });
+  // Case 2: Text-only share (copied WhatsApp messages, poll, URL link, or individual message text)
+  if (rawText) {
+    // 2a. Multi-message copied WhatsApp transcript (when shared as text without a .zip/.txt file)
+    if (isWhatsAppChatTranscript(rawText)) {
+      const parsedChat = parseWhatsAppChat(rawText, payload.subject);
+      // Cap inline message thread at 200 messages to protect editor memory
+      const safeMessages = parsedChat.messages.slice(-200);
+      const threadMessages: ThreadMessage[] = safeMessages.map((m) => ({
+        id: m.id,
+        sender: m.sender,
+        senderEmail: m.senderEmail,
+        timestamp: m.timestamp,
+        content: m.content,
+        isMe: m.isMe ?? isWhatsAppSelfSender(m.sender),
+        attachmentName: m.attachmentName,
+        replyTo: m.replyTo,
+      }));
 
-    for (const file of files) {
-      if (file === chatFile) continue;
-      const mediaBlock = createBlockFromFile(file);
-      if (mediaBlock) {
-        blocks.push(mediaBlock);
+      blocks.push({
+        id: generateBlockId('thread'),
+        type: 'message_thread',
+        content: '',
+        metadata: {
+          channel: 'whatsapp',
+          subject:
+            parsedChat.subject ||
+            (parsedChat.participants.length > 0
+              ? `Chat with ${parsedChat.participants.join(', ')}`
+              : 'WhatsApp Chat'),
+          date: safeMessages[0]?.timestamp || new Date().toLocaleDateString(),
+          participants: parsedChat.participants,
+          messages: threadMessages,
+        },
+      });
+
+      for (const msg of safeMessages) {
+        if (msg.poll) {
+          blocks.push({
+            id: generateBlockId('poll-hdr'),
+            type: 'heading',
+            content: `Poll: ${msg.poll.question}`,
+            metadata: { level: 2 },
+          });
+
+          blocks.push({
+            id: generateBlockId('poll-checklist'),
+            type: 'checklist',
+            content: '',
+            metadata: {
+              items: msg.poll.options.map((opt) => ({
+                id: generateBlockId('poll-opt'),
+                text: opt.votes !== undefined ? `${opt.text} (${opt.votes} votes)` : opt.text,
+                checked: false,
+              })),
+            },
+          });
+        }
       }
+
+      const otherParticipants = parsedChat.participants.filter((p) => !isWhatsAppSelfSender(p));
+      let noteTitle = 'WhatsApp Chat Transcript';
+      if (parsedChat.subject) {
+        noteTitle = `WhatsApp Chat · ${parsedChat.subject}`;
+      } else if (parsedChat.participants.length === 2 && !parsedChat.participants.some(isWhatsAppSelfSender)) {
+        noteTitle = `WhatsApp Chat · ${parsedChat.participants[0]} & ${parsedChat.participants[1]}`;
+      } else if (otherParticipants.length === 1) {
+        noteTitle = `WhatsApp · ${otherParticipants[0]}`;
+      } else if (otherParticipants.length > 1) {
+        noteTitle = `WhatsApp Chat · ${otherParticipants.slice(0, 2).join(' & ')}`;
+      } else if (parsedChat.participants.length === 1) {
+        noteTitle = `WhatsApp · ${parsedChat.participants[0]}`;
+      }
+
+      return {
+        title: noteTitle,
+        blocks,
+        tags: ['whatsapp', 'chat-capture'],
+        colorToken: 'lime',
+      };
     }
 
-    noteTitle = `WhatsApp Chat · ${chatFile.fileName.replace(/\.txt$/i, '')}`;
-    return { title: noteTitle, blocks, tags, colorToken };
-  }
-
-  // Fallback if payload subject specified a WhatsApp chat
-  if (hasSubjectSignal) {
-    blocks.push({
-      id: generateBlockId('thread'),
-      type: 'message_thread',
-      content: '',
-      metadata: {
-        channel: 'whatsapp',
-        subject: payload.subject,
-        date: new Date().toLocaleDateString(),
-        participants: [],
-        messages: [],
-      },
-    });
-
-    for (const file of files) {
-      const mediaBlock = createBlockFromFile(file);
-      if (mediaBlock) {
-        blocks.push(mediaBlock);
+    // 2b. Standalone URL share -> Bookmark block
+    if (/^https?:\/\/\S+$/i.test(rawText)) {
+      let hostname = 'Shared Link';
+      try {
+        hostname = new URL(rawText).hostname.replace(/^www\./, '');
+      } catch {
+        // ignore URL parse error
       }
+      blocks.push({
+        id: generateBlockId('bm'),
+        type: 'bookmark',
+        content: rawText,
+        metadata: {
+          url: rawText,
+          title: payload.subject || hostname,
+          description: rawText,
+          domain: hostname,
+        },
+      });
+
+      return {
+        title: payload.subject || `Shared Link · ${hostname}`,
+        blocks,
+        tags: ['shared', 'bookmark'],
+        colorToken: 'lavender',
+      };
     }
 
-    return { title: payload.subject!, blocks, tags, colorToken };
+    // 2c. Standalone Poll share or Generic Message / Text share
+    appendTextBlocks(rawText, payload.subject, blocks);
+    const firstLine = rawText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find(Boolean) || 'Shared Note';
+    const cleanFirstLine = firstLine.replace(/^[#*~>-]+\s*/, '').slice(0, 60);
+    const title = payload.subject?.trim() || cleanFirstLine || 'Shared Note';
+
+    return {
+      title,
+      blocks,
+      tags: ['shared'],
+      colorToken: 'apricot',
+    };
   }
 
   return null;
 }
 
-function createBlockFromFile(file: SharedFileItem): ComposableBlock | null {
+function appendTextBlocks(rawText: string, _subject: string | undefined, blocks: ComposableBlock[]) {
+  const poll = parseWhatsAppPoll(rawText);
+  if (poll) {
+    blocks.push({
+      id: generateBlockId('poll-hdr'),
+      type: 'heading',
+      content: `Poll: ${poll.question}`,
+      metadata: { level: 2 },
+    });
+    blocks.push({
+      id: generateBlockId('poll-checklist'),
+      type: 'checklist',
+      content: '',
+      metadata: {
+        items: poll.options.map((opt) => ({
+          id: generateBlockId('poll-opt'),
+          text: opt.votes !== undefined ? `${opt.text} (${opt.votes} votes)` : opt.text,
+          checked: false,
+        })),
+      },
+    });
+    return;
+  }
+
+  const normalized = normalizeWhatsAppMarkdown(rawText);
+  const paragraphs = normalized
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  for (const para of paragraphs) {
+    if (/^https?:\/\/\S+$/i.test(para)) {
+      blocks.push({
+        id: generateBlockId('bm'),
+        type: 'bookmark',
+        content: para,
+        metadata: {
+          url: para,
+          title: para,
+        },
+      });
+    } else {
+      blocks.push({
+        id: generateBlockId('p'),
+        type: 'paragraph',
+        content: para,
+      });
+    }
+  }
+}
+
+function deriveTagsForFiles(files: SharedFileItem[]): string[] {
+  const tags = new Set<string>(['shared']);
+  for (const f of files) {
+    const ext = (f.fileName.split('.').pop() || '').toLowerCase();
+    const mime = (f.mimeType || '').toLowerCase();
+    if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic'].includes(ext)) {
+      tags.add('media');
+    } else if (mime.startsWith('video/') || ['mp4', 'mov', '3gp', 'mkv', 'webm'].includes(ext)) {
+      tags.add('video');
+    } else if (mime.startsWith('audio/') || ['opus', 'ogg', 'mp3', 'm4a', 'aac', 'wav'].includes(ext)) {
+      tags.add('voice-note');
+    } else {
+      tags.add('attachment');
+    }
+  }
+  return Array.from(tags);
+}
+
+function deriveTitleForFileShare(
+  files: SharedFileItem[],
+  subject: string | undefined,
+  rawText: string,
+  isWhatsAppFileExport: boolean
+): string {
+  if (subject && subject.trim()) {
+    return subject.trim();
+  }
+  const primary = files[0];
+  const baseName = primary.fileName.replace(/\.[^.]+$/, '');
+  if (isWhatsAppFileExport) {
+    if (/whatsapp/i.test(baseName)) {
+      return baseName;
+    }
+    return `WhatsApp Chat · ${baseName}`;
+  }
+  if (rawText && rawText.trim() && rawText.trim() !== primary.fileName) {
+    return rawText.trim().split(/\r?\n/)[0].slice(0, 60);
+  }
+  if (files.length === 1) {
+    return primary.fileName;
+  }
+  return `${primary.fileName} (+${files.length - 1} more)`;
+}
+
+/**
+ * Converts a single shared file into a ScribeX ComposableBlock.
+ * CRITICAL: `content` MUST be set to `file.uri` (the local sandbox `file://` URI)
+ * so that `serializeBlocksToMarkdown()` and `BlockRenderer` preserve the playable/renderable path.
+ */
+export function createBlockFromFile(file: SharedFileItem): ComposableBlock | null {
   const fileName = file.fileName || 'shared-file';
-  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  const ext = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() || '' : '';
   const mime = (file.mimeType || '').toLowerCase();
+
+  // WhatsApp exports (.zip / .txt) and generic archives are always stored as intact FileBlocks
+  if (ext === 'zip' || ext === 'txt' || mime === 'application/zip' || mime === 'text/plain') {
+    return {
+      id: generateBlockId('file'),
+      type: 'file',
+      content: file.uri,
+      metadata: {
+        url: file.uri,
+        fileName,
+        sizeBytes: file.fileSize || 0,
+      },
+    };
+  }
 
   // Images
   if (mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic'].includes(ext)) {
     return {
       id: generateBlockId('img'),
       type: 'image',
-      content: fileName,
+      content: file.uri,
       metadata: {
         url: file.uri,
         caption: fileName,
-        width: 100,
-        alignment: 'center',
+        fileName,
+        width: '100%',
+        align: 'center',
+        aspectRatio: 'natural',
       },
     };
   }
@@ -226,11 +366,13 @@ function createBlockFromFile(file: SharedFileItem): ComposableBlock | null {
     return {
       id: generateBlockId('audio'),
       type: 'audio',
-      content: fileName,
+      content: file.uri,
       metadata: {
         audioUrl: file.uri,
+        url: file.uri,
         title: fileName,
-        mimeType: mime || `audio/${ext}`,
+        fileName,
+        mimeType: mime || (ext === 'opus' ? 'audio/ogg' : `audio/${ext}`),
       },
     };
   }
@@ -240,21 +382,22 @@ function createBlockFromFile(file: SharedFileItem): ComposableBlock | null {
     return {
       id: generateBlockId('vid'),
       type: 'video',
-      content: fileName,
+      content: file.uri,
       metadata: {
         url: file.uri,
         caption: fileName,
+        fileName,
         width: '100%',
         align: 'center',
       },
     };
   }
 
-  // Generic document / file
+  // Generic document / file (.pdf, .docx, etc.)
   return {
     id: generateBlockId('file'),
     type: 'file',
-    content: fileName,
+    content: file.uri,
     metadata: {
       url: file.uri,
       fileName,

@@ -42,10 +42,16 @@ class ShareIntentModule(private val reactContext: ReactApplicationContext) :
                     timeZone = java.util.TimeZone.getTimeZone("UTC")
                 }.format(java.util.Date()))
 
-                val extraText = intent.getStringExtra(Intent.EXTRA_TEXT)
+                var extraText = intent.getStringExtra(Intent.EXTRA_TEXT)
                 val extraSubject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
-                if (extraText != null) payload.putString("text", extraText)
-                if (extraSubject != null) payload.putString("subject", extraSubject)
+                if (extraText.isNullOrBlank() && intent.clipData != null && intent.clipData!!.itemCount > 0) {
+                    val clipText = intent.clipData!!.getItemAt(0).text?.toString()
+                    if (!clipText.isNullOrBlank()) {
+                        extraText = clipText
+                    }
+                }
+                if (!extraText.isNullOrBlank()) payload.putString("text", extraText)
+                if (!extraSubject.isNullOrBlank()) payload.putString("subject", extraSubject)
 
                 val filesArray = Arguments.createArray()
                 val mediaDir = File(context.filesDir, "shared_media").apply {
@@ -61,12 +67,12 @@ class ShareIntentModule(private val reactContext: ReactApplicationContext) :
                     }
 
                     if (streamUri != null) {
-                        copyUriToSandbox(context, streamUri, mediaDir)?.let { filesArray.pushMap(it) }
+                        processUriIntoSandbox(context, streamUri, mediaDir, filesArray)
                     } else if (intent.clipData != null && intent.clipData!!.itemCount > 0) {
                         for (i in 0 until intent.clipData!!.itemCount) {
                             val uri = intent.clipData!!.getItemAt(i).uri
                             if (uri != null) {
-                                copyUriToSandbox(context, uri, mediaDir)?.let { filesArray.pushMap(it) }
+                                processUriIntoSandbox(context, uri, mediaDir, filesArray)
                             }
                         }
                     }
@@ -80,13 +86,13 @@ class ShareIntentModule(private val reactContext: ReactApplicationContext) :
 
                     if (streamUris != null) {
                         for (uri in streamUris) {
-                            copyUriToSandbox(context, uri, mediaDir)?.let { filesArray.pushMap(it) }
+                            processUriIntoSandbox(context, uri, mediaDir, filesArray)
                         }
                     } else if (intent.clipData != null) {
                         for (i in 0 until intent.clipData!!.itemCount) {
                             val uri = intent.clipData!!.getItemAt(i).uri
                             if (uri != null) {
-                                copyUriToSandbox(context, uri, mediaDir)?.let { filesArray.pushMap(it) }
+                                processUriIntoSandbox(context, uri, mediaDir, filesArray)
                             }
                         }
                     }
@@ -105,10 +111,14 @@ class ShareIntentModule(private val reactContext: ReactApplicationContext) :
             }
         }
 
-        private fun copyUriToSandbox(context: Context, uri: Uri, targetDir: File): WritableMap? {
+        private fun processUriIntoSandbox(
+            context: Context,
+            uri: Uri,
+            targetDir: File,
+            filesArray: WritableArray
+        ) {
             val contentResolver = context.contentResolver
             var fileName = "shared_${System.currentTimeMillis()}"
-            var fileSize = 0L
 
             contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 if (cursor.moveToFirst()) {
@@ -117,14 +127,108 @@ class ShareIntentModule(private val reactContext: ReactApplicationContext) :
                         val name = cursor.getString(nameIndex)
                         if (!name.isNullOrBlank()) fileName = name
                     }
-                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (sizeIndex != -1) {
-                        fileSize = cursor.getLong(sizeIndex)
+                }
+            }
+
+            if (fileName.startsWith("shared_") && !fileName.contains(".")) {
+                val lastSeg = uri.lastPathSegment
+                if (!lastSeg.isNullOrBlank() && lastSeg.contains(".")) {
+                    fileName = lastSeg.substringAfterLast('/')
+                }
+            }
+
+            val rawMime = contentResolver.getType(uri)
+            val mimeType = if (rawMime.isNullOrBlank() || rawMime == "application/octet-stream") {
+                getMimeTypeForName(fileName)
+            } else {
+                rawMime
+            }
+
+            if (!fileName.contains(".")) {
+                val extFromMime = getExtensionForMimeType(mimeType)
+                if (extFromMime.isNotBlank()) {
+                    fileName = "$fileName.$extFromMime"
+                }
+            }
+
+            // Store all shared files (including .zip and .txt WhatsApp exports) intact in their original format
+            copyUriToSandbox(context, uri, targetDir, fileName, mimeType)?.let {
+                filesArray.pushMap(it)
+            }
+        }
+
+        private fun getMimeTypeForName(fileName: String): String {
+            return when (fileName.substringAfterLast('.', "").lowercase()) {
+                "txt" -> "text/plain"
+                "zip" -> "application/zip"
+                "opus", "ogg" -> "audio/ogg"
+                "mp3" -> "audio/mpeg"
+                "m4a" -> "audio/mp4"
+                "aac" -> "audio/aac"
+                "wav" -> "audio/wav"
+                "mp4" -> "video/mp4"
+                "mov" -> "video/quicktime"
+                "3gp" -> "video/3gpp"
+                "mkv" -> "video/x-matroska"
+                "webm" -> "video/webm"
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "webp" -> "image/webp"
+                "gif" -> "image/gif"
+                "pdf" -> "application/pdf"
+                else -> {
+                    val ext = fileName.substringAfterLast('.', "").lowercase()
+                    android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
+                        ?: "application/octet-stream"
+                }
+            }
+        }
+
+        private fun getExtensionForMimeType(mimeType: String): String {
+            return when (mimeType.lowercase().substringBefore(';').trim()) {
+                "image/jpeg", "image/jpg" -> "jpg"
+                "image/png" -> "png"
+                "image/webp" -> "webp"
+                "image/gif" -> "gif"
+                "video/mp4" -> "mp4"
+                "video/quicktime" -> "mov"
+                "video/3gpp" -> "3gp"
+                "video/webm" -> "webm"
+                "audio/ogg", "audio/opus" -> "opus"
+                "audio/mpeg" -> "mp3"
+                "audio/mp4", "audio/x-m4a" -> "m4a"
+                "audio/aac" -> "aac"
+                "audio/wav", "audio/x-wav" -> "wav"
+                "application/pdf" -> "pdf"
+                "application/zip", "application/x-zip-compressed" -> "zip"
+                "text/plain" -> "txt"
+                else -> android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType) ?: ""
+            }
+        }
+
+        private fun copyUriToSandbox(
+            context: Context,
+            uri: Uri,
+            targetDir: File,
+            resolvedName: String? = null,
+            resolvedMime: String? = null
+        ): WritableMap? {
+            val contentResolver = context.contentResolver
+            var fileName = resolvedName ?: "shared_${System.currentTimeMillis()}"
+
+            if (resolvedName == null) {
+                contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1) {
+                            val name = cursor.getString(nameIndex)
+                            if (!name.isNullOrBlank()) fileName = name
+                        }
                     }
                 }
             }
 
-            val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
+            val mimeType = resolvedMime ?: contentResolver.getType(uri) ?: "application/octet-stream"
             val sanitizedName = fileName.replace("[^a-zA-Z0-9._-]".toRegex(), "_")
             val destFile = File(targetDir, "${System.currentTimeMillis()}_$sanitizedName")
 

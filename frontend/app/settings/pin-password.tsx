@@ -29,6 +29,10 @@ import {
   countNotesUnderFolder,
   isFolderEffectivelyLocked,
 } from '../../src/core/security/vaultLockHelpers';
+import {
+  checkBiometricCapability,
+  authenticateWithBiometrics,
+} from '../../src/core/security/biometrics';
 
 const AUTO_RELOCK_OPTIONS = [
   { seconds: 0, label: 'Immediate on Exit' },
@@ -53,6 +57,8 @@ export default function ManagePinPasswordScreen() {
     setAppLockEnabled,
     setAutoRelockSeconds,
     setBiometricsEnabled,
+    biometricCapability,
+    refreshBiometricCapability,
     lockNow,
     promptConfigureLock,
     promptVerifyTargetCredential,
@@ -147,6 +153,77 @@ export default function ManagePinPasswordScreen() {
 
     await setAppLockEnabled(false);
     setStatusMessage('App Startup Lock disabled.');
+  };
+
+  const handleToggleBiometrics = async (nextVal: boolean) => {
+    setStatusMessage(null);
+    if (Platform.OS === 'web') return;
+
+    if (nextVal) {
+      if (!hasMasterConfigured) {
+        Alert.alert(
+          'Master PIN Required',
+          'Configure a Workspace Master PIN or Password first before enabling biometric unlock.'
+        );
+        const created = await promptSetupOrChangeMaster('create');
+        if (!created) {
+          setStatusMessage('Master PIN or Password required before enabling biometrics.');
+          return;
+        }
+      }
+
+      const cap = await checkBiometricCapability();
+      if (!cap.hasHardware) {
+        Alert.alert(
+          'Biometrics Unavailable',
+          'This device does not have biometric authentication hardware.'
+        );
+        setStatusMessage('Biometric hardware is not available on this device.');
+        return;
+      }
+
+      if (!cap.isEnrolled) {
+        Alert.alert(
+          'No Biometrics Enrolled',
+          `Please enroll your ${cap.displayName} in device settings first.`
+        );
+        setStatusMessage(`No ${cap.displayName} credentials enrolled in system settings.`);
+        return;
+      }
+
+      // Prompt native biometric challenge to configure default biometric lock
+      const challenge = await authenticateWithBiometrics(
+        `Verify your ${cap.displayName} to configure Biometric Unlock`
+      );
+
+      if (!challenge.success) {
+        setStatusMessage(
+          challenge.cancelled
+            ? 'Biometric setup cancelled.'
+            : 'Biometric verification failed. Unlock preference not enabled.'
+        );
+        return;
+      }
+
+      await setBiometricsEnabled(true);
+      await refreshBiometricCapability();
+      setStatusMessage(`${cap.displayName} configured as primary quick unlock.`);
+      return;
+    }
+
+    // Toggling OFF: verify Master PIN first
+    if (hasMasterConfigured) {
+      const verified = await promptVerifyMaster({
+        title: 'Disable Biometric Unlock',
+        subtitle: 'Confirm your Master PIN or Password to disable biometrics.',
+        confirmLabel: 'Disable',
+      });
+      if (!verified) return;
+    }
+
+    await setBiometricsEnabled(false);
+    await refreshBiometricCapability();
+    setStatusMessage('Biometric unlock disabled.');
   };
 
   const handleClearMaster = async () => {
@@ -483,25 +560,36 @@ export default function ManagePinPasswordScreen() {
             />
           </View>
 
-          {/* Biometrics Preference */}
-          <View className="flex-row items-center justify-between py-2">
-            <View className="flex-1 pr-4">
-              <Text className="text-[14.5px] font-bold" style={{ color: colors.textPrimary }}>
-                Biometric Unlock Preference
-              </Text>
-              <Text className="text-[11.5px] mt-0.5" style={{ color: colors.textMuted }}>
-                Master PIN/Password always stays required as the active fallback on this runtime.
-              </Text>
+          {/* Biometrics Preference (Mobile only, strictly hidden on Web) */}
+          {Platform.OS !== 'web' && (
+            <View className="flex-row items-center justify-between py-2">
+              <View className="flex-1 pr-4">
+                <View className="flex-row items-center gap-2">
+                  <Text className="text-[14.5px] font-bold" style={{ color: colors.textPrimary }}>
+                    Biometric Unlock ({biometricCapability?.displayName || 'Face ID / Fingerprint'})
+                  </Text>
+                  {securityConfig.biometricsEnabled && (
+                    <View className="px-2 py-0.5 rounded-md bg-purple-500/15">
+                      <Text className="text-[10.5px] font-bold text-purple-400">
+                        Configured
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                <Text className="text-[11.5px] mt-0.5" style={{ color: colors.textMuted }}>
+                  {securityConfig.biometricsEnabled
+                    ? `${biometricCapability?.displayName || 'Biometrics'} is active. Master PIN/Password remains your fallback.`
+                    : `Configure default ${biometricCapability?.displayName || 'device biometrics'} to quickly unlock Master-protected notes and folders.`}
+                </Text>
+              </View>
+              <Switch
+                value={securityConfig.biometricsEnabled}
+                onValueChange={handleToggleBiometrics}
+                trackColor={{ false: colors.borderSubtle, true: NoteColors.lavender }}
+                thumbColor="#FFFFFF"
+              />
             </View>
-            <Switch
-              value={securityConfig.biometricsEnabled}
-              onValueChange={async (val) => {
-                await setBiometricsEnabled(val);
-              }}
-              trackColor={{ false: colors.borderSubtle, true: NoteColors.lavender }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
+          )}
         </View>
 
         {/* SECTION 2: AUTO-RELOCK LIFECYCLE */}

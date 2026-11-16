@@ -1,8 +1,6 @@
 import { Linking } from 'react-native';
-import * as FileSystem from 'expo-file-system/legacy';
-import { NormalizedSharePayload } from '../../core/share/types';
-import { synthesizeShareBlocks, isWhatsAppExportPayload, CHAT_FILE_REGEX } from '../../core/share/shareBlockSynthesizer';
-import { isWhatsAppChatTranscript } from '../../core/share/whatsappChatParser';
+import { NormalizedSharePayload, SynthesizedNoteResult } from '../../core/share/types';
+import { synthesizeShareBlocks, isValidSharePayload } from '../../core/share/shareBlockSynthesizer';
 import { NativeShareBridge } from './NativeShareBridge';
 import { NoteItem, ComposableBlock } from '../../types/note';
 import { NoteColorToken } from '../../theme/tokens';
@@ -16,19 +14,22 @@ type AddNoteWithBlocksFn = (params: {
 }) => Promise<NoteItem>;
 
 type NavigateFn = (noteId: string) => void;
+type OnSharePromptFn = (synthesized: SynthesizedNoteResult, payload: NormalizedSharePayload) => void;
 
 class ShareIngestService {
   private processedBatchIds = new Set<string>();
   private isProcessing = false;
 
   /**
-   * Ingests a WhatsApp Export Chat payload, synthesizes AST blocks, creates the note, and triggers navigation.
-   * Rejects non-WhatsApp payloads cleanly.
+   * Synthesizes AST blocks from any inbound OS share payload (WhatsApp export .zip/.txt,
+   * individual media, voice notes, documents, links, or text messages).
+   * If `onSharePrompt` is provided, delegates destination choice (New vs Existing Note) to the UI modal.
    */
   public async ingestSharePayload(
     payload: NormalizedSharePayload,
     addNoteWithBlocks: AddNoteWithBlocksFn,
-    onNavigate: NavigateFn
+    onNavigate: NavigateFn,
+    onSharePrompt?: OnSharePromptFn
   ): Promise<NoteItem | null> {
     if (!payload || !payload.batchId) return null;
 
@@ -40,23 +41,13 @@ class ShareIngestService {
     try {
       this.isProcessing = true;
 
-      let transcriptText = payload.text;
-      let chatFile = payload.files?.find((f) =>
-        CHAT_FILE_REGEX.test(f.fileName)
-      );
-      if (!chatFile && payload.subject && /whatsapp/i.test(payload.subject)) {
-        chatFile = payload.files?.find((f) => /\.txt$/i.test(f.fileName));
-      }
-
-      if ((!transcriptText || !isWhatsAppChatTranscript(transcriptText)) && chatFile?.uri) {
-        const fileContent = await this.readTranscriptFile(chatFile.uri);
-        if (fileContent) {
-          transcriptText = fileContent;
-        }
-      }
-
-      const synthesized = synthesizeShareBlocks(payload, transcriptText);
+      const synthesized = synthesizeShareBlocks(payload);
       if (!synthesized) {
+        return null;
+      }
+
+      if (onSharePrompt) {
+        onSharePrompt(synthesized, payload);
         return null;
       }
 
@@ -81,33 +72,25 @@ class ShareIngestService {
     }
   }
 
-  private async readTranscriptFile(uri: string): Promise<string | null> {
-    try {
-      return await FileSystem.readAsStringAsync(uri);
-    } catch (err) {
-      console.warn('ShareIngestService: Could not read transcript file', err);
-      return null;
-    }
-  }
-
   /**
-   * Initializes the native and deep-link listeners.
+   * Initializes the native and deep-link listeners for all inbound share payloads.
    */
   public initialize(
     addNoteWithBlocks: AddNoteWithBlocksFn,
-    onNavigate: NavigateFn
+    onNavigate: NavigateFn,
+    onSharePrompt?: OnSharePromptFn
   ): () => void {
     // 1. Cold start check from Android / Native bridge
     NativeShareBridge.getPendingSharePayload().then((payload) => {
-      if (payload && isWhatsAppExportPayload(payload)) {
-        this.ingestSharePayload(payload, addNoteWithBlocks, onNavigate);
+      if (payload && isValidSharePayload(payload)) {
+        this.ingestSharePayload(payload, addNoteWithBlocks, onNavigate, onSharePrompt);
       }
     });
 
     // 2. Warm start listener from Native bridge
     const unsubscribeNative = NativeShareBridge.subscribe((payload) => {
-      if (payload && isWhatsAppExportPayload(payload)) {
-        this.ingestSharePayload(payload, addNoteWithBlocks, onNavigate);
+      if (payload && isValidSharePayload(payload)) {
+        this.ingestSharePayload(payload, addNoteWithBlocks, onNavigate, onSharePrompt);
       }
     });
 
@@ -115,8 +98,8 @@ class ShareIngestService {
     const handleUrl = ({ url }: { url: string }) => {
       if (url && url.startsWith('scribex://share-ingest')) {
         NativeShareBridge.getPendingSharePayload().then((payload) => {
-          if (payload && isWhatsAppExportPayload(payload)) {
-            this.ingestSharePayload(payload, addNoteWithBlocks, onNavigate);
+          if (payload && isValidSharePayload(payload)) {
+            this.ingestSharePayload(payload, addNoteWithBlocks, onNavigate, onSharePrompt);
           }
         });
       }

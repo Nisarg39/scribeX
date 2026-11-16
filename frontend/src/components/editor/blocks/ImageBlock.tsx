@@ -71,6 +71,13 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
   const [isUrlEditing, setIsUrlEditing] = useState(false);
   const [urlInput, setUrlInput] = useState(imageUrl);
 
+  React.useEffect(() => {
+    if (url && url !== imageUrl) {
+      setImageUrl(url);
+      setUrlInput(url);
+    }
+  }, [url]);
+
   const handleSaveUrl = () => {
     const next = urlInput.trim() || DEFAULT_IMAGE;
     setImageUrl(next);

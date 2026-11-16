@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, Platform } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
@@ -7,6 +7,7 @@ import {
   FileText, 
   FileSpreadsheet, 
   FileCode, 
+  FileArchive,
   Download, 
   Paperclip, 
   ExternalLink 
@@ -51,11 +52,23 @@ export const FileBlock: React.FC<FileBlockProps> = ({
   const [name, setName] = useState(fileName);
   const [isEditing, setIsEditing] = useState(false);
 
+  useEffect(() => {
+    if (fileName) {
+      setName(fileName);
+    }
+  }, [fileName]);
+
   const ext = name.split('.').pop()?.toLowerCase() || '';
 
   const getFileBadge = () => {
     if (ext === 'pdf') {
       return { icon: FileText, color: NoteColors.coral, label: 'PDF' };
+    }
+    if (ext === 'zip' || ext === 'rar' || ext === '7z') {
+      return { icon: FileArchive, color: NoteColors.lime, label: 'ZIP ARCHIVE' };
+    }
+    if (ext === 'txt' || ext === 'md') {
+      return { icon: FileText, color: NoteColors.lime, label: 'TEXT' };
     }
     if (['csv', 'xlsx', 'xls'].includes(ext)) {
       return { icon: FileSpreadsheet, color: NoteColors.lime, label: 'SHEET' };

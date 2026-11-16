@@ -32,6 +32,10 @@ import {
   ActiveSecurityModalRequest,
   PinPasswordPromptModal,
 } from '../components/security/PinPasswordPromptModal';
+import {
+  checkBiometricCapability,
+  BiometricCapability,
+} from '../core/security/biometrics';
 
 interface SecurityContextValue {
   securityConfig: WorkspaceSecurityConfig;
@@ -41,6 +45,8 @@ interface SecurityContextValue {
   unlockedNoteIds: ReadonlySet<string>;
   unlockedFolderPaths: ReadonlySet<string>;
   activeUnlockedCount: number;
+  biometricCapability: BiometricCapability | null;
+  refreshBiometricCapability: () => Promise<BiometricCapability>;
   refreshSecurityConfig: () => Promise<WorkspaceSecurityConfig>;
   setupMasterCredential: (params: {
     secret: string;
@@ -59,6 +65,7 @@ interface SecurityContextValue {
     error?: string;
     lockoutRemainingMs?: number;
   };
+  unlockAppWithBiometrics: () => void;
   lockNow: () => void;
   relockAllSessions: () => void;
   markNoteUnlocked: (noteId: string) => void;
@@ -104,6 +111,14 @@ const SecurityContext = createContext<SecurityContextValue>({
   unlockedNoteIds: EMPTY_SET,
   unlockedFolderPaths: EMPTY_SET,
   activeUnlockedCount: 0,
+  biometricCapability: null,
+  refreshBiometricCapability: async () => ({
+    isAvailable: false,
+    hasHardware: false,
+    isEnrolled: false,
+    displayName: 'Biometrics',
+    supportedTypes: [],
+  }),
   refreshSecurityConfig: async () => DEFAULT_SECURITY_CONFIG,
   setupMasterCredential: async () => DEFAULT_SECURITY_CONFIG,
   clearMasterCredential: async () => DEFAULT_SECURITY_CONFIG,
@@ -111,6 +126,7 @@ const SecurityContext = createContext<SecurityContextValue>({
   setAutoRelockSeconds: async () => DEFAULT_SECURITY_CONFIG,
   setBiometricsEnabled: async () => DEFAULT_SECURITY_CONFIG,
   unlockAppWithCredential: () => ({ ok: false }),
+  unlockAppWithBiometrics: () => {},
   lockNow: () => {},
   relockAllSessions: () => {},
   markNoteUnlocked: () => {},
@@ -137,6 +153,17 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [unlockedFolderPaths, setUnlockedFolderPaths] = useState<Set<string>>(() => new Set());
   const [activeModalRequest, setActiveModalRequest] =
     useState<ActiveSecurityModalRequest | null>(null);
+  const [biometricCapability, setBiometricCapability] = useState<BiometricCapability | null>(null);
+
+  const refreshBiometricCapability = useCallback(async () => {
+    const cap = await checkBiometricCapability();
+    setBiometricCapability(cap);
+    return cap;
+  }, []);
+
+  useEffect(() => {
+    refreshBiometricCapability();
+  }, [refreshBiometricCapability]);
 
   const noteExpiryRef = useRef<Map<string, number>>(new Map());
   const folderExpiryRef = useRef<Map<string, number>>(new Map());
@@ -329,7 +356,18 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const setBiometricsEnabled = useCallback(async (enabled: boolean) => {
     const updated = await securityRepo.setBiometricsEnabled(enabled);
     setSecurityConfig(updated);
+    try {
+      const cap = await checkBiometricCapability();
+      setBiometricCapability(cap);
+    } catch {
+      // ignore
+    }
     return updated;
+  }, []);
+
+  const unlockAppWithBiometrics = useCallback(() => {
+    securityRateLimiter.recordSuccess('app_lock');
+    setIsAppLocked(false);
   }, []);
 
   const unlockAppWithCredential = useCallback((candidate: string) => {
@@ -862,6 +900,8 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         unlockedNoteIds,
         unlockedFolderPaths,
         activeUnlockedCount,
+        biometricCapability,
+        refreshBiometricCapability,
         refreshSecurityConfig,
         setupMasterCredential,
         clearMasterCredential,
@@ -869,6 +909,7 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setAutoRelockSeconds,
         setBiometricsEnabled,
         unlockAppWithCredential,
+        unlockAppWithBiometrics,
         lockNow,
         relockAllSessions,
         markNoteUnlocked,
@@ -886,7 +927,11 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }}
     >
       {children}
-      <PinPasswordPromptModal request={activeModalRequest} />
+      <PinPasswordPromptModal
+        request={activeModalRequest}
+        biometricsEnabled={securityConfig.biometricsEnabled && Boolean(biometricCapability?.isAvailable)}
+        biometricName={biometricCapability?.displayName || 'Biometrics'}
+      />
     </SecurityContext.Provider>
   );
 };

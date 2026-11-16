@@ -1,13 +1,15 @@
 import '../global.css';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Slot, useRouter } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from '../src/theme';
 import { AuthProvider, SecurityProvider, useSecurity } from '../src/context';
 import { AppLockScreenOverlay } from '../src/components/security/AppLockScreenOverlay';
+import { ShareDestinationModal } from '../src/components/share/ShareDestinationModal';
 import { NotesProvider, useNotesStore } from '../src/state/useNotesStore';
 import { shareIngestService } from '../src/services/share/ShareIngestService';
+import { SynthesizedNoteResult } from '../src/core/share/types';
 import { View, Platform } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 
@@ -45,14 +47,25 @@ configureReanimatedLogger({
 function RootContent() {
   const { isDark } = useTheme();
   const router = useRouter();
-  const { addNoteWithBlocks } = useNotesStore();
-  const { isSecurityLoading, isAppLocked, securityConfig, unlockAppWithCredential } = useSecurity();
+  const { notes, activeFolders, addNoteWithBlocks, appendBlocksToNote } = useNotesStore();
+  const [pendingSharedNote, setPendingSharedNote] = useState<SynthesizedNoteResult | null>(null);
+  const {
+    isSecurityLoading,
+    isAppLocked,
+    securityConfig,
+    unlockAppWithCredential,
+    unlockAppWithBiometrics,
+    biometricCapability,
+  } = useSecurity();
 
   useEffect(() => {
     const unsubscribeShare = shareIngestService.initialize(
       addNoteWithBlocks,
       (noteId) => {
         router.push(`/note/${noteId}`);
+      },
+      (synthesized) => {
+        setPendingSharedNote(synthesized);
       }
     );
 
@@ -138,6 +151,9 @@ function RootContent() {
           credentialKind={securityConfig.masterCredentialType}
           masterHint={securityConfig.masterHint}
           onUnlockAttempt={unlockAppWithCredential}
+          biometricsEnabled={securityConfig.biometricsEnabled && Boolean(biometricCapability?.isAvailable)}
+          biometricDisplayName={biometricCapability?.displayName || 'Biometrics'}
+          onBiometricUnlockSuccess={unlockAppWithBiometrics}
         />
       </View>
     );
@@ -147,6 +163,33 @@ function RootContent() {
     <View className="flex-1 bg-light-appBg dark:bg-dark-appBg">
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <Slot />
+      <ShareDestinationModal
+        visible={Boolean(pendingSharedNote)}
+        synthesized={pendingSharedNote}
+        notes={notes}
+        folders={activeFolders}
+        onClose={() => setPendingSharedNote(null)}
+        onSaveNewNote={async ({ title, folderPath, blocks, colorToken, tags }) => {
+          setPendingSharedNote(null);
+          const created = await addNoteWithBlocks({
+            title,
+            folderPath,
+            blocks,
+            colorToken,
+            tags,
+          });
+          if (created?.id) {
+            router.push(`/note/${created.id}`);
+          }
+        }}
+        onAppendToExistingNote={async (noteId, blocks, tags) => {
+          setPendingSharedNote(null);
+          const updated = await appendBlocksToNote(noteId, blocks, tags);
+          if (updated?.id) {
+            router.push(`/note/${updated.id}`);
+          }
+        }}
+      />
     </View>
   );
 }

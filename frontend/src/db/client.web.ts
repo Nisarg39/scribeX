@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // @ts-ignore
 import initSqlJs from 'sql.js/dist/sql-wasm-inline.js';
 import type { Database, SqlJsStatic } from 'sql.js';
-import { SCHEMA_SQL } from './schema';
+import { SCHEMA_TABLES_SQL, SCHEMA_INDEXES_SQL, SCHEMA_SQL } from './schema';
 import { WELCOME_STARTER_BLOCKS } from '../state/starterNote';
 
 const IDB_NAME = 'scribex_web_vault';
@@ -158,52 +158,55 @@ export class WebDatabaseClient {
       let db: Database;
       if (existingBinary && existingBinary.length > 0) {
         db = new SQL.Database(existingBinary);
+        // Phase 1: Initialize all base tables
         try {
-          db.exec(SCHEMA_SQL);
+          db.exec(SCHEMA_TABLES_SQL);
         } catch {}
-        try {
-          db.run('ALTER TABLE tasks ADD COLUMN reminder_at TEXT;');
-        } catch {}
-        try {
-          db.run('ALTER TABLE notes ADD COLUMN reminder_at TEXT;');
-        } catch {}
-        try {
-          db.run('ALTER TABLE folders ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0;');
-        } catch {}
-        try {
-          db.run('ALTER TABLE folders ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0;');
-        } catch {}
-        try {
-          db.run('ALTER TABLE folders ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0;');
-        } catch {}
-        try {
-          db.exec('CREATE INDEX IF NOT EXISTS idx_folders_flags ON folders(is_favorite, is_pinned, is_archived);');
-        } catch {}
-        const securityAlterStatements = [
+
+        // Phase 2: Run all column migrations before creating any indexes on migrated columns
+        const columnMigrations = [
+          'ALTER TABLE tasks ADD COLUMN reminder_at TEXT;',
+          'ALTER TABLE notes ADD COLUMN reminder_at TEXT;',
+          'ALTER TABLE notes ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0;',
+          'ALTER TABLE notes ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0;',
           'ALTER TABLE notes ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0;',
           "ALTER TABLE notes ADD COLUMN lock_type TEXT CHECK(lock_type IN ('master', 'custom')) DEFAULT NULL;",
           "ALTER TABLE notes ADD COLUMN lock_credential_kind TEXT CHECK(lock_credential_kind IN ('pin', 'password')) DEFAULT NULL;",
           'ALTER TABLE notes ADD COLUMN lock_hash TEXT DEFAULT NULL;',
           'ALTER TABLE notes ADD COLUMN lock_salt TEXT DEFAULT NULL;',
           'ALTER TABLE notes ADD COLUMN lock_hint TEXT DEFAULT NULL;',
+          'ALTER TABLE folders ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0;',
+          'ALTER TABLE folders ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0;',
+          'ALTER TABLE folders ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0;',
           'ALTER TABLE folders ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0;',
           "ALTER TABLE folders ADD COLUMN lock_type TEXT CHECK(lock_type IN ('master', 'custom')) DEFAULT NULL;",
           "ALTER TABLE folders ADD COLUMN lock_credential_kind TEXT CHECK(lock_credential_kind IN ('pin', 'password')) DEFAULT NULL;",
           'ALTER TABLE folders ADD COLUMN lock_hash TEXT DEFAULT NULL;',
           'ALTER TABLE folders ADD COLUMN lock_salt TEXT DEFAULT NULL;',
           'ALTER TABLE folders ADD COLUMN lock_hint TEXT DEFAULT NULL;',
-          'CREATE INDEX IF NOT EXISTS idx_notes_locked ON notes(is_locked);',
-          'CREATE INDEX IF NOT EXISTS idx_folders_locked ON folders(is_locked);',
         ];
-        for (const stmt of securityAlterStatements) {
+
+        for (const stmt of columnMigrations) {
           try {
             db.run(stmt);
+          } catch {}
+        }
+
+        // Phase 3: Create all performance and security query indexes safely
+        const indexStatements = SCHEMA_INDEXES_SQL.split(';')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0 && !s.startsWith('--'));
+
+        for (const idxStmt of indexStatements) {
+          try {
+            db.exec(`${idxStmt};`);
           } catch {}
         }
       } else {
         db = new SQL.Database();
         // Initialize standard schema
-        db.exec(SCHEMA_SQL);
+        db.exec(SCHEMA_TABLES_SQL);
+        db.exec(SCHEMA_INDEXES_SQL);
         // Check for legacy localStorage data to migrate
         await this.migrateLegacyDataOrSeed(db);
         const initialBinary = db.export();

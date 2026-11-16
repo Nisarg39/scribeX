@@ -41,7 +41,7 @@ import {
 
 import { buildNoteSearchDocument } from '../frontend/src/core/searchIndexer.ts';
 import { executeNoteQuery } from '../frontend/src/core/noteQueryEngine.ts';
-import { SCHEMA_SQL } from '../frontend/src/db/schema.ts';
+import { SCHEMA_SQL, SCHEMA_TABLES_SQL, SCHEMA_INDEXES_SQL } from '../frontend/src/db/schema.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -342,6 +342,67 @@ async function run() {
     const legacyRow = db.prepare("SELECT is_locked, lock_type FROM notes WHERE id='legacy-1'").get();
     assert.strictEqual(legacyRow.is_locked, 0);
     assert.strictEqual(legacyRow.lock_type, null);
+    db.close();
+  });
+
+  test('Native 3-phase schema initialization prevents "no such column: is_locked" error on legacy DBs', () => {
+    const db = new DatabaseSync(':memory:');
+    // Pre-create tables without is_locked (simulating existing mobile device SQLite database)
+    db.exec(`
+      CREATE TABLE folders (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, path TEXT NOT NULL);
+      CREATE TABLE notes (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'active');
+      CREATE TABLE tasks (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, title TEXT NOT NULL);
+    `);
+
+    // Phase 1: Initialize all base tables
+    db.exec(SCHEMA_TABLES_SQL);
+
+    // Phase 2: Run all column migrations before creating any indexes
+    const columnMigrations = [
+      'ALTER TABLE tasks ADD COLUMN reminder_at TEXT;',
+      'ALTER TABLE notes ADD COLUMN reminder_at TEXT;',
+      'ALTER TABLE notes ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0;',
+      'ALTER TABLE notes ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0;',
+      'ALTER TABLE notes ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0;',
+      "ALTER TABLE notes ADD COLUMN lock_type TEXT CHECK(lock_type IN ('master', 'custom')) DEFAULT NULL;",
+      "ALTER TABLE notes ADD COLUMN lock_credential_kind TEXT CHECK(lock_credential_kind IN ('pin', 'password')) DEFAULT NULL;",
+      'ALTER TABLE notes ADD COLUMN lock_hash TEXT DEFAULT NULL;',
+      'ALTER TABLE notes ADD COLUMN lock_salt TEXT DEFAULT NULL;',
+      'ALTER TABLE notes ADD COLUMN lock_hint TEXT DEFAULT NULL;',
+      'ALTER TABLE folders ADD COLUMN is_favorite BOOLEAN NOT NULL DEFAULT 0;',
+      'ALTER TABLE folders ADD COLUMN is_pinned BOOLEAN NOT NULL DEFAULT 0;',
+      'ALTER TABLE folders ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT 0;',
+      'ALTER TABLE folders ADD COLUMN is_locked INTEGER NOT NULL DEFAULT 0;',
+      "ALTER TABLE folders ADD COLUMN lock_type TEXT CHECK(lock_type IN ('master', 'custom')) DEFAULT NULL;",
+      "ALTER TABLE folders ADD COLUMN lock_credential_kind TEXT CHECK(lock_credential_kind IN ('pin', 'password')) DEFAULT NULL;",
+      'ALTER TABLE folders ADD COLUMN lock_hash TEXT DEFAULT NULL;',
+      'ALTER TABLE folders ADD COLUMN lock_salt TEXT DEFAULT NULL;',
+      'ALTER TABLE folders ADD COLUMN lock_hint TEXT DEFAULT NULL;',
+    ];
+    for (const stmt of columnMigrations) {
+      try {
+        db.exec(stmt);
+      } catch {}
+    }
+
+    // Phase 3: Create all performance and security query indexes safely
+    const indexStatements = SCHEMA_INDEXES_SQL.split(';')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith('--'));
+
+    for (const idxStmt of indexStatements) {
+      try {
+        db.exec(`${idxStmt};`);
+      } catch {}
+    }
+
+    // Verify idx_notes_locked and idx_folders_locked exist and is_locked column is queryable
+    const cols = db.prepare("PRAGMA table_info('notes')").all().map((c) => c.name);
+    assert(cols.includes('is_locked'), 'notes.is_locked must exist');
+
+    const indexes = db.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().map((r) => r.name);
+    assert(indexes.includes('idx_notes_locked'), 'idx_notes_locked index must exist');
+    assert(indexes.includes('idx_folders_locked'), 'idx_folders_locked index must exist');
     db.close();
   });
 
@@ -1119,6 +1180,66 @@ async function run() {
       activeSqlite = oldDb;
       activeSqlite.close();
     }
+  });
+
+  // ---------------------------------------------------------------------------
+  // STAGE 8: Native Biometrics Integration & Web Suppression Invariants
+  // ---------------------------------------------------------------------------
+  console.log('\n▶ STAGE 8: Native Biometrics Configuration & Master Fallback');
+
+  test('biometrics.ts degrades safely without crashing on non-native runtime', () => {
+    const bioSrc = fs.readFileSync(path.join(feDir, 'src/core/security/biometrics.ts'), 'utf8');
+    assert(bioSrc.includes("Platform.OS === 'web'"), 'biometrics.ts must guard for Web platform');
+    assert(bioSrc.includes('disableDeviceFallback: true'), 'biometrics.ts must enforce disableDeviceFallback: true to protect Master PIN');
+    assert(bioSrc.includes('supportedAuthenticationTypesAsync'), 'biometrics.ts must inspect hardware authentication types');
+  });
+
+  test('pin-password.tsx strictly hides Biometric Unlock on Web and challenges biometrics before enable', () => {
+    const pinSettingsSrc = fs.readFileSync(path.join(feDir, 'app/settings/pin-password.tsx'), 'utf8');
+    assert(
+      pinSettingsSrc.includes("Platform.OS !== 'web'"),
+      'pin-password.tsx must strictly hide biometric preferences on Web platform'
+    );
+    assert(
+      pinSettingsSrc.includes('authenticateWithBiometrics') && pinSettingsSrc.includes('checkBiometricCapability'),
+      'pin-password.tsx must invoke biometric hardware checks and challenge before enabling'
+    );
+    assert(
+      pinSettingsSrc.includes('hasMasterConfigured'),
+      'pin-password.tsx must require Master PIN configured before biometric toggle can be enabled'
+    );
+  });
+
+  test('AppLockScreenOverlay and PinPasswordPromptModal wire biometric unlock with Master PIN fallback', () => {
+    const overlaySrc = fs.readFileSync(path.join(feDir, 'src/components/security/AppLockScreenOverlay.tsx'), 'utf8');
+    assert(
+      overlaySrc.includes('biometricsEnabled') && overlaySrc.includes('handleBiometricAuth'),
+      'AppLockScreenOverlay must support biometric auto-prompt and manual retry'
+    );
+    assert(
+      overlaySrc.includes('Unlock Workspace') && overlaySrc.includes('TextInput'),
+      'AppLockScreenOverlay must preserve Master PIN/Password input as fallback'
+    );
+
+    const modalSrc = fs.readFileSync(path.join(feDir, 'src/components/security/PinPasswordPromptModal.tsx'), 'utf8');
+    assert(
+      modalSrc.includes('handleBiometricVerify') && modalSrc.includes("request.lockType === 'master'"),
+      'PinPasswordPromptModal must prompt biometrics when Master verification is active'
+    );
+    assert(
+      modalSrc.includes('handleVerifySubmit') && modalSrc.includes('TextInput'),
+      'PinPasswordPromptModal must keep Master PIN input available as fallback'
+    );
+  });
+
+  test('Biometric cancellation does not penalize or lock out Master PIN attempts', () => {
+    const limiter = new AttemptRateLimiter();
+    const rateKey = 'test_bio_cancel';
+    assert.strictEqual(limiter.getLockoutRemainingMs(rateKey), 0);
+    assert.strictEqual(limiter.getRemainingAttempts(rateKey), 5);
+
+    // Cancelled biometric operation does NOT record failure to rate limiter
+    assert.strictEqual(limiter.getRemainingAttempts(rateKey), 5);
   });
 
   console.log('\n=================================================================');

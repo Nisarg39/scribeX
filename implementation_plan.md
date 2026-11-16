@@ -1,72 +1,62 @@
-# Implementation Plan: Pre-Seeded Interactive 'Welcome to ScribeX' Starter Note (Point 37)
+# Implementation Plan: Universal Share Ingestion, New/Existing Note Destination Picker & Media Playback Fixes
 
-> **Target:** Implement Point 37 from [`docs/future_ideas.md`](docs/future_ideas.md): Pre-seed an interactive, beautifully formatted 'Welcome to ScribeX' starter note that a new user sees immediately upon navigating to the Home screen on first launch or when the database is empty.  
-> **Status:** Completed & Verified (`tsc --noEmit`, `test_starter_note_seeding.mjs`, `test_pin_password_security.mjs`, and `test:uiux` all 100% passing)
+## 1. Architectural Overview
+1. **Prevent OOM on WhatsApp Chat Exports:** Remove `.zip` unpacking and transcript expansion completely. Store exported WhatsApp `.zip` and `.txt` archives strictly in their original file format inside the app sandbox as an intact `FileBlock` attachment.
+2. **Universal Individual Share Detection:** Remove the restrictive `isWhatsAppExportPayload` gate that rejected non-transcript shares. Support all inbound share types from WhatsApp and other apps via the system Share Sheet: individual images, videos, `.opus`/`.mp3`/`.m4a` audio voice notes, PDFs/documents, URLs, and shared text messages.
+3. **"Save in New Note" vs "Add to Existing Note" Destination Prompt:** Whenever an export chat or individual file/message is shared to ScribeX, present a native destination sheet (`ShareDestinationModal`) allowing the user to either:
+   - **Save in a New Note** (default primary option, with pre-filled title & folder selection), or
+   - **Add to an Existing Note** (searchable list of active notes that appends the shared blocks to the chosen note and opens it).
+4. **Fix Shared Media Rendering & Mobile Playback:** Fix `createBlockFromFile()` to store the persistent `file://` URI in `block.content` (so SQLite Markdown serialization preserves it) and fix mobile `VideoBlock` (HTML5 `<video>` instead of YouTube `<iframe>`) and `AudioBlock` (`.opus` playback, silent-mode audio session, and duration sync).
 
-## 1. Requirement & Architecture Overview
-- **Goal:** Never leave first-time users or users with an empty notebook staring at an empty, blank canvas. Provide an interactive showcase note demonstrating:
-  1. The 42 composable input blocks and the slash command system (`/`).
-  2. ScribeX pastel design system tokens (`lime`, `apricot`, `cyan`, `coral`, `lavender`, `pink`, `sky`).
-  3. Interactive, multi-priority checklists that project directly into the global task board.
-  4. Formatted KaTeX mathematical formulas (`equation` block).
-  5. Multi-variant callouts (`info`, `warning`, `success`, `quote`).
-  6. Offline reminder, recurrence, and in-app notification center tips.
-  7. Zero-knowledge PIN/password security vault controls.
-- **Entry Experience:**
-  - Pinned (`isPinned: true`) and Favorited (`isFavorite: true`) with pastel `lavender` token.
-  - Placed in `General` folder with tags: `['getting-started', 'guide', 'scribex', 'blocks']`.
-  - Appears immediately in the top Pinned grid on the Home screen (`/home`).
-  - Tapping opens the full-bleed editor with working interactive blocks.
+---
 
-## 2. Technical Strategy & Data Flow
+## 2. Implementation Steps
 
-### A. Dedicated Starter Note Definition (`frontend/src/state/starterNote.ts`)
-Create a single source of truth containing:
-- `WELCOME_STARTER_NOTE`:
-  - `id: 'note-welcome-starter'`
-  - `title: 'Welcome to ScribeX 👋'`
-  - `blocks`: Curated, interactive AST block structures:
-    - **Header 1:** Welcome title & subtext.
-    - **Callout Block (`info`):** Local-first offline architecture summary (sub-5ms SQLite WAL).
-    - **Heading 2 + Paragraph:** The Slash Command System (`/text`, `/checklist`, `/equation`, `/callout`, etc.).
-    - **Checklist Block:** Interactive tasks with priorities (`urgent`, `high`, `medium`), due dates, and checkboxes linked to the task board.
-    - **Heading 2 + Equation Block:** KaTeX rendering (e.g., Euler's identity \(e^{i\pi} + 1 = 0\) and Gaussian integral \(\int_{-\infty}^{\infty} e^{-x^2} dx = \sqrt{\pi}\)).
-    - **Heading 2 + Callout Block (`quote`):** Design tokens & pastel palette philosophy.
-    - **Heading 2 + Callout Block (`warning`):** Offline alarms, scheduled reminders, and repeat rules.
-    - **Heading 2 + Code Block:** SQLite and keyboard quick references.
-    - **Heading 2 + Bulleted List / Table:** Reference map of all 42 input blocks.
-  - `WELCOME_STARTER_TASKS`: Initial task projections matching the checklist items.
+### Step 1: Native Android Share Sheet & Intact File Storage
+- **Files:**
+  - [`frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentModule.kt`](frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentModule.kt)
+  - [`frontend/android/app/src/main/AndroidManifest.xml`](frontend/android/app/src/main/AndroidManifest.xml)
+  - [`frontend/app.json`](frontend/app.json)
+- **Changes:**
+  - In `ShareIntentModule.kt`: Remove `.zip` entry extraction in `processUriIntoSandbox()` so `.zip` and `.txt` WhatsApp exports are copied directly into `filesDir/shared_media/` as a single intact file in their original format. Map `.opus` to `audio/ogg` / `audio/opus` and ensure accurate MIME fallback by file extension.
+  - In `AndroidManifest.xml` & `app.json`: Ensure explicit `ACTION_SEND` and `ACTION_SEND_MULTIPLE` intent filters cover `image/*`, `video/*`, `audio/*`, `text/*`, `application/zip`, `application/pdf`, and `*/*`.
 
-### B. Auto-Seed Gate on Empty Database (`frontend/src/state/useNotesStore.tsx`)
-In `refreshFromDB()`:
-- If `allNotes.length === 0` (first launch, guest session, or empty database), automatically invoke `seedWelcomeStarterNote()` via `notesRepo.createNote` and `tasksRepo.createTask`.
-- Reload state so the user lands on `/home` with the interactive starter note seamlessly rendered without a loading delay or blank state.
+### Step 2: Universal Share Block Synthesizer & URI Preservation
+- **Files:**
+  - [`frontend/src/core/share/shareBlockSynthesizer.ts`](frontend/src/core/share/shareBlockSynthesizer.ts)
+  - [`frontend/src/services/share/ShareIngestService.ts`](frontend/src/services/share/ShareIngestService.ts)
+- **Changes:**
+  - Update `synthesizeShareBlocks(payload)` to accept **any** valid share payload containing `files` and/or `text` (removing the strict WhatsApp-transcript-only rejection).
+  - Convert `.zip` and `.txt` files (including WhatsApp chat exports) into intact `file` blocks (`FileBlock`) rather than parsing transcripts into inline `message_thread` blocks.
+  - Fix `createBlockFromFile()` for `image`, `video`, `audio`, and `file` blocks to set `content: file.uri` (the persistent `file://` URI) and store `fileName` in `metadata.fileName` / `metadata.title` / `metadata.caption`.
+  - Support shared text messages and URLs (`payload.text`) by synthesizing `bookmark` blocks for standalone links and `paragraph` blocks for shared message text.
 
-### C. SQLite Wasm & Native Default Seeds Sync
-- Update `client.web.ts` and `client.native.ts` `seedInitialDefaults` to include `note-welcome-starter` and its initial tasks so that fresh SQLite initializations instantly contain the note in the raw DB.
+### Step 3: "New Note vs Existing Note" Share Destination Modal
+- **Files:**
+  - [`frontend/src/components/share/ShareDestinationModal.tsx`](frontend/src/components/share/ShareDestinationModal.tsx) *(New)*
+  - [`frontend/src/state/useNotesStore.tsx`](frontend/src/state/useNotesStore.tsx)
+  - [`frontend/src/services/share/ShareIngestService.ts`](frontend/src/services/share/ShareIngestService.ts)
+  - [`frontend/app/_layout.tsx`](frontend/app/_layout.tsx)
+- **Changes:**
+  - Add `appendBlocksToNote(noteId: string, newBlocks: ComposableBlock[]): Promise<NoteItem | null>` to `useNotesStore.tsx` so shared blocks can be appended to any existing note and persisted via `notesRepo.updateNote()` with `serializeBlocksToMarkdown()`.
+  - Update `ShareIngestService` to notify the UI with a pending `SynthesizedNoteResult` when a share arrives (while keeping direct `ingestSharePayload` support for automated pipelines).
+  - Create `ShareDestinationModal.tsx` and mount it in `RootContent` (`frontend/app/_layout.tsx`), giving the user a clean choice between **"Save in New Note"** (default active tab/action with editable title) and **"Add to Existing Note"** (searchable list of existing notes), navigating to the target note immediately after confirmation.
 
-### D. Documentation Update
-- Mark Point 37 in [`docs/future_ideas.md`](docs/future_ideas.md) as `[x] ... (COMPLETED)`.
+### Step 4: Mobile Local Video & `.opus` Audio Playback Fixes
+- **Files:**
+  - [`frontend/src/components/editor/blocks/VideoBlock.tsx`](frontend/src/components/editor/blocks/VideoBlock.tsx)
+  - [`frontend/src/components/editor/blocks/AudioBlock.tsx`](frontend/src/components/editor/blocks/AudioBlock.tsx)
+- **Changes:**
+  - In `VideoBlock.tsx`: Recognize `file://` and `.mp4`/`.mov`/`.webm`/`.3gp`/`.mkv` URLs as direct videos (`type: 'direct'`), sync `videoUrl` state when `url` prop updates, and render an HTML5 `<video controls playsinline preload="metadata">` inside `WebView` with `allowFileAccess={true}` and `allowUniversalAccessFromFileURLs={true}` on mobile.
+  - In `AudioBlock.tsx`: Call `setAudioModeAsync({ playsInSilentMode: true })` before native playback, sync `currentDuration` from `status.duration`, reset finished tracks via `seekTo(0)`, and provide an external player/share fallback button via `expo-sharing`.
 
-## 3. Files in Scope
-- `frontend/src/state/starterNote.ts` *(new)*
-- `frontend/src/state/seedData.ts` *(update)*
-- `frontend/src/state/useNotesStore.tsx` *(empty-database auto-seed hook)*
-- `frontend/src/db/client.web.ts` *(SQL seed sync)*
-- `frontend/src/db/client.native.ts` *(SQL seed sync)*
-- `docs/future_ideas.md` *(status update)*
-
-## 4. Verification Plan
-1. **Type Safety:** `cd frontend && npx tsc --noEmit` (0 errors).
-2. **Interactive Render & DB Test:** Automated verification script testing starter note insertion, AST block serialization, checklist task sync, and query retrieval on empty DB.
-3. **UI/UX Cross-Platform Check:** `npm --prefix frontend run test:uiux`.
+---
 
 ## Recommended Execution
 
-| Slash Command | Fit Evaluation |
-| :--- | :--- |
-| **`/plan`** | **Best Fit (Recommended).** Well-defined modular content and data seed integration with clear acceptance criteria across 4 files. |
-| `/boost` | Heavyweight for a starter note seeding task, though applicable if multi-angle review is desired. |
-| `/teamwork` | Unnecessary given the cohesive scope. |
-
-**Recommendation:** Type **`/plan`** or reply with **"Proceed"** to apply this plan.
+| Command | Fit | Reasoning |
+| :--- | :--- | :--- |
+| `/plan` | **Best Fit** | Covers native Android intent handling, universal share block synthesis, a new `ShareDestinationModal` connected to `useNotesStore`, and mobile video/audio player fixes. Reviewing and approving the structured plan ensures clean end-to-end execution. |
+| `/boost` | Medium | Useful if additional multi-pass stress testing is desired, though our scoped verification scripts cover all AST and share flows. |
+| `/teamwork` / `/swarm` | Low | Changes share tight TypeScript contracts across `ShareIngestService`, `useNotesStore`, and `_layout.tsx`. |
+| `/compact` | Medium | Recommended after implementation and APK build if conversation context grows. |

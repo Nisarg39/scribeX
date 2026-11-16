@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -14,12 +14,14 @@ import {
   EyeOff,
   HelpCircle,
   Lock,
+  ScanFace,
   ShieldCheck,
 } from 'lucide-react-native';
 import { useTheme } from '../../theme';
 import { NoteColors } from '../../theme/tokens';
 import { CredentialKind } from '../../db/types';
 import { securityRateLimiter } from '../../core/security/pinCrypto';
+import { authenticateWithBiometrics } from '../../core/security/biometrics';
 
 interface AppLockScreenOverlayProps {
   credentialKind: CredentialKind | null;
@@ -29,12 +31,18 @@ interface AppLockScreenOverlayProps {
     error?: string;
     lockoutRemainingMs?: number;
   };
+  biometricsEnabled?: boolean;
+  biometricDisplayName?: string;
+  onBiometricUnlockSuccess?: () => void;
 }
 
 export const AppLockScreenOverlay: React.FC<AppLockScreenOverlayProps> = ({
   credentialKind,
   masterHint,
   onUnlockAttempt,
+  biometricsEnabled = false,
+  biometricDisplayName = 'Biometrics',
+  onBiometricUnlockSuccess,
 }) => {
   const { colors, isDark } = useTheme();
   const [candidate, setCandidate] = useState('');
@@ -44,6 +52,34 @@ export const AppLockScreenOverlay: React.FC<AppLockScreenOverlayProps> = ({
   const [lockoutRemainingMs, setLockoutRemainingMs] = useState(() =>
     securityRateLimiter.getLockoutRemainingMs('app_lock')
   );
+  const [isBioAuthenticating, setIsBioAuthenticating] = useState(false);
+
+  const handleBiometricAuth = useCallback(async () => {
+    if (lockoutRemainingMs > 0 || isBioAuthenticating) return;
+    if (!biometricsEnabled || Platform.OS === 'web') return;
+
+    setIsBioAuthenticating(true);
+    try {
+      const res = await authenticateWithBiometrics('Unlock ScribeX Workspace');
+      if (res.success) {
+        onBiometricUnlockSuccess?.();
+      } else if (!res.cancelled) {
+        setErrorText(res.error || 'Biometric authentication failed. Enter Master PIN/Password.');
+      }
+    } finally {
+      setIsBioAuthenticating(false);
+    }
+  }, [lockoutRemainingMs, isBioAuthenticating, biometricsEnabled, onBiometricUnlockSuccess]);
+
+  // Auto-prompt biometrics once on mount if enabled and not in cooldown
+  useEffect(() => {
+    if (biometricsEnabled && Platform.OS !== 'web' && lockoutRemainingMs <= 0) {
+      const timer = setTimeout(() => {
+        handleBiometricAuth();
+      }, 250);
+      return () => clearTimeout(timer);
+    }
+  }, [biometricsEnabled]);
 
   useEffect(() => {
     if (lockoutRemainingMs <= 0) return;
@@ -205,6 +241,29 @@ export const AppLockScreenOverlay: React.FC<AppLockScreenOverlayProps> = ({
               Unlock Workspace
             </Text>
           </Pressable>
+
+          {biometricsEnabled && Platform.OS !== 'web' ? (
+            <Pressable
+              onPress={handleBiometricAuth}
+              disabled={lockoutRemainingMs > 0 || isBioAuthenticating}
+              hitSlop={8}
+              accessibilityLabel={`Unlock with ${biometricDisplayName}`}
+              className="w-full h-12 rounded-full items-center justify-center flex-row gap-2 mt-3 active:opacity-85"
+              style={{
+                backgroundColor: isDark ? 'rgba(177, 138, 243, 0.15)' : '#F2ECFE',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(177, 138, 243, 0.35)' : '#DCCBFC',
+              }}
+            >
+              <ScanFace size={18} color={NoteColors.lavender} />
+              <Text
+                className="text-[14.5px] font-bold"
+                style={{ color: colors.textPrimary }}
+              >
+                {isBioAuthenticating ? 'Scanning…' : `Unlock with ${biometricDisplayName}`}
+              </Text>
+            </Pressable>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>

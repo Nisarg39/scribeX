@@ -75,8 +75,16 @@
       "shareBarrel": "frontend/src/core/share/index.ts",
       "nativeShareBridge": "frontend/src/services/share/NativeShareBridge.ts",
       "shareIngestService": "frontend/src/services/share/ShareIngestService.ts",
+      "shareDestinationModal": "frontend/src/components/share/ShareDestinationModal.tsx",
       "androidShareModule": "frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentModule.kt",
       "androidSharePackage": "frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentPackage.kt"
+    },
+    "security": {
+      "biometrics": "frontend/src/core/security/biometrics.ts",
+      "securityContext": "frontend/src/context/SecurityContext.tsx",
+      "pinPasswordSettings": "frontend/app/settings/pin-password.tsx",
+      "appLockOverlay": "frontend/src/components/security/AppLockScreenOverlay.tsx",
+      "pinPasswordPromptModal": "frontend/src/components/security/PinPasswordPromptModal.tsx"
     },
     "docsAndReports": {
       "implementationPlan": "implementation_plan.md",

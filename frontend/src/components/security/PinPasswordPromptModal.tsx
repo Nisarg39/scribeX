@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Modal,
@@ -16,6 +16,7 @@ import {
   HelpCircle,
   KeyRound,
   Lock,
+  ScanFace,
   ShieldCheck,
   X,
 } from 'lucide-react-native';
@@ -26,6 +27,7 @@ import {
   securityRateLimiter,
   validateCredentialFormat,
 } from '../../core/security/pinCrypto';
+import { authenticateWithBiometrics } from '../../core/security/biometrics';
 
 export type ActiveSecurityModalRequest =
   | {
@@ -82,9 +84,15 @@ export type ActiveSecurityModalRequest =
 
 interface PinPasswordPromptModalProps {
   request: ActiveSecurityModalRequest | null;
+  biometricsEnabled?: boolean;
+  biometricName?: string;
 }
 
-export const PinPasswordPromptModal: React.FC<PinPasswordPromptModalProps> = ({ request }) => {
+export const PinPasswordPromptModal: React.FC<PinPasswordPromptModalProps> = ({
+  request,
+  biometricsEnabled = false,
+  biometricName = 'Biometrics',
+}) => {
   const { colors, isDark } = useTheme();
   const inputRef = useRef<TextInput>(null);
 
@@ -97,6 +105,26 @@ export const PinPasswordPromptModal: React.FC<PinPasswordPromptModalProps> = ({ 
   const [selectedLockType, setSelectedLockType] = useState<LockType>('master');
   const [selectedCredKind, setSelectedCredKind] = useState<CredentialKind>('pin');
   const [lockoutRemainingMs, setLockoutRemainingMs] = useState(0);
+  const [isBioAuthenticating, setIsBioAuthenticating] = useState(false);
+
+  const handleBiometricVerify = useCallback(async () => {
+    if (!request || request.kind !== 'verify' || request.lockType !== 'master') return;
+    if (!biometricsEnabled || Platform.OS === 'web') return;
+    if (lockoutRemainingMs > 0) return;
+
+    setIsBioAuthenticating(true);
+    try {
+      const res = await authenticateWithBiometrics(request.title || 'Unlock ScribeX Workspace');
+      if (res.success) {
+        securityRateLimiter.recordSuccess(request.rateLimitKey);
+        request.resolve(true);
+      } else if (!res.cancelled) {
+        setErrorText(res.error || 'Biometric authentication failed. Enter Master PIN/Password.');
+      }
+    } finally {
+      setIsBioAuthenticating(false);
+    }
+  }, [request, biometricsEnabled, lockoutRemainingMs]);
 
   // Reset form state whenever a new request arrives
   useEffect(() => {
@@ -108,6 +136,7 @@ export const PinPasswordPromptModal: React.FC<PinPasswordPromptModalProps> = ({ 
       setShowHint(false);
       setErrorText(null);
       setLockoutRemainingMs(0);
+      setIsBioAuthenticating(false);
       return;
     }
 
@@ -116,10 +145,19 @@ export const PinPasswordPromptModal: React.FC<PinPasswordPromptModalProps> = ({ 
     setShowSecret(false);
     setShowHint(false);
     setErrorText(null);
+    setIsBioAuthenticating(false);
 
     if (request.kind === 'verify') {
       setSelectedCredKind(request.credentialKind || 'pin');
       setLockoutRemainingMs(securityRateLimiter.getLockoutRemainingMs(request.rateLimitKey));
+
+      // Auto-prompt biometrics once on mount if this is a master credential verification
+      if (request.lockType === 'master' && biometricsEnabled && Platform.OS !== 'web') {
+        const bioTimer = setTimeout(() => {
+          handleBiometricVerify();
+        }, 220);
+        return () => clearTimeout(bioTimer);
+      }
     } else if (request.kind === 'configure_lock') {
       setSelectedLockType(
         request.initialLockType || (request.hasMasterConfigured ? 'master' : 'custom')
@@ -138,7 +176,7 @@ export const PinPasswordPromptModal: React.FC<PinPasswordPromptModalProps> = ({ 
     }, 120);
 
     return () => clearTimeout(focusTimer);
-  }, [request]);
+  }, [request, biometricsEnabled, handleBiometricVerify]);
 
   // Live 1s countdown during rate-limit cooldown
   useEffect(() => {
@@ -496,6 +534,31 @@ export const PinPasswordPromptModal: React.FC<PinPasswordPromptModalProps> = ({ 
                     </Text>
                   </View>
                 ) : null}
+
+                {request.lockType === 'master' &&
+                  biometricsEnabled &&
+                  Platform.OS !== 'web' && (
+                    <Pressable
+                      onPress={handleBiometricVerify}
+                      disabled={lockoutRemainingMs > 0 || isBioAuthenticating}
+                      hitSlop={8}
+                      accessibilityLabel={`Unlock with ${biometricName}`}
+                      className="w-full h-11 rounded-full items-center justify-center flex-row gap-2 mt-4 active:opacity-85"
+                      style={{
+                        backgroundColor: isDark ? 'rgba(177, 138, 243, 0.15)' : '#F2ECFE',
+                        borderWidth: 1,
+                        borderColor: isDark ? 'rgba(177, 138, 243, 0.35)' : '#DCCBFC',
+                      }}
+                    >
+                      <ScanFace size={17} color={NoteColors.lavender} />
+                      <Text
+                        className="text-[13.5px] font-bold"
+                        style={{ color: colors.textPrimary }}
+                      >
+                        {isBioAuthenticating ? 'Scanning…' : `Unlock with ${biometricName}`}
+                      </Text>
+                    </Pressable>
+                  )}
 
                 <View className="flex-row items-center justify-end gap-2.5 mt-5">
                   <Pressable
