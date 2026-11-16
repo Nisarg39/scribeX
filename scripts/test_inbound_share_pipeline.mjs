@@ -5,6 +5,7 @@
  */
 
 import assert from 'assert';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -19,6 +20,7 @@ import {
 import {
   isWhatsAppExportPayload,
   synthesizeShareBlocks,
+  buildSharePayloadFromIosFileUrl,
 } from '../frontend/src/core/share/shareBlockSynthesizer.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -523,6 +525,83 @@ Messages and calls are end-to-end encrypted. No one outside of this chat can rea
     assert.ok(res !== null);
     assert.strictEqual(res.title, 'Project Status Update');
     assert.strictEqual(res.blocks[0].type, 'paragraph');
+  });
+
+  console.log('\n--- Suite 7: Zero-Device iOS Share Sheet Parity & Configuration Verification ---');
+
+  test('WF-30: Verifies iOS app.json CFBundleDocumentTypes, LSSupportsOpeningDocumentsInPlace, and Config Plugin', () => {
+    const appJsonPath = path.resolve(__dirname, '../frontend/app.json');
+    const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf-8'));
+    const infoPlist = appJson.expo?.ios?.infoPlist;
+    assert.ok(infoPlist !== undefined);
+    assert.strictEqual(infoPlist.LSSupportsOpeningDocumentsInPlace, false);
+    const allUTIs = (infoPlist.CFBundleDocumentTypes || []).flatMap((t) => t.LSItemContentTypes || []);
+    for (const requiredUti of [
+      'com.pkware.zip-archive',
+      'public.zip-archive',
+      'public.plain-text',
+      'public.image',
+      'public.movie',
+      'public.audio',
+      'org.xiph.opus',
+      'com.adobe.pdf',
+      'public.item',
+    ]) {
+      assert.ok(allUTIs.includes(requiredUti), `Missing iOS UTI: ${requiredUti}`);
+    }
+    assert.ok((appJson.expo?.plugins || []).includes('./plugins/withScribeXShare'));
+  });
+
+  test('WF-31: Parses iOS Documents/Inbox file:// URLs for WhatsApp .zip/.txt and .opus/.mp4/.jpg media', () => {
+    const zipUrl = 'file:///var/mobile/Containers/Data/Application/1234/Documents/Inbox/WhatsApp%20Chat%20-%20Alice.zip';
+    const zipPayload = buildSharePayloadFromIosFileUrl(
+      zipUrl,
+      'file:///var/mobile/Documents/shared_media/WhatsApp_Chat_-_Alice.zip',
+      2450000
+    );
+    assert.ok(zipPayload !== null);
+    assert.strictEqual(zipPayload.files[0].fileName, 'WhatsApp Chat - Alice.zip');
+    assert.strictEqual(zipPayload.files[0].mimeType, 'application/zip');
+    const zipResult = synthesizeShareBlocks(zipPayload);
+    assert.ok(zipResult !== null);
+    assert.strictEqual(zipResult.blocks[0].type, 'file');
+    assert.strictEqual(
+      zipResult.blocks[0].content,
+      'file:///var/mobile/Documents/shared_media/WhatsApp_Chat_-_Alice.zip'
+    );
+
+    const opusUrl = 'file:///var/mobile/Containers/Data/Application/1234/Documents/Inbox/PTT-20261116-WA0001.opus';
+    const opusPayload = buildSharePayloadFromIosFileUrl(opusUrl, undefined, 32000);
+    assert.ok(opusPayload !== null);
+    assert.strictEqual(opusPayload.files[0].mimeType, 'audio/ogg');
+    const opusResult = synthesizeShareBlocks(opusPayload);
+    assert.ok(opusResult !== null);
+    assert.strictEqual(opusResult.blocks[0].type, 'audio');
+    assert.strictEqual(opusResult.blocks[0].content, opusUrl);
+  });
+
+  test('WF-32: Verifies native iOS Share Extension & ScribeXShareIntent bridge source contracts', () => {
+    const swiftBridge = fs.readFileSync(
+      path.resolve(__dirname, '../frontend/ios-native-share/ScribeXShareIntentModule.swift'),
+      'utf-8'
+    );
+    const objcBridge = fs.readFileSync(
+      path.resolve(__dirname, '../frontend/ios-native-share/ScribeXShareIntentModule.m'),
+      'utf-8'
+    );
+    const shareVc = fs.readFileSync(
+      path.resolve(__dirname, '../frontend/ios-native-share/ShareViewController.swift'),
+      'utf-8'
+    );
+    const pluginJs = fs.readFileSync(
+      path.resolve(__dirname, '../frontend/plugins/withScribeXShare.js'),
+      'utf-8'
+    );
+    assert.ok(swiftBridge.includes('group.com.nashtech.scribex'));
+    assert.ok(swiftBridge.includes('getPendingSharePayload'));
+    assert.ok(objcBridge.includes('RCT_EXTERN_MODULE(ScribeXShareIntent, RCTEventEmitter)'));
+    assert.ok(shareVc.includes('scribex://share-ingest'));
+    assert.ok(pluginJs.includes('com.apple.security.application-groups'));
   });
 
   console.log('\n=================================================================');

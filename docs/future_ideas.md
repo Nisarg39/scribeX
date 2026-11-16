@@ -45,7 +45,7 @@ Remaining Tasks to fix
 36 - [x] add a pin/password protection feature for individual notes, folder or on start of the app even if the user is logged in or using the skip login option . we will need to add a side navbar in the ui and give this option there for app and for notes and folders we should provide in their respective menu options and in the app lock configuration screen which we will create and navigate it through sidebar settings screen we will list all the notes and folders that have been locked and will provide options to lock/unlock them (SPECIFIED IN docs/Pin_and_Password_Protection_Plan.md) (COMPLETED).
 37 - [x] Pre-Seeded Interactive 'Welcome to ScribeX' Starter Note: On first launch when the database is empty, automatically seed a beautifully formatted starter note demonstrating the 42 input blocks, slash commands (/), pastel color tokens, KaTeX math formulas, interactive checklists, sample callouts, and offline reminder tips so first-time users can immediately explore the canvas without facing a blank screen. (COMPLETED)
 38 - [x] fix the biometrics option configuration for android and ios only . currently there is only one toggle called Biometric Unlock Preference which just turns on and off but there is no default biometric lock that the phone has is being configured
-39 - [] the export chat option from whatsapp is not showing the scribeX app as an option in the app share sheet for mobile platforms
+39 - [x] the export chat option from whatsapp is not showing the scribeX app as an option in the app share sheet for mobile platforms
 
 
 

@@ -69,7 +69,7 @@
         "NSCameraUsageDescription": "ScribeX uses your camera to scan documents, notes, and receipts.",
         "NSMicrophoneUsageDescription": "ScribeX uses your microphone to record voice notes and audio memos.",
         "NSFaceIDUsageDescription": "ScribeX uses Face ID to securely unlock your private notes, folders, and workspace.",
-        "LSSupportsOpeningDocumentsInPlace": true,
+        "LSSupportsOpeningDocumentsInPlace": false,
         "CFBundleDocumentTypes": [
           {
             "CFBundleTypeName": "Text Document",
@@ -88,6 +88,44 @@
             "LSItemContentTypes": [
               "com.pkware.zip-archive",
               "public.zip-archive"
+            ]
+          },
+          {
+            "CFBundleTypeName": "Image",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.image",
+              "public.jpeg",
+              "public.png"
+            ]
+          },
+          {
+            "CFBundleTypeName": "Video",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.movie",
+              "public.mpeg-4",
+              "public.audiovisual-content"
+            ]
+          },
+          {
+            "CFBundleTypeName": "Audio",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.audio",
+              "public.mp3",
+              "org.xiph.opus"
+            ]
+          },
+          {
+            "CFBundleTypeName": "PDF Document",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "com.adobe.pdf"
             ]
           },
           {
@@ -113,7 +151,8 @@
       "expo-font",
       "expo-sqlite",
       "expo-sharing",
-      "expo-audio"
+      "expo-audio",
+      "./plugins/withScribeXShare"
     ]
   }
 }

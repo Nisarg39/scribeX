@@ -405,3 +405,90 @@ export function createBlockFromFile(file: SharedFileItem): ComposableBlock | nul
     },
   };
 }
+
+/**
+ * Infers an accurate MIME type from a filename extension.
+ */
+export function inferMimeTypeFromFileName(fileName: string): string {
+  const ext = (fileName.split('.').pop() || '').toLowerCase();
+  switch (ext) {
+    case 'zip':
+      return 'application/zip';
+    case 'txt':
+      return 'text/plain';
+    case 'opus':
+    case 'ogg':
+      return 'audio/ogg';
+    case 'mp3':
+      return 'audio/mpeg';
+    case 'm4a':
+      return 'audio/mp4';
+    case 'aac':
+      return 'audio/aac';
+    case 'wav':
+      return 'audio/wav';
+    case 'mp4':
+      return 'video/mp4';
+    case 'mov':
+      return 'video/quicktime';
+    case '3gp':
+      return 'video/3gpp';
+    case 'mkv':
+      return 'video/x-matroska';
+    case 'webm':
+      return 'video/webm';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'webp':
+      return 'image/webp';
+    case 'gif':
+      return 'image/gif';
+    case 'heic':
+      return 'image/heic';
+    case 'pdf':
+      return 'application/pdf';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+/**
+ * Builds a NormalizedSharePayload from an iOS `file://` URL (e.g. `Documents/Inbox/` handoff
+ * via CFBundleDocumentTypes when exporting from WhatsApp or sharing files on iOS).
+ */
+export function buildSharePayloadFromIosFileUrl(
+  fileUrl: string,
+  persistedUri?: string,
+  fileSize: number = 0
+): NormalizedSharePayload | null {
+  if (!fileUrl || !fileUrl.startsWith('file://')) return null;
+
+  const withoutQuery = fileUrl.split('?')[0];
+  const rawSegment = withoutQuery.split('/').pop() || '';
+  let decodedName = rawSegment;
+  try {
+    decodedName = decodeURIComponent(rawSegment);
+  } catch {
+    decodedName = rawSegment;
+  }
+
+  const fileName = decodedName.trim() || `shared_${Date.now()}`;
+  const mimeType = inferMimeTypeFromFileName(fileName);
+  const targetUri = persistedUri || fileUrl;
+
+  return {
+    batchId: `ios-inbox-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    files: [
+      {
+        uri: targetUri,
+        fileName,
+        mimeType,
+        fileSize,
+      },
+    ],
+    createdAt: new Date().toISOString(),
+  };
+}

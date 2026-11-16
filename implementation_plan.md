@@ -1,54 +1,58 @@
-# Implementation Plan: Universal Share Ingestion, New/Existing Note Destination Picker & Media Playback Fixes
+# Implementation Plan: iOS Share Sheet Parity for WhatsApp Exports & Universal Media Shares (Zero-Device Verified)
 
-## 1. Architectural Overview
-1. **Prevent OOM on WhatsApp Chat Exports:** Remove `.zip` unpacking and transcript expansion completely. Store exported WhatsApp `.zip` and `.txt` archives strictly in their original file format inside the app sandbox as an intact `FileBlock` attachment.
-2. **Universal Individual Share Detection:** Remove the restrictive `isWhatsAppExportPayload` gate that rejected non-transcript shares. Support all inbound share types from WhatsApp and other apps via the system Share Sheet: individual images, videos, `.opus`/`.mp3`/`.m4a` audio voice notes, PDFs/documents, URLs, and shared text messages.
-3. **"Save in New Note" vs "Add to Existing Note" Destination Prompt:** Whenever an export chat or individual file/message is shared to ScribeX, present a native destination sheet (`ShareDestinationModal`) allowing the user to either:
-   - **Save in a New Note** (default primary option, with pre-filled title & folder selection), or
-   - **Add to an Existing Note** (searchable list of active notes that appends the shared blocks to the chosen note and opens it).
-4. **Fix Shared Media Rendering & Mobile Playback:** Fix `createBlockFromFile()` to store the persistent `file://` URI in `block.content` (so SQLite Markdown serialization preserves it) and fix mobile `VideoBlock` (HTML5 `<video>` instead of YouTube `<iframe>`) and `AudioBlock` (`.opus` playback, silent-mode audio session, and duration sync).
+## 1. Architectural Strategy (Dual-Path iOS Guarantee Without Physical Device Testing)
+To ensure iOS has 100% identical Share Sheet behavior to Android (intact `.zip`/`.txt` WhatsApp chat exports, individual photos, videos, `.opus` voice notes, PDFs, URLs, and text messages, all prompting the **New Note vs Existing Note** modal) and works reliably without manual device debugging, we implement a **Dual-Path iOS Architecture**:
+
+1. **Path A — iOS `Documents/Inbox` Direct File Handoff (`CFBundleDocumentTypes` + `Linking`):**
+   - When exporting a chat from WhatsApp on iOS (`.zip` or `.txt`) or sharing any media/document file via `UIActivityViewController`, iOS natively lists apps matching `CFBundleDocumentTypes`.
+   - By setting `LSSupportsOpeningDocumentsInPlace: false` in `app.json` and registering explicit UTIs (`com.pkware.zip-archive`, `public.zip-archive`, `public.plain-text`, `public.image`, `public.movie`, `public.audiovisual-content`, `public.audio`, `org.xiph.opus`, `com.adobe.pdf`, `public.data`, `public.content`), iOS automatically copies the shared file into ScribeX's readable `Documents/Inbox/` directory and opens ScribeX with a `file:///.../Documents/Inbox/...` URL via `Linking`.
+   - `ShareIngestService.ts` intercepts incoming `file://` URLs from `Linking.getInitialURL()` and `Linking.addEventListener('url')`, moves the file from `Documents/Inbox/` into persistent `FileSystem.documentDirectory + 'shared_media/'`, constructs a `NormalizedSharePayload`, and opens `ShareDestinationModal` (**Save in New Note** vs **Add to Existing Note**).
+   - *Advantage:* Works on 100% of iOS builds immediately without requiring multi-target Xcode Share Extension provisioning.
+
+2. **Path B — iOS Share Extension + Native `ScribeXShareIntent` Bridge (`App Group` + `scribex://share-ingest`):**
+   - For text-only shares, web links, and multi-item bundles on iOS, we provide the complete native iOS module and Share Extension:
+     - `frontend/ios-native-share/ScribeXShareIntentModule.swift` & `.m`: Implements the `ScribeXShareIntent` React Native bridge (`getPendingSharePayload`, `clearPendingSharePayload`, `onSharePayloadReceived`) reading staged payloads from the `group.com.nashtech.scribex` App Group container and copying intact files into `Documents/shared_media/`.
+     - `frontend/ios-native-share/ShareViewController.swift` & `ShareExtension-Info.plist`: Extracts shared text, URLs, and intact files/archives from `NSExtensionContext`, writes `pending_share.json` into the App Group container, and deep-links into `scribex://share-ingest?batchId=...`.
+     - `frontend/plugins/withScribeXShare.js`: An automated Expo Config Plugin wired in `app.json` that configures iOS entitlements (`com.apple.security.application-groups`) and links the native iOS share files during `expo prebuild --platform ios`.
 
 ---
 
 ## 2. Implementation Steps
 
-### Step 1: Native Android Share Sheet & Intact File Storage
+### Step 1: Harden iOS `CFBundleDocumentTypes` & Config Plugin in `app.json`
 - **Files:**
-  - [`frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentModule.kt`](frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentModule.kt)
-  - [`frontend/android/app/src/main/AndroidManifest.xml`](frontend/android/app/src/main/AndroidManifest.xml)
   - [`frontend/app.json`](frontend/app.json)
+  - [`frontend/plugins/withScribeXShare.js`](frontend/plugins/withScribeXShare.js) *(New)*
 - **Changes:**
-  - In `ShareIntentModule.kt`: Remove `.zip` entry extraction in `processUriIntoSandbox()` so `.zip` and `.txt` WhatsApp exports are copied directly into `filesDir/shared_media/` as a single intact file in their original format. Map `.opus` to `audio/ogg` / `audio/opus` and ensure accurate MIME fallback by file extension.
-  - In `AndroidManifest.xml` & `app.json`: Ensure explicit `ACTION_SEND` and `ACTION_SEND_MULTIPLE` intent filters cover `image/*`, `video/*`, `audio/*`, `text/*`, `application/zip`, `application/pdf`, and `*/*`.
+  - Set `"LSSupportsOpeningDocumentsInPlace": false` in `ios.infoPlist` so iOS copies shared files into `Documents/Inbox/` with full sandbox read permissions instead of passing restricted external security-scoped URLs.
+  - Expand `CFBundleDocumentTypes` to explicitly include `public.image`, `public.jpeg`, `public.png`, `public.movie`, `public.mpeg-4`, `public.audiovisual-content`, `public.audio`, `public.mp3`, `org.xiph.opus`, `com.adobe.pdf`, `com.pkware.zip-archive`, `public.zip-archive`, `public.text`, `public.plain-text`, `public.data`, `public.content`, and `public.item`.
+  - Create `frontend/plugins/withScribeXShare.js` and register it in `app.json` `plugins` to automatically inject the `group.com.nashtech.scribex` App Group entitlement and stage native iOS share bridge sources on `expo prebuild`.
 
-### Step 2: Universal Share Block Synthesizer & URI Preservation
+### Step 2: Native iOS `ScribeXShareIntent` Module & Share Extension Sources
 - **Files:**
-  - [`frontend/src/core/share/shareBlockSynthesizer.ts`](frontend/src/core/share/shareBlockSynthesizer.ts)
-  - [`frontend/src/services/share/ShareIngestService.ts`](frontend/src/services/share/ShareIngestService.ts)
+  - [`frontend/ios-native-share/ScribeXShareIntentModule.swift`](frontend/ios-native-share/ScribeXShareIntentModule.swift) *(New)*
+  - [`frontend/ios-native-share/ScribeXShareIntentModule.m`](frontend/ios-native-share/ScribeXShareIntentModule.m) *(New)*
+  - [`frontend/ios-native-share/ShareViewController.swift`](frontend/ios-native-share/ShareViewController.swift) *(New)*
+  - [`frontend/ios-native-share/ShareExtension-Info.plist`](frontend/ios-native-share/ShareExtension-Info.plist) *(New)*
 - **Changes:**
-  - Update `synthesizeShareBlocks(payload)` to accept **any** valid share payload containing `files` and/or `text` (removing the strict WhatsApp-transcript-only rejection).
-  - Convert `.zip` and `.txt` files (including WhatsApp chat exports) into intact `file` blocks (`FileBlock`) rather than parsing transcripts into inline `message_thread` blocks.
-  - Fix `createBlockFromFile()` for `image`, `video`, `audio`, and `file` blocks to set `content: file.uri` (the persistent `file://` URI) and store `fileName` in `metadata.fileName` / `metadata.title` / `metadata.caption`.
-  - Support shared text messages and URLs (`payload.text`) by synthesizing `bookmark` blocks for standalone links and `paragraph` blocks for shared message text.
+  - Implement `ScribeXShareIntentModule` (`RCTEventEmitter`) exposing `getPendingSharePayload` and `clearPendingSharePayload`, reading from `FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.com.nashtech.scribex")`, copying intact `.zip`, `.txt`, and media files to `Documents/shared_media/`, and returning the exact `NormalizedSharePayload` schema used on Android.
+  - Implement `ShareViewController` to accept all `public.item`, `public.url`, and `public.text` attachments without unpacking `.zip` archives (preventing iOS Share Extension 120MB memory limit crashes) and trigger `scribex://share-ingest`.
 
-### Step 3: "New Note vs Existing Note" Share Destination Modal
-- **Files:**
-  - [`frontend/src/components/share/ShareDestinationModal.tsx`](frontend/src/components/share/ShareDestinationModal.tsx) *(New)*
-  - [`frontend/src/state/useNotesStore.tsx`](frontend/src/state/useNotesStore.tsx)
-  - [`frontend/src/services/share/ShareIngestService.ts`](frontend/src/services/share/ShareIngestService.ts)
-  - [`frontend/app/_layout.tsx`](frontend/app/_layout.tsx)
+### Step 3: iOS `file://` (`Documents/Inbox/`) & Deep-Link Ingestion in `ShareIngestService.ts`
+- **File:** [`frontend/src/services/share/ShareIngestService.ts`](frontend/src/services/share/ShareIngestService.ts)
 - **Changes:**
-  - Add `appendBlocksToNote(noteId: string, newBlocks: ComposableBlock[]): Promise<NoteItem | null>` to `useNotesStore.tsx` so shared blocks can be appended to any existing note and persisted via `notesRepo.updateNote()` with `serializeBlocksToMarkdown()`.
-  - Update `ShareIngestService` to notify the UI with a pending `SynthesizedNoteResult` when a share arrives (while keeping direct `ingestSharePayload` support for automated pipelines).
-  - Create `ShareDestinationModal.tsx` and mount it in `RootContent` (`frontend/app/_layout.tsx`), giving the user a clean choice between **"Save in New Note"** (default active tab/action with editable title) and **"Add to Existing Note"** (searchable list of existing notes), navigating to the target note immediately after confirmation.
+  - Add `ingestIosFileUrl(fileUrl: string)` to handle incoming `file://` URLs delivered by iOS `Linking` when a user shares a WhatsApp `.zip`/`.txt` export or media file via `CFBundleDocumentTypes`.
+  - Decode the percent-encoded filename, copy the file from `Documents/Inbox/` into persistent `FileSystem.documentDirectory + 'shared_media/'`, remove the temporary `Inbox` copy, infer the accurate MIME type (`.zip`, `.txt`, `.opus`, `.mp4`, `.jpg`, `.png`, `.pdf`), and invoke `ingestSharePayload()` so `ShareDestinationModal` (**Save in New Note** vs **Add to Existing Note**) opens identically on iOS and Android.
 
-### Step 4: Mobile Local Video & `.opus` Audio Playback Fixes
+### Step 4: Zero-Device iOS Parity Automated Test Suite
 - **Files:**
-  - [`frontend/src/components/editor/blocks/VideoBlock.tsx`](frontend/src/components/editor/blocks/VideoBlock.tsx)
-  - [`frontend/src/components/editor/blocks/AudioBlock.tsx`](frontend/src/components/editor/blocks/AudioBlock.tsx)
+  - [`scripts/test_inbound_share_pipeline.mjs`](scripts/test_inbound_share_pipeline.mjs)
+  - [`.agents/project-map.json`](.agents/project-map.json)
 - **Changes:**
-  - In `VideoBlock.tsx`: Recognize `file://` and `.mp4`/`.mov`/`.webm`/`.3gp`/`.mkv` URLs as direct videos (`type: 'direct'`), sync `videoUrl` state when `url` prop updates, and render an HTML5 `<video controls playsinline preload="metadata">` inside `WebView` with `allowFileAccess={true}` and `allowUniversalAccessFromFileURLs={true}` on mobile.
-  - In `AudioBlock.tsx`: Call `setAudioModeAsync({ playsInSilentMode: true })` before native playback, sync `currentDuration` from `status.duration`, reset finished tracks via `seekTo(0)`, and provide an external player/share fallback button via `expo-sharing`.
+  - Add an iOS Share Sheet Parity test suite (`Suite 7`) in `scripts/test_inbound_share_pipeline.mjs` that programmatically verifies:
+    - `app.json` iOS `CFBundleDocumentTypes` UTI completeness and `LSSupportsOpeningDocumentsInPlace: false`.
+    - iOS `file:///.../Documents/Inbox/` URL parsing, percent-decoding (`WhatsApp%20Chat%20with%20Alice.zip`), MIME mapping, and `NormalizedSharePayload` construction.
+    - Verification of `ScribeXShareIntentModule.swift`, `ShareViewController.swift`, and `withScribeXShare.js` contracts.
 
 ---
 
@@ -56,7 +60,7 @@
 
 | Command | Fit | Reasoning |
 | :--- | :--- | :--- |
-| `/plan` | **Best Fit** | Covers native Android intent handling, universal share block synthesis, a new `ShareDestinationModal` connected to `useNotesStore`, and mobile video/audio player fixes. Reviewing and approving the structured plan ensures clean end-to-end execution. |
-| `/boost` | Medium | Useful if additional multi-pass stress testing is desired, though our scoped verification scripts cover all AST and share flows. |
-| `/teamwork` / `/swarm` | Low | Changes share tight TypeScript contracts across `ShareIngestService`, `useNotesStore`, and `_layout.tsx`. |
-| `/compact` | Medium | Recommended after implementation and APK build if conversation context grows. |
+| `/plan` | **Best Fit** | Reviews and approves the Dual-Path iOS Share Sheet architecture (`Documents/Inbox` `file://` ingestion + Native Share Extension & Config Plugin + Zero-Device Verification Suite) before generating the files. |
+| `/boost` | Medium | Useful if extra static verification passes are needed, though `Suite 7` in `test_inbound_share_pipeline.mjs` will deterministically test every iOS contract. |
+| `/teamwork` / `/swarm` | Low | Tightly coupled configuration between `app.json`, `withScribeXShare.js`, and `ShareIngestService.ts`. |
+| `/compact` | Medium | Can be used after execution to compact conversation history. |

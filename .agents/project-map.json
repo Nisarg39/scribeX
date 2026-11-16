@@ -76,6 +76,8 @@
       "nativeShareBridge": "frontend/src/services/share/NativeShareBridge.ts",
       "shareIngestService": "frontend/src/services/share/ShareIngestService.ts",
       "shareDestinationModal": "frontend/src/components/share/ShareDestinationModal.tsx",
+      "iosSharePlugin": "frontend/plugins/withScribeXShare.js",
+      "iosNativeShareDir": "frontend/ios-native-share/",
       "androidShareModule": "frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentModule.kt",
       "androidSharePackage": "frontend/android/app/src/main/java/com/nashtech/scribex/share/ShareIntentPackage.kt"
     },
