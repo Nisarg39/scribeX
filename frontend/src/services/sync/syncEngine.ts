@@ -294,9 +294,23 @@ export class SyncEngine {
     }
   }
 
+  private async rekeyLocalFolderId(oldId: string, newId: string): Promise<void> {
+    if (!oldId || !newId || oldId === newId) return;
+    await dbClient.withTransaction(async () => {
+      await dbClient.run(`UPDATE folders SET id = ? WHERE id = ?;`, [newId, oldId]);
+      await dbClient.run(`UPDATE folders SET parent_id = ? WHERE parent_id = ?;`, [newId, oldId]);
+      await dbClient.run(`UPDATE notes SET folder_id = ? WHERE folder_id = ?;`, [newId, oldId]);
+      await dbClient.run(
+        `UPDATE sync_changelog SET entity_id = ? WHERE entity_type = 'folder' AND entity_id = ?;`,
+        [newId, oldId]
+      );
+    });
+  }
+
   private async ensureFolderSyncedToSupabase(
     folderId: string,
-    visited: Set<string> = new Set()
+    visited: Set<string> = new Set(),
+    didRemintId: boolean = false
   ): Promise<boolean> {
     if (!folderId || visited.has(folderId)) return false;
     visited.add(folderId);
@@ -332,6 +346,20 @@ export class SyncEngine {
       p_ai_context_excluded: Boolean(folder.ai_context_excluded),
       p_caller_platform: this.deviceSessionId,
     });
+
+    const isCrossTenantPkCollision =
+      !didRemintId &&
+      ((!error && !data) ||
+        (error && (error.code === '23505' || error.message?.includes('duplicate key'))));
+
+    if (isCrossTenantPkCollision) {
+      const remintedId = `folder-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await this.rekeyLocalFolderId(folder.id, remintedId);
+      const retryVisited = new Set<string>(visited);
+      retryVisited.delete(folderId);
+      return this.ensureFolderSyncedToSupabase(remintedId, retryVisited, true);
+    }
+
     if (error) throw new Error(error.message);
     if (data?.sync_rev) {
       await dbClient.run(`UPDATE folders SET sync_rev = ? WHERE id = ?;`, [
@@ -639,8 +667,9 @@ export class SyncEngine {
           });
           if (error) throw new Error(error.message);
         } else {
-          const { error } = await supabase.rpc('rpc_create_task', {
-            p_id: task.id,
+          let activeTaskId = task.id;
+          let { data: taskData, error } = await supabase.rpc('rpc_create_task', {
+            p_id: activeTaskId,
             p_title: task.title,
             p_priority: task.priority,
             p_due_date: task.due_date,
@@ -648,6 +677,38 @@ export class SyncEngine {
             p_note_id: task.note_id,
             p_caller_platform: this.deviceSessionId,
           });
+
+          const isTaskPkCollision =
+            (!error && !taskData) ||
+            (error && (error.code === '23505' || error.message?.includes('duplicate key')));
+
+          if (isTaskPkCollision) {
+            const remintedTaskId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            await dbClient.withTransaction(async () => {
+              await dbClient.run(`UPDATE tasks SET id = ? WHERE id = ?;`, [remintedTaskId, activeTaskId]);
+              await dbClient.run(
+                `UPDATE reminders SET target_id = ? WHERE target_type = 'task' AND target_id = ?;`,
+                [remintedTaskId, activeTaskId]
+              );
+              await dbClient.run(
+                `UPDATE sync_changelog SET entity_id = ? WHERE entity_type = 'task' AND entity_id = ?;`,
+                [remintedTaskId, activeTaskId]
+              );
+            });
+            activeTaskId = remintedTaskId;
+            const retryPk = await supabase.rpc('rpc_create_task', {
+              p_id: activeTaskId,
+              p_title: task.title,
+              p_priority: task.priority,
+              p_due_date: task.due_date,
+              p_reminder_at: task.reminder_at,
+              p_note_id: task.note_id,
+              p_caller_platform: this.deviceSessionId,
+            });
+            taskData = retryPk.data;
+            error = retryPk.error;
+          }
+
           if (error) {
             const isNoteFk =
               error.code === '23503' || error.message?.includes('tasks_note_id_fkey');
@@ -670,7 +731,7 @@ export class SyncEngine {
                 }
               }
               const retryRes = await supabase.rpc('rpc_create_task', {
-                p_id: task.id,
+                p_id: activeTaskId,
                 p_title: task.title,
                 p_priority: task.priority,
                 p_due_date: task.due_date,
@@ -685,7 +746,7 @@ export class SyncEngine {
           }
           if (task.is_completed || typeof delta.deltaPayload?.isCompleted === 'boolean') {
             await supabase.rpc('rpc_toggle_task', {
-              p_task_id: task.id,
+              p_task_id: activeTaskId,
               p_is_completed: Boolean(task.is_completed),
               p_caller_platform: this.deviceSessionId,
             });
@@ -922,20 +983,24 @@ export class SyncEngine {
 
     const uid = this.config.userId;
     const cf = data.folder;
+    const clonedFolders: any[] = Array.isArray(data.folders) && data.folders.length > 0 ? data.folders : [cf];
     const clonedNotes: any[] = Array.isArray(data.notes) ? data.notes : [];
 
     await dbClient.withTransaction(async () => {
-      await this.applyFolderDelta({
-        id: `dup-folder-${cf.id}`,
-        userId: uid,
-        syncRev: cf.sync_rev || 1,
-        entityType: 'folder',
-        entityId: cf.id,
-        changeType: 'insert',
-        deltaPayload: cf,
-        callerPlatform: 'cloud_dup',
-        createdAt: cf.created_at || new Date().toISOString(),
-      });
+      for (const folderItem of clonedFolders) {
+        if (!folderItem?.id) continue;
+        await this.applyFolderDelta({
+          id: `dup-folder-${folderItem.id}`,
+          userId: uid,
+          syncRev: folderItem.sync_rev || 1,
+          entityType: 'folder',
+          entityId: folderItem.id,
+          changeType: 'insert',
+          deltaPayload: folderItem,
+          callerPlatform: 'cloud_dup',
+          createdAt: folderItem.created_at || new Date().toISOString(),
+        });
+      }
 
       for (const cn of clonedNotes) {
         if (!cn?.id) continue;

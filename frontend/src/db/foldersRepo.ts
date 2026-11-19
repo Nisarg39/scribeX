@@ -689,12 +689,84 @@ export class FoldersRepository {
       );
     }
 
-    // Query non-trashed notes in the source folder
+    // Recursively clone descendant subfolders shallow-to-deep (exact prefix match, wildcard-safe)
+    const folderIdMap = new Map<string, string>();
+    const folderPathToIdMap = new Map<string, string>();
+    if (folder?.id) folderIdMap.set(folder.id, newFolder.id);
+    folderIdMap.set(id, newFolder.id);
+    if (cleanSourcePath) folderPathToIdMap.set(cleanSourcePath, newFolder.id);
+
+    const descendantFolders = await dbClient.query<DBFolder>(
+      `SELECT * FROM folders
+       WHERE SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/'
+       ORDER BY LENGTH(path) ASC, path ASC;`,
+      [cleanSourcePath, cleanSourcePath]
+    );
+
+    for (const sub of descendantFolders) {
+      const subNewPath = targetPath + sub.path.slice(cleanSourcePath.length);
+      const subParentId =
+        (sub.parent_id ? folderIdMap.get(sub.parent_id) : undefined) || newFolder.id;
+
+      const clonedSub = await this.createFolder({
+        userId: sub.user_id || effectiveUserId,
+        name: sub.name,
+        path: subNewPath,
+        parentId: subParentId,
+        colorToken: sub.color_token || 'cyan',
+        icon: sub.icon || undefined,
+        aiContextExcluded: sub.ai_context_excluded ? 1 : 0,
+      });
+
+      if (sub.is_locked === 1) {
+        await dbClient.run(
+          `UPDATE folders
+           SET is_locked = 1,
+               lock_type = ?,
+               lock_credential_kind = ?,
+               lock_hash = ?,
+               lock_salt = ?,
+               lock_hint = ?,
+               sync_rev = sync_rev + 1,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?;`,
+          [
+            sub.lock_type || null,
+            sub.lock_credential_kind || null,
+            sub.lock_hash || null,
+            sub.lock_salt || null,
+            sub.lock_hint || null,
+            clonedSub.id,
+          ]
+        );
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
+          [
+            createLogId(),
+            sub.user_id || effectiveUserId,
+            (clonedSub.sync_rev || 1) + 1,
+            clonedSub.id,
+            JSON.stringify({
+              action: 'duplicate_lock_metadata',
+              isLocked: true,
+              lockType: sub.lock_type || null,
+              timestamp: new Date().toISOString(),
+            }),
+          ]
+        );
+      }
+
+      folderIdMap.set(sub.id, clonedSub.id);
+      folderPathToIdMap.set(sub.path, clonedSub.id);
+    }
+
+    // Query non-trashed notes in the source folder AND every descendant subfolder
     const notesToClone = await dbClient.query<any>(
       `SELECT * FROM notes 
        WHERE status != 'trashed' 
-       AND (folder_path = ? OR folder_id = ?);`,
-      [cleanSourcePath, id]
+       AND (folder_path = ? OR SUBSTR(folder_path, 1, LENGTH(?) + 1) = ? || '/' OR folder_id = ?);`,
+      [cleanSourcePath, cleanSourcePath, cleanSourcePath, id]
     );
 
     let duplicatedCount = 0;
@@ -702,6 +774,14 @@ export class FoldersRepository {
       const clonedId = `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const clonedTitle = note.title ? `${note.title} (Copy)` : 'Untitled Note (Copy)';
       const noteUserId = note.user_id || effectiveUserId;
+      const noteTargetFolderId =
+        (note.folder_id ? folderIdMap.get(note.folder_id) : undefined) ||
+        (note.folder_path ? folderPathToIdMap.get(note.folder_path) : undefined) ||
+        newFolder.id;
+      const noteTargetPath =
+        note.folder_path && note.folder_path.startsWith(`${cleanSourcePath}/`)
+          ? targetPath + note.folder_path.slice(cleanSourcePath.length)
+          : targetPath;
 
       await dbClient.run(
         `INSERT INTO notes (
@@ -711,8 +791,8 @@ export class FoldersRepository {
         [
           clonedId,
           noteUserId,
-          newFolder.id,
-          targetPath,
+          noteTargetFolderId,
+          noteTargetPath,
           note.group_name,
           clonedTitle,
           note.content_markdown,
@@ -751,8 +831,8 @@ export class FoldersRepository {
           JSON.stringify({
             id: clonedId,
             title: clonedTitle,
-            folderId: newFolder.id,
-            folderPath: targetPath,
+            folderId: noteTargetFolderId,
+            folderPath: noteTargetPath,
             tags: sourceTags.map((t) => t.name),
             duplicatedFromNoteId: note.id,
             timestamp: new Date().toISOString(),

@@ -106,6 +106,7 @@
       "coreRpcsSql": "supabase/migrations/002_core_rpcs.sql",
       "googleDriveRefreshTokensSql": "supabase/migrations/003_google_drive_refresh_tokens.sql",
       "multiDeviceSyncParitySql": "supabase/migrations/004_multi_device_sync_parity.sql",
+      "syncEdgeCaseHardeningSql": "supabase/migrations/005_sync_edge_case_hardening.sql",
       "googleDriveTokenEdgeFunction": "supabase/functions/google-drive-token/index.ts",
       "sqliteSchema": "frontend/src/db/schema.ts",
       "sqliteNativeClient": "frontend/src/db/client.native.ts",

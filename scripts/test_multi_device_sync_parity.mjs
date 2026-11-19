@@ -844,6 +844,46 @@ test('Gap 7: Entity relations CDC resolves cross-device UNIQUE(source_id, relati
   deviceB.close();
 });
 
+test('Edge-Case Hardening 005: Migration contracts, recursive folder duplicate, task reminder dedup & folder PK rekey', () => {
+  const mig005Path = path.join(projectRoot, 'supabase/migrations/005_sync_edge_case_hardening.sql');
+  assert.ok(fs.existsSync(mig005Path), 'Missing 005_sync_edge_case_hardening.sql');
+  const mig005Src = fs.readFileSync(mig005Path, 'utf-8');
+  assert.ok(mig005Src.includes('CREATE OR REPLACE FUNCTION rpc_upsert_folder('), '005 must harden rpc_upsert_folder');
+  assert.ok(mig005Src.includes('IF NOT FOUND THEN\n    RETURN NULL;\n  END IF;'), '005 must guard cross-tenant PK collisions');
+  assert.ok(mig005Src.includes('CREATE OR REPLACE FUNCTION rpc_create_task('), '005 must harden rpc_create_task');
+  assert.ok(mig005Src.includes('v_existing_rem_id'), '005 rpc_create_task must deduplicate active task reminders');
+  assert.ok(mig005Src.includes('v_cloned_folders'), '005 rpc_duplicate_folder_cascade must return recursive cloned folders');
+
+  const syncSrc = fs.readFileSync(path.join(feDir, 'src/services/sync/syncEngine.ts'), 'utf-8');
+  assert.ok(syncSrc.includes('private async rekeyLocalFolderId('), 'SyncEngine must expose rekeyLocalFolderId');
+  assert.ok(syncSrc.includes('remintedTaskId'), 'SyncEngine must re-mint colliding task IDs');
+  assert.ok(syncSrc.includes('data.folders'), 'duplicateFolderCascadeInCloud must ingest recursive data.folders');
+
+  const foldersRepoSrc = fs.readFileSync(path.join(feDir, 'src/db/foldersRepo.ts'), 'utf-8');
+  assert.ok(foldersRepoSrc.includes('descendantFolders'), 'foldersRepo.duplicateFolderCascade offline fallback must clone descendant subfolders');
+
+  // In-memory SQLite verification for folder PK rekeying & recursive subfolder cloning
+  const db = createDeviceDb();
+  db.prepare(`INSERT INTO folders (id, user_id, name, path) VALUES ('folder-work', ?, 'Work', 'Work');`).run(UID);
+  db.prepare(`INSERT INTO folders (id, user_id, name, parent_id, path) VALUES ('folder-sub', ?, 'Q4', 'folder-work', 'Work/Q4');`).run(UID);
+  db.prepare(`INSERT INTO notes (id, user_id, folder_id, folder_path, title) VALUES ('n-sub', ?, 'folder-sub', 'Work/Q4', 'Nested');`).run(UID);
+  db.prepare(`INSERT INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload) VALUES ('log-f1', ?, 1, 'folder', 'folder-work', 'insert', '{}');`).run(UID);
+
+  // Simulate rekeyLocalFolderId('folder-work' -> 'folder-reminted-1')
+  db.exec(`PRAGMA foreign_keys = OFF;`);
+  db.prepare(`UPDATE folders SET id = ? WHERE id = ?;`).run('folder-reminted-1', 'folder-work');
+  db.prepare(`UPDATE folders SET parent_id = ? WHERE parent_id = ?;`).run('folder-reminted-1', 'folder-work');
+  db.prepare(`UPDATE notes SET folder_id = ? WHERE folder_id = ?;`).run('folder-reminted-1', 'folder-work');
+  db.prepare(`UPDATE sync_changelog SET entity_id = ? WHERE entity_type = 'folder' AND entity_id = ?;`).run('folder-reminted-1', 'folder-work');
+  db.exec(`PRAGMA foreign_keys = ON;`);
+
+  const subAfter = db.prepare(`SELECT parent_id FROM folders WHERE id = 'folder-sub';`).get();
+  const logAfter = db.prepare(`SELECT entity_id FROM sync_changelog WHERE id = 'log-f1';`).get();
+  assert.strictEqual(subAfter.parent_id, 'folder-reminted-1');
+  assert.strictEqual(logAfter.entity_id, 'folder-reminted-1');
+  db.close();
+});
+
 // -----------------------------------------------------------------------------
 // Summary
 // -----------------------------------------------------------------------------
