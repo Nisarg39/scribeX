@@ -3,16 +3,17 @@
  * Source of Truth: docs/Unified_Backend_and_AI_Master_Specification.md (Section 3 & Phase 2)
  */
 
-export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'error';
+export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'offline_guest' | 'error';
 
-export type SyncEntityType = 
+export type SyncEntityType =
   | 'note'
   | 'task'
   | 'reminder'
   | 'folder'
   | 'tag'
   | 'asset'
-  | 'relation';
+  | 'relation'
+  | 'workspace_security';
 
 export type SyncChangeType = 'insert' | 'update' | 'delete';
 
@@ -41,9 +42,19 @@ export interface SyncEngineConfig {
   supabaseUrl?: string;
   supabaseAnonKey?: string;
   userId: string;
+  isGuest?: boolean;
   debounceMs?: number;
   autoSync?: boolean;
 }
 
-export type SyncEventListener = (delta: SyncDelta) => void;
+export interface PaginatedNotesQuery {
+  status?: 'active' | 'archived' | 'trashed' | null;
+  folderId?: string | null;
+  folderPath?: string | null;
+  isFavorite?: boolean | null;
+  searchQuery?: string | null;
+  limit?: number;
+  offset?: number;
+}
 
+export type SyncEventListener = (delta: SyncDelta) => void;

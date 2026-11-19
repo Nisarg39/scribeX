@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { NoteItem, TaskItem, ComposableBlock, TaskPriority, BlockType, ChecklistPoint } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
@@ -9,11 +9,14 @@ import { tagsRepo } from '../db/tagsRepo';
 import { searchHistoryRepo } from '../db/searchHistoryRepo';
 import { remindersRepo } from '../db/remindersRepo';
 import { notificationsRepo } from '../db/notificationsRepo';
+import { leanCacheManager, CLOUD_PAGE_SIZE } from '../db/leanCacheManager';
 import { LockTargetPayload, securityRepo } from '../db/securityRepo';
+import { useAuth } from '../context/AuthContext';
 import { useSecurity } from '../context/SecurityContext';
 import { computeLockedNoteIdSet } from '../core/security/vaultLockHelpers';
 import { notificationService } from '../services/notifications/NotificationService';
 import { syncEngine } from '../services/sync/syncEngine';
+import { isSupabaseConfigured } from '../services/supabase/supabaseClient';
 import { ReminderRecord, parseReminderString, getNextOccurrence } from '../types/reminder';
 import {
   DBFolder,
@@ -80,6 +83,8 @@ interface NotesContextValue {
   loadNextPage: () => void;
   resetPagination: () => void;
   upsertSyncedNote: (note: NoteItem) => void;
+  registerActiveEditorNote: (noteId: string | null) => void;
+  getPageOneNoteIds: () => ReadonlySet<string>;
   recentSearches: string[];
   recordSearchHistory: (query: string, source?: SearchHistorySource) => void;
   deleteSearchHistoryItem: (query: string) => void;
@@ -227,6 +232,8 @@ const NotesContext = createContext<NotesContextValue>({
   loadNextPage: () => {},
   resetPagination: () => {},
   upsertSyncedNote: () => {},
+  registerActiveEditorNote: () => {},
+  getPageOneNoteIds: () => new Set<string>(),
   recentSearches: [],
   recordSearchHistory: () => {},
   deleteSearchHistoryItem: () => {},
@@ -312,6 +319,7 @@ const NotesContext = createContext<NotesContextValue>({
 });
 
 export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { userId, isAuthenticated, isGuest, isLoading: isAuthLoading } = useAuth();
   const {
     unlockedNoteIds,
     unlockedFolderPaths,
@@ -320,6 +328,19 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     relockFolderSession,
     relockFoldersOnSwitch,
   } = useSecurity();
+  const pageOneIdsRef = useRef<Set<string>>(new Set());
+  const activeOpenNoteIdRef = useRef<string | null>(null);
+  const [hasMoreCloud, setHasMoreCloud] = useState<boolean>(false);
+  const cloudFetchOffsetRef = useRef<number>(0);
+  const isFetchingCloudPageRef = useRef<boolean>(false);
+
+  const registerActiveEditorNote = useCallback((noteId: string | null) => {
+    activeOpenNoteIdRef.current = noteId;
+  }, []);
+
+  const getPageOneNoteIds = useCallback((): ReadonlySet<string> => {
+    return pageOneIdsRef.current;
+  }, []);
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [folders, setFolders] = useState<DBFolder[]>([]);
@@ -482,11 +503,80 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     AsyncStorage.setItem('scribex_sort_preference', sortBy).catch(() => {});
   };
 
+  const buildCloudQueryParams = useCallback(
+    (req: NoteQueryRequest, limit: number = CLOUD_PAGE_SIZE, offset: number = 0) => {
+      const statusMap: Record<NoteStatusScope, 'active' | 'archived' | 'trashed' | null> = {
+        active: 'active',
+        favorites: 'active',
+        archived: 'archived',
+        trashed: 'trashed',
+        all_non_trashed: null,
+      };
+      return {
+        status: statusMap[req.statusScope] ?? 'active',
+        folderPath: req.folderPath || null,
+        isFavorite: req.statusScope === 'favorites' ? true : null,
+        searchQuery: req.searchQuery.trim() || null,
+        limit,
+        offset,
+      };
+    },
+    []
+  );
+
+  const mergeCloudCardsIntoState = useCallback((cloudRows: any[]) => {
+    const mapped = cloudRows.map((row) => leanCacheManager.mapCloudNoteToNoteItem(row));
+    setNotes((prev) => {
+      const byId = new Map<string, NoteItem>();
+      for (const n of prev) {
+        byId.set(n.id, n);
+      }
+      for (const cloudItem of mapped) {
+        const existing = byId.get(cloudItem.id);
+        // Never overwrite an actively hydrated note in RAM with a dehydrated card stub unless cloud syncRev is newer
+        if (
+          existing &&
+          !existing.isDehydrated &&
+          existing.id === activeOpenNoteIdRef.current &&
+          (existing.syncRev || 0) >= (cloudItem.syncRev || 0)
+        ) {
+          continue;
+        }
+        byId.set(cloudItem.id, cloudItem);
+      }
+      return Array.from(byId.values());
+    });
+  }, []);
+
   const loadNextPage = () => {
     setQueryRequestState((prev) => ({
       ...prev,
       page: prev.page + 1,
     }));
+
+    if (
+      isAuthenticated &&
+      !isGuest &&
+      isSupabaseConfigured() &&
+      hasMoreCloud &&
+      !isFetchingCloudPageRef.current
+    ) {
+      isFetchingCloudPageRef.current = true;
+      const offset = cloudFetchOffsetRef.current;
+      syncEngine
+        .fetchPaginatedNotesFromCloud(buildCloudQueryParams(queryRequest, CLOUD_PAGE_SIZE, offset))
+        .then((rows) => {
+          mergeCloudCardsIntoState(rows);
+          cloudFetchOffsetRef.current = offset + rows.length;
+          setHasMoreCloud(rows.length >= CLOUD_PAGE_SIZE);
+        })
+        .catch((err) => {
+          console.warn('Cloud pagination loadNextPage failed cleanly:', err);
+        })
+        .finally(() => {
+          isFetchingCloudPageRef.current = false;
+        });
+    }
   };
 
   const resetPagination = () => {
@@ -806,10 +896,76 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
+  // Auth-Gated Initialization: Guest = 100% Local Offline, Authenticated = Cloud Sync + Lean Page-1 Cache
   useEffect(() => {
-    refreshFromDB();
-    syncEngine.initialize().catch((err) => console.warn('Failed to init syncEngine:', err));
-    const unsubscribeSync = syncEngine.subscribe(() => {
+    if (isAuthLoading) return;
+
+    let isActive = true;
+    let unsubscribeCDC: (() => void) | null = null;
+
+    async function bootstrapWorkspace() {
+      if (isGuest || !isAuthenticated || !userId || userId === 'user-default') {
+        await syncEngine
+          .initialize({ userId: 'user-default', isGuest: true })
+          .catch(() => {});
+        if (isActive) {
+          setHasMoreCloud(false);
+          cloudFetchOffsetRef.current = 0;
+          await refreshFromDB();
+        }
+        return;
+      }
+
+      // Logged-In Cloud Mode: Initialize SyncEngine, Subscribe Realtime CDC, Flush Outbox & Sync Page 1 Cache
+      await syncEngine.initialize({ userId, isGuest: false }).catch((err) => {
+        console.warn('Failed to init authenticated syncEngine:', err);
+      });
+      if (!isActive) return;
+
+      unsubscribeCDC = syncEngine.subscribeToRealtimeCDC();
+
+      await refreshFromDB();
+
+      if (isSupabaseConfigured()) {
+        try {
+          await syncEngine.flushNow().catch((err) => {
+            console.warn('Initial Outbox flush deferred (offline or retryable):', err);
+          });
+          await syncEngine.pullWorkspaceMetadataFromCloud().catch((err) => {
+            console.warn('Metadata pull skipped cleanly:', err);
+          });
+
+          const cloudPage1 = await syncEngine.fetchPaginatedNotesFromCloud({
+            status: 'active',
+            limit: CLOUD_PAGE_SIZE,
+            offset: 0,
+          });
+          if (!isActive) return;
+
+          const page1Ids = await leanCacheManager.cachePageOnePreviews(cloudPage1, userId);
+          pageOneIdsRef.current = new Set(page1Ids);
+          cloudFetchOffsetRef.current = cloudPage1.length;
+          setHasMoreCloud(cloudPage1.length >= CLOUD_PAGE_SIZE);
+
+          await leanCacheManager.enforcePageOneFootprint(
+            pageOneIdsRef.current,
+            activeOpenNoteIdRef.current
+          );
+
+          await refreshFromDB();
+        } catch (cloudErr) {
+          console.warn('Cloud hydration skipped (running from local cache):', cloudErr);
+        }
+      }
+    }
+
+    bootstrapWorkspace();
+
+    const unsubscribeSync = syncEngine.subscribe((delta) => {
+      if (delta.entityType === 'note' && delta.changeType === 'delete') {
+        setNotes((prev) => prev.filter((n) => n.id !== delta.entityId));
+        return;
+      }
       refreshFromDB();
     });
 
@@ -823,7 +979,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     AsyncStorage.getItem('scribex_sort_preference')
       .then((savedSort) => {
-        if (savedSort) {
+        if (savedSort && isActive) {
           setQueryRequestState((prev) => ({
             ...prev,
             sortBy: savedSort as NoteSortBy,
@@ -833,11 +989,51 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       .catch(() => {});
 
     return () => {
+      isActive = false;
+      unsubscribeCDC?.();
       unsubscribeSync();
       unsubscribeDelivery();
       clearInterval(reminderCheckTimer);
     };
-  }, []);
+  }, [isAuthLoading, isAuthenticated, isGuest, userId]);
+
+  // Server-Side Debounced Query for Search, Folder Selection, and Filter Chips (Logged-In Mode)
+  useEffect(() => {
+    if (isAuthLoading || isGuest || !isAuthenticated || !isSupabaseConfigured()) return;
+
+    const hasServerFilter =
+      queryRequest.searchQuery.trim().length > 0 ||
+      Boolean(queryRequest.folderPath) ||
+      queryRequest.statusScope !== 'active';
+
+    if (!hasServerFilter) return;
+
+    const delayMs = queryRequest.searchQuery.trim().length > 0 ? 250 : 0;
+    const timer = setTimeout(() => {
+      cloudFetchOffsetRef.current = 0;
+      syncEngine
+        .fetchPaginatedNotesFromCloud(buildCloudQueryParams(queryRequest, CLOUD_PAGE_SIZE, 0))
+        .then((rows) => {
+          mergeCloudCardsIntoState(rows);
+          cloudFetchOffsetRef.current = rows.length;
+          setHasMoreCloud(rows.length >= CLOUD_PAGE_SIZE);
+        })
+        .catch((err) => {
+          console.warn('Cloud filter/search query failed cleanly:', err);
+        });
+    }, delayMs);
+
+    return () => clearTimeout(timer);
+  }, [
+    isAuthLoading,
+    isAuthenticated,
+    isGuest,
+    queryRequest.searchQuery,
+    queryRequest.folderPath,
+    queryRequest.statusScope,
+    buildCloudQueryParams,
+    mergeCloudCardsIntoState,
+  ]);
 
   const addNote = async (
     title: string,
@@ -851,10 +1047,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const cleanContent = content.trim();
 
     // Optimistic UI placeholder
+    const effectiveUserId = isAuthenticated && !isGuest ? userId : 'user-default';
     const tempId = `note-${Date.now()}`;
     const optimisticNote: NoteItem = {
       id: tempId,
-      userId: 'user-default',
+      userId: effectiveUserId,
       folderPath,
       title: cleanTitle,
       contentMarkdown: cleanContent,
@@ -873,6 +1070,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const created = await notesRepo.createNote({
         id: tempId,
+        userId: effectiveUserId,
         title: cleanTitle,
         contentMarkdown: cleanContent,
         folderPath,
@@ -908,10 +1106,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const cleanTitle = (title && title.trim()) || 'Untitled Note';
     const contentMarkdown = serializeBlocksToMarkdown(blocks);
 
+    const effectiveUserId = isAuthenticated && !isGuest ? userId : 'user-default';
     const tempId = `note-${Date.now()}`;
     const optimisticNote: NoteItem = {
       id: tempId,
-      userId: 'user-default',
+      userId: effectiveUserId,
       folderPath,
       title: cleanTitle,
       contentMarkdown,
@@ -930,6 +1129,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const created = await notesRepo.createNote({
         id: tempId,
+        userId: effectiveUserId,
         title: cleanTitle,
         contentMarkdown,
         blocks,
@@ -1188,12 +1388,13 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     noteColorToken?: NoteColorToken
   ) => {
     if (!title.trim()) return;
+    const effectiveUserId = isAuthenticated && !isGuest ? userId : 'user-default';
     const tempId = `task-${Date.now()}`;
     const cleanTitle = title.trim();
 
     const optimisticTask: TaskItem = {
       id: tempId,
-      userId: 'user-default',
+      userId: effectiveUserId,
       noteId,
       noteTitle,
       noteColorToken,
@@ -1210,6 +1411,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const created = await tasksRepo.createTask({
         id: tempId,
+        userId: effectiveUserId,
         title: cleanTitle,
         priority,
         dueDate,
@@ -1356,12 +1558,14 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         totalMatches: unifiedFeed.totalMatches,
         mainFeedTotal: unifiedFeed.mainFeedTotal,
         visibleCount: unifiedFeed.visibleCount,
-        hasMore: unifiedFeed.hasMore,
+        hasMore: unifiedFeed.hasMore || (isAuthenticated && !isGuest && hasMoreCloud),
         isSearchActive: unifiedFeed.isSearchActive,
         partitionCounts: unifiedFeed.counts,
         loadNextPage,
         resetPagination,
         upsertSyncedNote,
+        registerActiveEditorNote,
+        getPageOneNoteIds,
         recentSearches,
         recordSearchHistory,
         deleteSearchHistoryItem,

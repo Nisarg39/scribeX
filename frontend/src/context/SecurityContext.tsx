@@ -36,6 +36,7 @@ import {
   checkBiometricCapability,
   BiometricCapability,
 } from '../core/security/biometrics';
+import { syncEngine } from '../services/sync/syncEngine';
 
 interface SecurityContextValue {
   securityConfig: WorkspaceSecurityConfig;
@@ -228,6 +229,18 @@ export const SecurityProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       active = false;
     };
   }, []);
+
+  // Refresh in-memory security config when a remote workspace_security CDC delta arrives
+  useEffect(() => {
+    const unsubscribe = syncEngine.subscribe((delta) => {
+      if (delta.entityType === 'workspace_security') {
+        refreshSecurityConfig().catch((err) => {
+          console.warn('Failed to refresh security config after remote sync:', err);
+        });
+      }
+    });
+    return unsubscribe;
+  }, [refreshSecurityConfig]);
 
   // Enforce timed auto-relock expiration (1 min, 5 min, 15 min)
   useEffect(() => {

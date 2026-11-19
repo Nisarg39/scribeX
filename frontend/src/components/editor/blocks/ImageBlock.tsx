@@ -1,6 +1,19 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { View, Text, TextInput, Image, Pressable, Modal, DimensionValue, PanResponder } from 'react-native';
+import {
+  View,
+  Text,
+  TextInput,
+  Image,
+  Pressable,
+  Modal,
+  DimensionValue,
+  PanResponder,
+  Platform,
+  ActivityIndicator,
+} from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../../../theme';
+import { stagePickedImageLocally } from '../../../services/drive/googleDriveVaultService';
 import { 
   Maximize2, 
   X, 
@@ -10,7 +23,8 @@ import {
   AlignCenter,
   AlignRight,
   MoveHorizontal,
-  Trash2
+  Trash2,
+  Upload,
 } from 'lucide-react-native';
 
 export type ImageWidth = '33%' | '50%' | '75%' | '100%';
@@ -29,7 +43,8 @@ interface ImageBlockProps {
     caption: string,
     width: ImageWidth,
     align: ImageAlign,
-    aspectRatio: ImageRatio
+    aspectRatio: ImageRatio,
+    mediaMeta?: { fileName?: string; mimeType?: string; isMediaReplacement?: boolean }
   ) => void;
   onFocus?: () => void;
   onLongPress?: () => void;
@@ -70,6 +85,7 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [isUrlEditing, setIsUrlEditing] = useState(false);
   const [urlInput, setUrlInput] = useState(imageUrl);
+  const [isPickingImage, setIsPickingImage] = useState(false);
 
   React.useEffect(() => {
     if (url && url !== imageUrl) {
@@ -82,7 +98,52 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
     const next = urlInput.trim() || DEFAULT_IMAGE;
     setImageUrl(next);
     setIsUrlEditing(false);
-    onUpdateImage(next, imageCaption, currentWidth, currentAlign, currentRatio);
+    onUpdateImage(next, imageCaption, currentWidth, currentAlign, currentRatio, {
+      isMediaReplacement: next !== imageUrl,
+    });
+  };
+
+  const handlePickFromDevice = async () => {
+    if (isPickingImage) return;
+    setIsPickingImage(true);
+    try {
+      if (Platform.OS !== 'web') {
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) {
+          setIsPickingImage(false);
+          return;
+        }
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 0.9,
+        base64: Platform.OS === 'web',
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const staged = await stagePickedImageLocally({
+          uri: asset.uri,
+          fileName: asset.fileName,
+          mimeType: asset.mimeType,
+          base64: asset.base64,
+        });
+        setImageUrl(staged.uri);
+        setUrlInput(staged.uri);
+        setIsUrlEditing(false);
+        onUpdateImage(staged.uri, imageCaption, currentWidth, currentAlign, currentRatio, {
+          fileName: staged.fileName,
+          mimeType: staged.mimeType,
+          isMediaReplacement: true,
+        });
+      }
+    } catch (err) {
+      console.warn('Failed to pick local image:', err);
+    } finally {
+      setIsPickingImage(false);
+    }
   };
 
   const handleCaptionChange = (text: string) => {
@@ -209,10 +270,26 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
 
             <View className="w-[1px] h-3 bg-white/20 mx-0.5" />
 
+            {/* Upload from Device */}
+            <Pressable
+              onPress={handlePickFromDevice}
+              disabled={isPickingImage}
+              hitSlop={6}
+              className="p-1 rounded-full active:opacity-70"
+              accessibilityLabel="Upload Image from Device"
+            >
+              {isPickingImage ? (
+                <ActivityIndicator size={11} color="#FFFFFF" />
+              ) : (
+                <Upload size={11} color="#FFFFFF" />
+              )}
+            </Pressable>
+
             {/* Edit URL */}
             <Pressable
               onPress={() => setIsUrlEditing(!isUrlEditing)}
-              className="p-1 rounded-full hover:bg-white/20"
+              hitSlop={6}
+              className="p-1 rounded-full active:opacity-70"
               accessibilityLabel="Change Image URL"
             >
               <LinkIcon size={11} color="#FFFFFF" />
@@ -253,9 +330,25 @@ export const ImageBlock: React.FC<ImageBlockProps> = ({
               autoCapitalize="none"
             />
             <Pressable
+              onPress={handlePickFromDevice}
+              disabled={isPickingImage}
+              hitSlop={6}
+              className="px-2.5 py-1 rounded-lg border border-light-border dark:border-white/15 flex-row items-center gap-1 active:opacity-80"
+              accessibilityLabel="Upload from Device"
+            >
+              {isPickingImage ? (
+                <ActivityIndicator size="small" color={isDark ? '#FFFFFF' : '#111111'} />
+              ) : (
+                <Upload size={12} color={isDark ? '#FFFFFF' : '#111111'} />
+              )}
+              <Text className="text-xs font-semibold text-light-textPrimary dark:text-dark-textPrimary">
+                Device
+              </Text>
+            </Pressable>
+            <Pressable
               onPress={handleSaveUrl}
-              style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}
-              className="px-3 py-1 rounded-lg bg-light-iconBg dark:bg-white"
+              hitSlop={6}
+              className="px-3 py-1 rounded-lg bg-light-iconBg dark:bg-white active:opacity-80"
             >
               <Text className="text-xs font-bold text-white dark:text-[#111111]">
                 Apply

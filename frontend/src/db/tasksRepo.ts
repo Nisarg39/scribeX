@@ -7,6 +7,7 @@ import { dbClient } from './client';
 import { DBTask, CreateTaskDTO, TaskFilter } from './types';
 import { TaskItem } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
+import { syncEngine } from '../services/sync/syncEngine';
 
 const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -61,6 +62,7 @@ export class TasksRepository {
        VALUES (?, ?, 1, 'task', ?, 'insert', ?);`,
       [createLogId(), userId, taskId, JSON.stringify({ id: taskId, title: cleanTitle })]
     );
+    syncEngine.schedulePush();
 
     const created = await this.getTaskById(taskId);
     return created!;
@@ -117,6 +119,7 @@ export class TasksRepository {
        VALUES (?, ?, 1, 'task', ?, 'update', ?);`,
       [createLogId(), task.userId, id, JSON.stringify({ isCompleted: nextVal })]
     );
+    syncEngine.schedulePush();
 
     return nextVal;
   }
@@ -153,6 +156,12 @@ export class TasksRepository {
     params.push(id);
 
     await dbClient.run(`UPDATE tasks SET ${clauses.join(', ')} WHERE id = ?;`, params);
+    await dbClient.run(
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+       VALUES (?, ?, 1, 'task', ?, 'update', ?);`,
+      [createLogId(), existing.userId, id, JSON.stringify(updates)]
+    );
+    syncEngine.schedulePush();
     const updated = await this.getTaskById(id);
     return updated!;
   }
@@ -180,6 +189,7 @@ export class TasksRepository {
        VALUES (?, ?, 1, 'task', ?, 'delete', ?);`,
       [createLogId(), task.userId, id, JSON.stringify({ id })]
     );
+    syncEngine.schedulePush();
   }
 
   public async getTasksByNoteId(noteId: string): Promise<TaskItem[]> {

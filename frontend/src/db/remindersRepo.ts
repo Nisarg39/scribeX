@@ -6,6 +6,7 @@
 import { dbClient } from './client';
 import { DBReminder } from './types';
 import { ReminderRecord, CreateReminderDTO, ReminderTargetType } from '../types/reminder';
+import { syncEngine } from '../services/sync/syncEngine';
 
 const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
@@ -77,6 +78,7 @@ export class RemindersRepository {
     );
 
     const created = await this.getReminderById(id);
+    syncEngine.schedulePush();
     return created!;
   }
 
@@ -170,6 +172,7 @@ export class RemindersRepository {
        VALUES (?, ?, 1, 'reminder', ?, 'update', ?);`,
       [createLogId(), reminder.userId, id, JSON.stringify({ isDismissed: true })]
     );
+    syncEngine.schedulePush();
 
     return this.getReminderById(id);
   }
@@ -195,6 +198,7 @@ export class RemindersRepository {
        VALUES (?, ?, 1, 'reminder', ?, 'delete', ?);`,
       [createLogId(), reminder.userId, id, JSON.stringify({ id })]
     );
+    syncEngine.schedulePush();
   }
 
   public async deleteRemindersByTarget(

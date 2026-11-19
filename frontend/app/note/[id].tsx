@@ -1,52 +1,72 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, AppState, AppStateStatus } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme, NoteColors } from '../../src/theme';
-import { useSecurity } from '../../src/context';
+import { useAuth, useSecurity } from '../../src/context';
 import { useNotesStore } from '../../src/state/useNotesStore';
 import { notesRepo } from '../../src/db/notesRepo';
+import { leanCacheManager } from '../../src/db/leanCacheManager';
+import { syncEngine } from '../../src/services/sync/syncEngine';
+import { googleDriveVaultService } from '../../src/services/drive/googleDriveVaultService';
+import { isSupabaseConfigured } from '../../src/services/supabase/supabaseClient';
 import { NoteItem } from '../../src/types/note';
 import { BlockEditor } from '../../src/components/editor/BlockEditor';
 import { inspectNoteLockState } from '../../src/core/security/vaultLockHelpers';
-import { ArrowLeft, FileQuestion, Lock, ShieldCheck } from 'lucide-react-native';
+import { ArrowLeft, FileQuestion, Lock, ShieldCheck, WifiOff, RefreshCw } from 'lucide-react-native';
 
 export default function NoteEditorScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isDark } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { userId, isAuthenticated, isGuest } = useAuth();
   const {
     unlockedNoteIds,
     unlockedFolderPaths,
     promptUnlockNote,
     relockNoteOnEditorExit,
   } = useSecurity();
-  const { notes, folders, updateNote, deleteNote, refreshFromDB } = useNotesStore();
+  const {
+    notes,
+    folders,
+    updateNote,
+    deleteNote,
+    refreshFromDB,
+    registerActiveEditorNote,
+    getPageOneNoteIds,
+  } = useNotesStore();
 
   const [localNote, setLocalNote] = useState<NoteItem | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(true);
+  const [isOfflineUnavailable, setIsOfflineUnavailable] = useState<boolean>(false);
+  const [retryNonce, setRetryNonce] = useState<number>(0);
   const didAutoPromptRef = useRef<string | null>(null);
   const isClosingRef = useRef<boolean>(false);
 
-  // Look up note from store or directly from repository
+  // Look up note from store, local SQLite, or on-demand Supabase cloud hydration
   useEffect(() => {
     let isMounted = true;
 
     async function resolveNote() {
       if (!id) {
-        setIsResolving(false);
+        if (isMounted) setIsResolving(false);
         return;
       }
 
-      // If we already have this note loaded into local state, skip redundant resolution
-      if (localNote) {
-        if (localNote.id === id) {
-          setIsResolving(false);
+      if (isMounted) {
+        setIsResolving(true);
+        setIsOfflineUnavailable(false);
+      }
+
+      // If we already have a hydrated non-dehydrated note loaded for this ID (and not retrying), skip
+      if (localNote && retryNonce === 0) {
+        if (localNote.id === id && !localNote.isDehydrated) {
+          if (isMounted) setIsResolving(false);
           return;
         }
         if (id === 'new' && localNote.id.startsWith('draft-')) {
-          setIsResolving(false);
+          if (isMounted) setIsResolving(false);
           return;
         }
       }
@@ -56,9 +76,9 @@ export default function NoteEditorScreen() {
         const draftId = `draft-${Date.now()}`;
         const draftNote: NoteItem = {
           id: draftId,
-          userId: 'user-default',
+          userId: isAuthenticated && !isGuest ? userId : 'user-default',
           folderPath: 'General',
-          title: '', // Empty initial title so "Note Title..." placeholder is shown
+          title: '',
           contentMarkdown: '',
           blocks: [{ id: `b-${Date.now()}`, type: 'paragraph', content: '' }],
           colorToken: 'apricot',
@@ -77,28 +97,98 @@ export default function NoteEditorScreen() {
         return;
       }
 
-      // 2. Check in memory notes store first
-      const storeMatch = notes.find((n) => n.id === id);
-      if (storeMatch) {
-        if (isMounted) {
-          setLocalNote(storeMatch);
-          setIsResolving(false);
-        }
-        return;
-      }
+      registerActiveEditorNote(id);
 
-      // 3. Fallback to SQLite DB directly (useful for direct web page refresh or link sharing)
       try {
+        const storeMatch = notes.find((n) => n.id === id);
         const dbMatch = await notesRepo.getNoteById(id);
-        if (isMounted) {
-          if (dbMatch) {
-            setLocalNote(dbMatch);
-            updateNote(dbMatch);
+        const hasPendingLocalEdits = await syncEngine.hasPendingChanges('note', id);
+
+        // If Guest Mode OR (dirty local copy is non-dehydrated with full blocks), open immediately (<2ms) from local SQLite
+        const localNonDehydrated =
+          dbMatch && !dbMatch.isDehydrated && dbMatch.blocks.length > 0
+            ? dbMatch
+            : storeMatch && !storeMatch.isDehydrated && storeMatch.blocks.length > 0
+            ? storeMatch
+            : null;
+
+        if (isGuest || !isAuthenticated || (hasPendingLocalEdits && localNonDehydrated)) {
+          let candidate = localNonDehydrated || dbMatch || storeMatch || null;
+
+          if (candidate && isAuthenticated && !isGuest && userId && candidate.blocks?.length > 0) {
+            const hydratedMediaBlocks = await googleDriveVaultService.hydrateNoteMediaToTempCache(
+              candidate.id,
+              candidate.blocks,
+              userId
+            );
+            candidate = { ...candidate, blocks: hydratedMediaBlocks };
           }
+
+          if (isMounted) {
+            if (candidate) {
+              setLocalNote(candidate);
+            }
+            setIsResolving(false);
+          }
+          return;
+        }
+
+        // Logged-In Mode (Clean): Hydrate full `blocks_json` on demand from Supabase
+        if (isSupabaseConfigured()) {
+          try {
+            const cloudNote = await syncEngine.fetchFullNoteFromCloud(id);
+            if (cloudNote) {
+              const hydrated = await leanCacheManager.hydrateNoteForEditing(cloudNote);
+              const hydratedMediaBlocks = userId
+                ? await googleDriveVaultService.hydrateNoteMediaToTempCache(
+                    hydrated.id,
+                    hydrated.blocks,
+                    userId
+                  )
+                : hydrated.blocks;
+              const hydratedWithMedia: NoteItem = {
+                ...hydrated,
+                blocks: hydratedMediaBlocks,
+              };
+              if (isMounted) {
+                setLocalNote(hydratedWithMedia);
+                updateNote(hydratedWithMedia);
+                setIsResolving(false);
+              }
+              return;
+            }
+            // Note no longer exists on cloud and was not dirty locally
+            if (isMounted) {
+              setLocalNote(null);
+              setIsResolving(false);
+            }
+            return;
+          } catch (cloudErr) {
+            console.warn(`Cloud hydration offline/failed for note ${id}:`, cloudErr);
+            // Fall back cleanly if non-dehydrated blocks happen to exist in local working cache
+            if (dbMatch && !dbMatch.isDehydrated && dbMatch.blocks.length > 0) {
+              if (isMounted) {
+                setLocalNote(dbMatch);
+                setIsResolving(false);
+              }
+              return;
+            }
+            if (isMounted) {
+              setIsOfflineUnavailable(true);
+              setIsResolving(false);
+            }
+            return;
+          }
+        }
+
+        // Fallback if Supabase credentials are unset
+        const fallbackNote = dbMatch || storeMatch || null;
+        if (isMounted) {
+          setLocalNote(fallbackNote);
           setIsResolving(false);
         }
       } catch (err) {
-        console.warn(`Failed to resolve note ${id} from repository:`, err);
+        console.warn(`Failed to resolve note ${id}:`, err);
         if (isMounted) setIsResolving(false);
       }
     }
@@ -108,18 +198,46 @@ export default function NoteEditorScreen() {
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [id, retryNonce, isAuthenticated, isGuest, userId]);
 
-  // Immediate-on-exit auto-relock lifecycle when leaving the Note Editor
+  // Flush pending deltas immediately when app moves to background while Editor is open
   useEffect(() => {
+    if (isGuest || !isAuthenticated) return;
+
+    const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      if (nextState === 'background' || nextState === 'inactive') {
+        syncEngine.flushNow().catch(() => {});
+      }
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, [isAuthenticated, isGuest]);
+
+  // Immediate-on-exit auto-relock + Cloud Flush + Lean Local Eviction + Drive Temp Cache Purge on Editor unmount
+  useEffect(() => {
+    isClosingRef.current = false;
     const activeId = localNote?.id;
     return () => {
       isClosingRef.current = true;
       if (activeId && !activeId.startsWith('draft-')) {
         relockNoteOnEditorExit(activeId);
+        googleDriveVaultService.purgeNoteTempCache(activeId).catch(() => {});
+        if (isAuthenticated && !isGuest) {
+          syncEngine
+            .flushNow()
+            .catch(() => {})
+            .finally(() => {
+              leanCacheManager
+                .dehydrateNoteAfterSync(activeId, getPageOneNoteIds())
+                .catch(() => {});
+            });
+        }
       }
+      registerActiveEditorNote(null);
     };
-  }, [localNote?.id, relockNoteOnEditorExit]);
+  }, [localNote?.id, relockNoteOnEditorExit, isAuthenticated, isGuest, getPageOneNoteIds, registerActiveEditorNote]);
 
   const lockInspection =
     localNote && !localNote.id.startsWith('draft-')
@@ -141,11 +259,18 @@ export default function NoteEditorScreen() {
     }
   }, [isResolving, localNote, isRouteNoteLocked, folders, promptUnlockNote]);
 
-  const handleClose = () => {
+  const handleClose = async () => {
     isClosingRef.current = true;
-    if (localNote?.id && !localNote.id.startsWith('draft-')) {
-      relockNoteOnEditorExit(localNote.id);
+    const activeId = localNote?.id;
+    if (activeId && !activeId.startsWith('draft-')) {
+      relockNoteOnEditorExit(activeId);
+      await googleDriveVaultService.purgeNoteTempCache(activeId).catch(() => {});
+      if (isAuthenticated && !isGuest) {
+        await syncEngine.flushNow().catch(() => {});
+        await leanCacheManager.dehydrateNoteAfterSync(activeId, getPageOneNoteIds()).catch(() => {});
+      }
     }
+    registerActiveEditorNote(null);
     refreshFromDB();
     if (router.canGoBack()) {
       router.back();
@@ -156,6 +281,9 @@ export default function NoteEditorScreen() {
 
   const handleNoteUpdated = (updated: NoteItem) => {
     setLocalNote(updated);
+    if (updated.id && !updated.id.startsWith('draft-')) {
+      registerActiveEditorNote(updated.id);
+    }
     updateNote(updated);
     // When a draft receives its first committed action, replace URL from /note/new to /note/<realId>
     if (id === 'new' && updated.id && !updated.id.startsWith('draft-')) {
@@ -164,6 +292,7 @@ export default function NoteEditorScreen() {
   };
 
   const handleNoteDeleted = (noteId: string) => {
+    registerActiveEditorNote(null);
     deleteNote(noteId);
     router.replace('/home');
   };
@@ -171,7 +300,7 @@ export default function NoteEditorScreen() {
   // Loading state
   if (isResolving) {
     return (
-      <View 
+      <View
         className="flex-1 bg-light-appBg dark:bg-dark-appBg items-center justify-center"
         style={{
           paddingTop: insets.top,
@@ -183,10 +312,58 @@ export default function NoteEditorScreen() {
     );
   }
 
+  // Offline Evicted Cloud Note State
+  if (isOfflineUnavailable) {
+    return (
+      <View
+        className="flex-1 bg-light-appBg dark:bg-dark-appBg items-center justify-center px-6"
+        style={{
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom,
+        }}
+      >
+        <View className="w-16 h-16 rounded-full bg-light-surface dark:bg-dark-surface items-center justify-center mb-4 shadow-sm border border-light-border dark:border-dark-border">
+          <WifiOff size={28} color={isDark ? '#B5B5B5' : '#626262'} />
+        </View>
+        <Text className="text-xl font-bold text-light-textPrimary dark:text-white tracking-tight text-center mb-2">
+          Reconnect to load this note from cloud
+        </Text>
+        <Text className="text-sm text-light-textMuted dark:text-dark-textMuted text-center max-w-sm mb-6">
+          Your device stays lean by storing older notes in Supabase. Reconnect to the internet to fetch and edit this note.
+        </Text>
+        <View className="flex-row items-center gap-3">
+          <Pressable
+            onPress={() => router.replace('/home')}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Back to Notes"
+            className="flex-row items-center gap-2 px-5 py-3 rounded-full bg-light-border dark:bg-dark-raised active:opacity-80"
+          >
+            <ArrowLeft size={16} color={isDark ? '#F7F7F7' : '#171717'} strokeWidth={2.2} />
+            <Text className="text-sm font-bold text-light-textPrimary dark:text-dark-textPrimary">
+              Back to Notes
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setRetryNonce((n) => n + 1)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading note"
+            className="flex-row items-center gap-2 px-5 py-3 rounded-full bg-light-iconBg dark:bg-white shadow-sm active:opacity-85"
+          >
+            <RefreshCw size={16} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.2} />
+            <Text className="text-sm font-bold text-white dark:text-[#111111]">Retry</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
   // Not Found state
   if (!localNote) {
     return (
-      <View 
+      <View
         className="flex-1 bg-light-appBg dark:bg-dark-appBg items-center justify-center px-6"
         style={{
           paddingTop: insets.top,
@@ -204,8 +381,11 @@ export default function NoteEditorScreen() {
         </Text>
         <Pressable
           onPress={() => router.replace('/home')}
-          className="flex-row items-center gap-2 px-5 py-2.5 rounded-full bg-light-iconBg dark:bg-white shadow-sm"
-          style={({ pressed }) => pressed ? { transform: [{ scale: 0.96 }] } : undefined}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Back to Notes"
+          className="flex-row items-center gap-2 px-5 py-3 rounded-full bg-light-iconBg dark:bg-white shadow-sm"
+          style={({ pressed }) => (pressed ? { transform: [{ scale: 0.96 }] } : undefined)}
         >
           <ArrowLeft size={16} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.2} />
           <Text className="text-sm font-bold text-white dark:text-[#111111]">

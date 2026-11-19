@@ -90,7 +90,12 @@
     },
     "backendAndDatabase": {
       "supabaseClient": "frontend/src/services/supabase/supabaseClient.ts",
+      "googleDriveVaultService": "frontend/src/services/drive/googleDriveVaultService.ts",
+      "syncEngine": "frontend/src/services/sync/syncEngine.ts",
+      "syncTypes": "frontend/src/services/sync/syncTypes.ts",
+      "leanCacheManager": "frontend/src/db/leanCacheManager.ts",
       "vaultMigration": "frontend/src/db/vaultMigration.ts",
+      "securityRepo": "frontend/src/db/securityRepo.ts",
       "authContext": "frontend/src/context/AuthContext.tsx",
       "initialSchemaSql": "supabase/migrations/001_initial_schema.sql",
       "coreRpcsSql": "supabase/migrations/002_core_rpcs.sql",
@@ -122,6 +127,9 @@
     "maestroFlowsValidate": "npm --prefix frontend run test:e2e:validate",
     "sharePipelineTest": "cd frontend && npx tsx ../scripts/test_inbound_share_pipeline.mjs",
     "guestMigrationTest": "node scripts/test_guest_vault_migration.mjs",
+    "phase2SyncAndRpcTest": "node scripts/test_phase2_sync_and_rpc.mjs",
+    "leanCacheTest": "node scripts/test_lean_cache_and_pagination.mjs",
+    "googleDriveVaultTest": "node scripts/test_google_drive_vault.mjs",
     "allSuites": "npm --prefix frontend run test:all"
   }
 }

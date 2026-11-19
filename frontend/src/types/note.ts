@@ -108,6 +108,8 @@ export interface NoteItem {
   lockSalt?: string | null;
   lockHint?: string | null;
   aiContextExcluded?: boolean;
+  isDehydrated?: boolean;
+  syncRev?: number;
   createdAt: string;
   updatedAt: string;
 }

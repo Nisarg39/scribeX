@@ -4,7 +4,21 @@ import { NoteItem, ComposableBlock, BlockType, ChecklistPoint, ChecklistPointSty
 import { NoteColorToken } from '../../../theme';
 import { notesRepo } from '../../../db/notesRepo';
 import { tasksRepo } from '../../../db/tasksRepo';
-import { serializeBlocksToMarkdown, coalesceChecklistBlocks } from '../../../core/astSerializer';
+import { syncEngine } from '../../../services/sync/syncEngine';
+import {
+  googleDriveVaultService,
+  extractMediaUriFromBlock,
+  applyMediaUriToBlock,
+  isLocalUploadableUri,
+  deleteLocalMediaIfManaged,
+  GDRIVE_PREFIX,
+} from '../../../services/drive/googleDriveVaultService';
+import { useAuth } from '../../../context/AuthContext';
+import {
+  serializeBlocksToMarkdown,
+  coalesceChecklistBlocks,
+  parseMarkdownToBlocks,
+} from '../../../core/astSerializer';
 import { ActionHistoryManager } from '../../../core/actionTracker';
 import { NoteTemplate, instantiateTemplateBlocks } from '../../../core/templates/noteTemplates';
 
@@ -12,6 +26,28 @@ import { isTextTransformableBlock, createDefaultBlockMetadata } from './editorBl
 import { useEditorBlockMutations } from './useEditorBlockMutations';
 
 export { isTextTransformableBlock, createDefaultBlockMetadata };
+
+function collectMediaRefs(blocks: ComposableBlock[]): {
+  driveIds: Set<string>;
+  localUris: Set<string>;
+} {
+  const driveIds = new Set<string>();
+  const localUris = new Set<string>();
+  for (const b of blocks) {
+    const uri = extractMediaUriFromBlock(b);
+    const metaDriveId = typeof b.metadata?.driveFileId === 'string' ? b.metadata.driveFileId : '';
+    if (metaDriveId) {
+      driveIds.add(metaDriveId);
+    }
+    if (uri?.startsWith(GDRIVE_PREFIX)) {
+      const idFromUri = uri.slice(GDRIVE_PREFIX.length).trim();
+      if (idFromUri) driveIds.add(idFromUri);
+    } else if (uri && uri.includes('/local_media/')) {
+      localUris.add(uri);
+    }
+  }
+  return { driveIds, localUris };
+}
 
 interface UseEditorStateProps {
   note: NoteItem;
@@ -24,7 +60,9 @@ export const useEditorState = ({
   onNoteUpdated,
   onNoteDeleted,
 }: UseEditorStateProps) => {
+  const { userId, isAuthenticated, isGuest } = useAuth();
   const noteIdRef = useRef<string>(note.id);
+  const uploadingMediaRef = useRef<boolean>(false);
   useEffect(() => {
     noteIdRef.current = note.id;
   }, [note.id]);
@@ -113,14 +151,121 @@ export const useEditorState = ({
     const rawBlocks: ComposableBlock[] =
       note.blocks && note.blocks.length > 0
         ? note.blocks
-        : [{ id: `b-${Date.now()}-1`, type: 'paragraph', content: note.contentMarkdown || '' }];
-    return coalesceChecklistBlocks(rawBlocks);
+        : note.contentMarkdown
+        ? parseMarkdownToBlocks(note.contentMarkdown)
+        : [{ id: `b-${Date.now()}-1`, type: 'paragraph', content: '' }];
+    return coalesceChecklistBlocks(
+      rawBlocks.length > 0
+        ? rawBlocks
+        : [{ id: `b-${Date.now()}-1`, type: 'paragraph', content: note.contentMarkdown || '' }]
+    );
   });
 
   const blocksRef = useRef<ComposableBlock[]>(blocks);
   useEffect(() => {
     blocksRef.current = blocks;
   }, [blocks]);
+
+  const lastPersistedMediaRef = useRef<{ driveIds: Set<string>; localUris: Set<string> }>(
+    collectMediaRefs(blocks)
+  );
+
+  // Device B Live Convergence: Merge incoming Realtime CDC deltas for non-focused blocks
+  useEffect(() => {
+    const unsubscribe = syncEngine.subscribe(async (delta) => {
+      const targetId = noteIdRef.current;
+      if (
+        !targetId ||
+        targetId.startsWith('draft-') ||
+        delta.entityType !== 'note' ||
+        delta.entityId !== targetId ||
+        delta.callerPlatform === syncEngine.deviceSessionId
+      ) {
+        return;
+      }
+
+      if (delta.changeType === 'delete') {
+        onNoteDeleted(targetId);
+        return;
+      }
+
+      const hasPendingLocal = await syncEngine.hasPendingChanges('note', targetId);
+      if (hasPendingLocal) return;
+
+      const p = delta.deltaPayload || {};
+      if (typeof p.title === 'string' && p.title !== titleRef.current) {
+        setTitle(p.title);
+        titleRef.current = p.title;
+      }
+      if (typeof p.color_token === 'string') {
+        setColorToken(p.color_token as NoteColorToken);
+        colorTokenRef.current = p.color_token as NoteColorToken;
+      }
+      if (typeof p.is_favorite === 'boolean') {
+        setIsFavorite(p.is_favorite);
+        isFavoriteRef.current = p.is_favorite;
+      }
+      if (typeof p.is_pinned === 'boolean') {
+        setIsPinned(p.is_pinned);
+        isPinnedRef.current = p.is_pinned;
+      }
+
+      if (p.blocks_json) {
+        try {
+          const incomingBlocks: ComposableBlock[] =
+            typeof p.blocks_json === 'string' ? JSON.parse(p.blocks_json) : p.blocks_json;
+          if (Array.isArray(incomingBlocks) && incomingBlocks.length > 0) {
+            const focusedId = activeBlockIdRef.current;
+            const currentById = new Map(blocksRef.current.map((b) => [b.id, b]));
+            const merged = incomingBlocks.map((remoteBlock) => {
+              // Preserve the block actively being typed by the user on this device
+              if (focusedId && remoteBlock.id === focusedId && currentById.has(focusedId)) {
+                return currentById.get(focusedId)!;
+              }
+              return remoteBlock;
+            });
+            const coalesced = coalesceChecklistBlocks(merged);
+            blocksRef.current = coalesced;
+            setBlocks(coalesced);
+
+            if (
+              isAuthenticated &&
+              !isGuest &&
+              userId &&
+              coalesced.some((b) => extractMediaUriFromBlock(b)?.startsWith(GDRIVE_PREFIX))
+            ) {
+              googleDriveVaultService
+                .hydrateNoteMediaToTempCache(noteIdRef.current, coalesced, userId)
+                .then((hydratedBlocks) => {
+                  const hydratedById = new Map(hydratedBlocks.map((hb) => [hb.id, hb]));
+                  const refreshed = blocksRef.current.map((cur) => {
+                    const hb = hydratedById.get(cur.id);
+                    const curUri = extractMediaUriFromBlock(cur);
+                    const nextUri = hb ? extractMediaUriFromBlock(hb) : null;
+                    if (
+                      hb &&
+                      curUri?.startsWith(GDRIVE_PREFIX) &&
+                      nextUri &&
+                      !nextUri.startsWith(GDRIVE_PREFIX)
+                    ) {
+                      return applyMediaUriToBlock(cur, nextUri);
+                    }
+                    return cur;
+                  });
+                  blocksRef.current = refreshed;
+                  setBlocks(refreshed);
+                })
+                .catch(() => {});
+            }
+          }
+        } catch {
+          // Ignore malformed remote block payload safely
+        }
+      }
+    });
+
+    return unsubscribe;
+  }, [onNoteDeleted]);
 
   // Save changes to SQLite / Repository
   const persistChanges = async (
@@ -145,7 +290,58 @@ export const useEditorState = ({
     }
 
     try {
-      const contentMarkdown = serializeBlocksToMarkdown(newBlocks);
+      const replacedDriveIds: string[] = [];
+      const sanitizedNewBlocks = newBlocks.map((b) => {
+        const replacedId = b.metadata?.replacedDriveFileId;
+        if (typeof replacedId === 'string' && replacedId) {
+          replacedDriveIds.push(replacedId);
+          const nextMeta = { ...(b.metadata || {}) };
+          delete nextMeta.replacedDriveFileId;
+          return { ...b, metadata: nextMeta };
+        }
+        return b;
+      });
+
+      if (replacedDriveIds.length > 0) {
+        blocksRef.current = blocksRef.current.map((b) => {
+          if (!b.metadata?.replacedDriveFileId) return b;
+          const nextMeta = { ...(b.metadata || {}) };
+          delete nextMeta.replacedDriveFileId;
+          return { ...b, metadata: nextMeta };
+        });
+        if (isAuthenticated && !isGuest && userId) {
+          replacedDriveIds.forEach((oldDriveId) => {
+            googleDriveVaultService.deleteDriveAssetById(oldDriveId, userId).catch(() => {});
+          });
+        }
+      }
+
+      const blocksToPersist =
+        isAuthenticated && !isGuest
+          ? googleDriveVaultService.dehydrateTempUrisForPersistence(
+              noteIdRef.current,
+              sanitizedNewBlocks
+            )
+          : sanitizedNewBlocks;
+
+      const prevMedia = lastPersistedMediaRef.current;
+      const nextMedia = collectMediaRefs(blocksToPersist);
+      if (isAuthenticated && !isGuest && userId) {
+        prevMedia.driveIds.forEach((oldDriveId) => {
+          if (!nextMedia.driveIds.has(oldDriveId) && !replacedDriveIds.includes(oldDriveId)) {
+            googleDriveVaultService.deleteDriveAssetById(oldDriveId, userId).catch(() => {});
+          }
+        });
+      } else {
+        prevMedia.localUris.forEach((oldLocalUri) => {
+          if (!nextMedia.localUris.has(oldLocalUri)) {
+            deleteLocalMediaIfManaged(oldLocalUri).catch(() => {});
+          }
+        });
+      }
+      lastPersistedMediaRef.current = nextMedia;
+
+      const contentMarkdown = serializeBlocksToMarkdown(blocksToPersist);
       const cleanTitle = newTitle.trim() || 'Untitled Note';
 
       let updated: NoteItem;
@@ -155,9 +351,10 @@ export const useEditorState = ({
         noteIdRef.current = permanentId;
         updated = await notesRepo.createNote({
           id: permanentId,
+          userId: isAuthenticated && !isGuest ? userId : 'user-default',
           title: cleanTitle,
           colorToken: newColor,
-          blocks: newBlocks,
+          blocks: blocksToPersist,
           contentMarkdown,
           folderPath: newFolderPath,
           tags: newTags,
@@ -167,7 +364,7 @@ export const useEditorState = ({
         updated = await notesRepo.updateNote(noteIdRef.current, {
           title: cleanTitle,
           colorToken: newColor,
-          blocks: newBlocks,
+          blocks: blocksToPersist,
           contentMarkdown,
           isFavorite: newFav,
           isPinned: newPin,
@@ -177,6 +374,56 @@ export const useEditorState = ({
       }
 
       onNoteUpdated(updated);
+
+      const hasPendingLocalMedia =
+        isAuthenticated &&
+        !isGuest &&
+        Boolean(userId) &&
+        blocksToPersist.some((b) => isLocalUploadableUri(extractMediaUriFromBlock(b)));
+
+      if (hasPendingLocalMedia && !uploadingMediaRef.current && userId) {
+        uploadingMediaRef.current = true;
+        googleDriveVaultService
+          .uploadNoteMediaAttachments(updated.id, blocksToPersist, userId)
+          .then(async (uploadRes) => {
+            if (uploadRes.uploadedCount > 0) {
+              const uploadedById = new Map(uploadRes.blocks.map((b) => [b.id, b]));
+              const mergedPersisted = googleDriveVaultService.dehydrateTempUrisForPersistence(
+                updated.id,
+                blocksRef.current.map((currentBlock) => {
+                  const uploadedBlock = uploadedById.get(currentBlock.id);
+                  const uploadedUri = uploadedBlock ? extractMediaUriFromBlock(uploadedBlock) : null;
+                  if (uploadedBlock && uploadedUri?.startsWith(GDRIVE_PREFIX)) {
+                    return applyMediaUriToBlock(currentBlock, uploadedUri, {
+                      driveFileId: uploadedBlock.metadata?.driveFileId,
+                      fileName: uploadedBlock.metadata?.fileName || uploadedBlock.metadata?.name,
+                      mimeType: uploadedBlock.metadata?.mimeType,
+                    });
+                  }
+                  return currentBlock;
+                })
+              );
+              const uploadedMarkdown = serializeBlocksToMarkdown(mergedPersisted);
+              const syncedNote = await notesRepo.updateNote(updated.id, {
+                blocks: mergedPersisted,
+                contentMarkdown: uploadedMarkdown,
+              });
+              lastPersistedMediaRef.current = collectMediaRefs(mergedPersisted);
+              const hydratedForEditor = await googleDriveVaultService.hydrateNoteMediaToTempCache(
+                updated.id,
+                mergedPersisted,
+                userId
+              );
+              blocksRef.current = hydratedForEditor;
+              setBlocks(hydratedForEditor);
+              onNoteUpdated({ ...syncedNote, blocks: hydratedForEditor });
+            }
+          })
+          .catch((err) => console.warn('Background Drive attachment upload skipped/failed:', err))
+          .finally(() => {
+            uploadingMediaRef.current = false;
+          });
+      }
 
       // Sync embedded checklists with global tasks table
       const checklistItems: any[] = [];

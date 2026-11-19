@@ -11,6 +11,7 @@ import {
   WorkspaceSecurityConfig,
 } from './types';
 import { generateSalt, hashCredential, validateCredentialFormat } from '../core/security/pinCrypto';
+import { syncEngine } from '../services/sync/syncEngine';
 
 const DEFAULT_SECURITY_ID = 'default';
 
@@ -138,6 +139,27 @@ export class SecurityRepository {
     return this.mapRowToConfig(row);
   }
 
+  private async queueWorkspaceSecuritySync(cfg: WorkspaceSecurityConfig): Promise<void> {
+    // Strictly syncs Master PIN/Password and auto-relock settings; NEVER syncs biometricsEnabled
+    await dbClient.run(
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+       VALUES (?, 'user-default', 1, 'workspace_security', ?, 'update', ?);`,
+      [
+        createLogId(),
+        DEFAULT_SECURITY_ID,
+        JSON.stringify({
+          app_lock_enabled: cfg.appLockEnabled,
+          master_credential_type: cfg.masterCredentialType,
+          master_hash: cfg.masterHash,
+          master_salt: cfg.masterSalt,
+          master_hint: cfg.masterHint,
+          auto_relock_seconds: cfg.autoRelockSeconds,
+        }),
+      ]
+    );
+    syncEngine.schedulePush();
+  }
+
   public async saveMasterCredential(params: {
     secret: string;
     credentialKind: CredentialKind;
@@ -173,7 +195,9 @@ export class SecurityRepository {
       [params.credentialKind, hash, salt, cleanHint, appLockEnabled, nowIso, DEFAULT_SECURITY_ID]
     );
 
-    return this.getSecurityConfig();
+    const updated = await this.getSecurityConfig();
+    await this.queueWorkspaceSecuritySync(updated);
+    return updated;
   }
 
   public async setAppLockEnabled(enabled: boolean): Promise<WorkspaceSecurityConfig> {
@@ -187,7 +211,9 @@ export class SecurityRepository {
       `UPDATE workspace_security SET app_lock_enabled = ?, updated_at = ? WHERE id = ?;`,
       [enabled ? 1 : 0, nowIso, DEFAULT_SECURITY_ID]
     );
-    return this.getSecurityConfig();
+    const updated = await this.getSecurityConfig();
+    await this.queueWorkspaceSecuritySync(updated);
+    return updated;
   }
 
   public async setAutoRelockSeconds(seconds: number): Promise<WorkspaceSecurityConfig> {
@@ -200,10 +226,13 @@ export class SecurityRepository {
       `UPDATE workspace_security SET auto_relock_seconds = ?, updated_at = ? WHERE id = ?;`,
       [normalized, nowIso, DEFAULT_SECURITY_ID]
     );
-    return this.getSecurityConfig();
+    const updated = await this.getSecurityConfig();
+    await this.queueWorkspaceSecuritySync(updated);
+    return updated;
   }
 
   public async setBiometricsEnabled(enabled: boolean): Promise<WorkspaceSecurityConfig> {
+    // Device-only preference: stored locally and intentionally excluded from cloud sync
     await this.ensureSecurityRow();
     const nowIso = new Date().toISOString();
     await dbClient.run(
@@ -259,7 +288,9 @@ export class SecurityRepository {
       );
     });
 
-    return this.getSecurityConfig();
+    const updated = await this.getSecurityConfig();
+    await this.queueWorkspaceSecuritySync(updated);
+    return updated;
   }
 
   public async lockNoteRecord(noteId: string, payload: LockTargetPayload): Promise<ComputedLockRecord> {
@@ -297,6 +328,7 @@ export class SecurityRepository {
        VALUES (?, 'user-default', 1, 'note', ?, 'update', ?);`,
       [createLogId(), noteId, JSON.stringify({ isLocked: true, lockType: record.lockType })]
     );
+    syncEngine.schedulePush();
 
     return record;
   }
@@ -337,8 +369,14 @@ export class SecurityRepository {
             noteId,
           ]
         );
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, 'user-default', 1, 'note', ?, 'update', ?);`,
+          [createLogId(), noteId, JSON.stringify({ isLocked: true, lockType: record.lockType })]
+        );
       }
     });
+    syncEngine.schedulePush();
 
     return record;
   }
@@ -362,6 +400,7 @@ export class SecurityRepository {
        VALUES (?, 'user-default', 1, 'note', ?, 'update', ?);`,
       [createLogId(), noteId, JSON.stringify({ isLocked: false })]
     );
+    syncEngine.schedulePush();
   }
 
   public async batchUnlockNoteRecords(noteIds: string[]): Promise<void> {
@@ -381,8 +420,14 @@ export class SecurityRepository {
            WHERE id = ?;`,
           [noteId]
         );
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, 'user-default', 1, 'note', ?, 'update', ?);`,
+          [createLogId(), noteId, JSON.stringify({ isLocked: false })]
+        );
       }
     });
+    syncEngine.schedulePush();
   }
 
   public async lockFolderRecord(folderId: string, payload: LockTargetPayload): Promise<ComputedLockRecord> {
@@ -420,6 +465,7 @@ export class SecurityRepository {
        VALUES (?, 'user-default', 1, 'folder', ?, 'update', ?);`,
       [createLogId(), folderId, JSON.stringify({ isLocked: true, lockType: record.lockType })]
     );
+    syncEngine.schedulePush();
 
     return record;
   }
@@ -443,6 +489,7 @@ export class SecurityRepository {
        VALUES (?, 'user-default', 1, 'folder', ?, 'update', ?);`,
       [createLogId(), folderId, JSON.stringify({ isLocked: false })]
     );
+    syncEngine.schedulePush();
   }
 }
 

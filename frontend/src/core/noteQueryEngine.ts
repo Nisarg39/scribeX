@@ -89,7 +89,7 @@ export const DEFAULT_NOTE_QUERY_REQUEST: NoteQueryRequest = {
   tags: [],
   hasBlockTypes: [],
   sortBy: 'updated_desc',
-  pageSize: 10,
+  pageSize: 20,
   page: 1,
 };
 

@@ -4,6 +4,7 @@
  */
 
 import { dbClient } from './client';
+import { syncEngine } from '../services/sync/syncEngine';
 import {
   DBFolder,
   CreateFolderDTO,
@@ -49,6 +50,7 @@ export class FoldersRepository {
        VALUES (?, ?, 1, 'folder', ?, 'insert', ?);`,
       [createLogId(), userId, id, JSON.stringify(dto)]
     );
+    syncEngine.schedulePush();
 
     const created = await this.getFolderById(id);
     return created!;
@@ -227,6 +229,7 @@ export class FoldersRepository {
        VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
       [createLogId(), folder.user_id, targetRev, id, JSON.stringify({ action: 'rename', oldPath, newPath, name: cleanNewName, timestamp: new Date().toISOString() })]
     );
+    syncEngine.schedulePush();
 
     return { oldPath, newPath };
   }
@@ -334,6 +337,7 @@ export class FoldersRepository {
         JSON.stringify({ action: 'move', oldPath, newPath, newParentId, timestamp: new Date().toISOString() })
       ]
     );
+    syncEngine.schedulePush();
 
     return { oldPath, newPath };
   }
@@ -408,6 +412,7 @@ export class FoldersRepository {
       const folderPlaceholders = folderIds.map(() => '?').join(',');
       await dbClient.run(`DELETE FROM folders WHERE id IN (${folderPlaceholders});`, folderIds);
     }
+    syncEngine.schedulePush();
 
     return {
       affectedNotes: affectedNotesList.length,
@@ -539,6 +544,7 @@ export class FoldersRepository {
           JSON.stringify({ action: 'color', colorToken, timestamp: new Date().toISOString() }),
         ]
       );
+      syncEngine.schedulePush();
     }
   }
 
@@ -560,6 +566,7 @@ export class FoldersRepository {
           JSON.stringify({ action: 'icon', icon, timestamp: new Date().toISOString() }),
         ]
       );
+      syncEngine.schedulePush();
     }
   }
 
@@ -586,6 +593,7 @@ export class FoldersRepository {
         JSON.stringify({ action: 'toggle_favorite', isFavorite: Boolean(nextVal) }),
       ]
     );
+    syncEngine.schedulePush();
 
     return Boolean(nextVal);
   }
@@ -613,6 +621,7 @@ export class FoldersRepository {
         JSON.stringify({ action: 'toggle_pin', isPinned: Boolean(nextVal) }),
       ]
     );
+    syncEngine.schedulePush();
 
     return Boolean(nextVal);
   }
@@ -640,6 +649,7 @@ export class FoldersRepository {
         JSON.stringify({ action: 'toggle_ai_context_excluded', aiContextExcluded: Boolean(nextVal) }),
       ]
     );
+    syncEngine.schedulePush();
 
     return Boolean(nextVal);
   }
@@ -723,6 +733,7 @@ export class FoldersRepository {
         ]
       );
     }
+    syncEngine.schedulePush();
 
     return {
       affectedNotes: notesToArchive.length,
@@ -820,6 +831,7 @@ export class FoldersRepository {
         ]
       );
     }
+    syncEngine.schedulePush();
 
     return {
       affectedNotes: notesToUnarchive.length,

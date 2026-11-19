@@ -78,6 +78,42 @@ export class NativeDatabaseClient {
           // Index already exists or skipped
         }
       }
+
+      // Phase 4: Safely detach tasks ON DELETE CASCADE FK if created by older schema so lean note eviction preserves Tasks tab rows
+      try {
+        const fkRows = await db.getAllAsync<{ table: string }>('PRAGMA foreign_key_list(tasks);');
+        if (Array.isArray(fkRows) && fkRows.length > 0) {
+          await db.execAsync('PRAGMA foreign_keys = OFF;');
+          await db.execAsync(`
+            CREATE TABLE IF NOT EXISTS tasks_mig_tmp (
+              id TEXT PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              note_id TEXT,
+              note_title TEXT,
+              note_color_token TEXT,
+              block_id TEXT,
+              title TEXT NOT NULL,
+              is_completed BOOLEAN NOT NULL DEFAULT 0,
+              priority TEXT CHECK(priority IN ('none', 'low', 'medium', 'high', 'urgent')) NOT NULL DEFAULT 'none',
+              due_date TEXT,
+              reminder_at TEXT,
+              sync_rev INTEGER NOT NULL DEFAULT 0,
+              created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO tasks_mig_tmp (id, user_id, note_id, note_title, note_color_token, block_id, title, is_completed, priority, due_date, reminder_at, sync_rev, created_at, updated_at)
+              SELECT id, user_id, note_id, note_title, note_color_token, block_id, title, is_completed, priority, due_date, reminder_at, sync_rev, created_at, updated_at FROM tasks;
+            DROP TABLE tasks;
+            ALTER TABLE tasks_mig_tmp RENAME TO tasks;
+            CREATE INDEX IF NOT EXISTS idx_tasks_note ON tasks(note_id);
+            CREATE INDEX IF NOT EXISTS idx_tasks_completed ON tasks(is_completed);
+          `);
+          await db.execAsync('PRAGMA foreign_keys = ON;');
+        }
+      } catch (fkErr) {
+        console.warn('Tasks FK migration check skipped:', fkErr);
+      }
+
       await this.ensureWebDataSync(db);
 
       return db;

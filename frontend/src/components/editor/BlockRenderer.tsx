@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Animated } from 'react-native';
 import { ComposableBlock, BlockType } from '../../types/note';
+import { deleteLocalMediaIfManaged } from '../../services/drive/googleDriveVaultService';
 import { MoveVertical } from 'lucide-react-native';
 import {
   TableBlock,
@@ -530,8 +531,30 @@ export const BlockRenderer: React.FC<BlockRendererProps> = ({
           aspectRatio={block.metadata?.aspectRatio || 'natural'}
           isSelected={isActive}
           isDragging={isDragging}
-          onUpdateImage={(url, caption, width, align, aspectRatio) => {
-            const nextMeta = { ...block.metadata, url, caption, width, align, aspectRatio };
+          onUpdateImage={(url, caption, width, align, aspectRatio, mediaMeta) => {
+            const previousUrl = block.content || block.metadata?.url;
+            const previousDriveFileId = block.metadata?.driveFileId;
+            const nextMeta: Record<string, any> = {
+              ...block.metadata,
+              url,
+              caption,
+              width,
+              align,
+              aspectRatio,
+              ...(mediaMeta?.fileName ? { fileName: mediaMeta.fileName } : {}),
+              ...(mediaMeta?.mimeType ? { mimeType: mediaMeta.mimeType } : {}),
+            };
+
+            if (mediaMeta?.isMediaReplacement) {
+              if (previousUrl && previousUrl !== url) {
+                void deleteLocalMediaIfManaged(previousUrl);
+              }
+              if (previousDriveFileId) {
+                nextMeta.replacedDriveFileId = previousDriveFileId;
+                delete nextMeta.driveFileId;
+              }
+            }
+
             if (onUpdateBlock) {
               onUpdateBlock({ content: url, metadata: nextMeta });
             } else {

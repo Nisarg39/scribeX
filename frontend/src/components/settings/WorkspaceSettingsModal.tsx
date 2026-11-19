@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, Text, Modal, Pressable, Platform, ActivityIndicator, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, Modal, Pressable, Platform, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import {
   Database,
   DownloadCloud,
@@ -15,13 +15,21 @@ import {
   AlertTriangle,
   HardDrive,
   MessageSquare,
+  Lock,
+  Cloud,
+  LogIn,
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
-import { useSecurity } from '../../context';
+import { useAuth, useSecurity } from '../../context';
 import { useNotesStore } from '../../state/useNotesStore';
 import { workspaceBackupService } from '../../services/workspaceBackupService';
 import { shareIngestService } from '../../services/share/ShareIngestService';
+import { syncEngine } from '../../services/sync/syncEngine';
+import {
+  googleDriveVaultService,
+  GoogleDriveAccountState,
+} from '../../services/drive/googleDriveVaultService';
 import { RestoreBackupModal } from './RestoreBackupModal';
 import { getAncestorFolderPaths, normalizeFolderPath } from '../../core/security/vaultLockHelpers';
 
@@ -36,6 +44,7 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
 }) => {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const { user, userId, isAuthenticated, isGuest } = useAuth();
   const {
     refreshSecurityConfig,
     promptUnlockNote,
@@ -65,8 +74,67 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
   const [isPurgingTrash, setIsPurgingTrash] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSimulatingShare, setIsSimulatingShare] = useState(false);
+  const [driveAccount, setDriveAccount] = useState<GoogleDriveAccountState | null>(null);
+  const [isConnectingDrive, setIsConnectingDrive] = useState(false);
+  const [isSyncingNow, setIsSyncingNow] = useState(false);
+
+  const isGuestLocked = !isAuthenticated || isGuest;
+
+  useEffect(() => {
+    if (!visible || isGuestLocked) {
+      setDriveAccount(null);
+      return;
+    }
+    googleDriveVaultService
+      .getDriveAccountState(userId)
+      .then((acc) => setDriveAccount(acc))
+      .catch(() => {});
+  }, [visible, isGuestLocked, userId]);
 
   if (!visible) return null;
+
+  const handleConnectOrSwitchDrive = async () => {
+    if (isGuestLocked) return;
+    setIsConnectingDrive(true);
+    try {
+      const res = await googleDriveVaultService.connectOrSwitchDriveAccount(userId);
+      if (res.ok && res.account) {
+        setDriveAccount(res.account);
+        setExportNotice(`Connected Drive Vault: ${res.account.email}`);
+        setTimeout(() => setExportNotice(null), 3000);
+      } else if (res.error) {
+        setExportNotice(res.error);
+        setTimeout(() => setExportNotice(null), 3500);
+      }
+    } finally {
+      setIsConnectingDrive(false);
+    }
+  };
+
+  const handleDisconnectDrive = async () => {
+    if (isGuestLocked) return;
+    await googleDriveVaultService.disconnectDriveAccount(userId);
+    setDriveAccount(null);
+    setExportNotice('Disconnected Google Drive Media Vault');
+    setTimeout(() => setExportNotice(null), 3000);
+  };
+
+  const handleSyncNow = async () => {
+    if (isGuestLocked || isSyncingNow) return;
+    setIsSyncingNow(true);
+    try {
+      const pushed = await syncEngine.flushNow();
+      await syncEngine.pullWorkspaceMetadataFromCloud().catch(() => {});
+      await refreshFromDB();
+      setExportNotice(pushed > 0 ? `Synced ${pushed} update(s) to cloud` : 'Cloud vault up to date');
+      setTimeout(() => setExportNotice(null), 3000);
+    } catch (err: any) {
+      setExportNotice(err?.message || 'Sync paused (offline)');
+      setTimeout(() => setExportNotice(null), 3500);
+    } finally {
+      setIsSyncingNow(false);
+    }
+  };
 
   const handleSimulateWhatsAppShare = async () => {
     try {
@@ -242,6 +310,105 @@ OPTION: Run 1 more audit (2 votes)`,
                 </Text>
               </View>
             )}
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+            {/* Section 0: Cloud Sync & Google Drive Media Vault (Auth-Gated) */}
+            <View className="p-3.5 rounded-2xl bg-light-surface dark:bg-dark-surface/60 border border-light-border/60 dark:border-dark-border/30 mb-4">
+              <View className="flex-row items-center justify-between mb-2">
+                <View className="flex-row items-center gap-2">
+                  {isGuestLocked ? (
+                    <Lock size={14} color={isDark ? '#9CA3AF' : '#6B7280'} />
+                  ) : (
+                    <Cloud size={15} color="#06B6D4" />
+                  )}
+                  <Text className="text-xs font-bold uppercase tracking-wider text-light-textPrimary dark:text-dark-textPrimary">
+                    Cloud Sync & Google Drive Vault
+                  </Text>
+                </View>
+                {!isGuestLocked && (
+                  <Pressable
+                    onPress={handleSyncNow}
+                    disabled={isSyncingNow}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sync workspace now"
+                    className="px-2.5 py-1 rounded-full bg-cyan-500/15 active:opacity-75"
+                  >
+                    <Text className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400">
+                      {isSyncingNow ? 'Syncing...' : 'Sync Now'}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {isGuestLocked ? (
+                <View>
+                  <Text className="text-xs text-light-textMuted dark:text-dark-textMuted mb-3 leading-relaxed">
+                    Sign in with Google to unlock Cloud Sync, Google Drive Media Vault & Friday AI. Offline mode keeps all notes strictly on this device.
+                  </Text>
+                  <Pressable
+                    onPress={() => {
+                      onClose();
+                      router.push('/signin');
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sign in with Google to enable Sync and AI"
+                    className="flex-row items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-light-iconBg dark:bg-white active:opacity-85"
+                  >
+                    <LogIn size={14} color={isDark ? '#111111' : '#FFFFFF'} strokeWidth={2.2} />
+                    <Text className="text-xs font-bold text-white dark:text-[#111111]">
+                      Sign in with Google to Unlock
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View className="gap-2.5">
+                  <Text className="text-xs text-light-textSecondary dark:text-dark-textSecondary">
+                    Supabase Account: {user?.email || 'Authenticated Google User'}
+                  </Text>
+                  <View className="flex-row items-center justify-between pt-2 border-t border-light-border/40 dark:border-dark-border/20">
+                    <View className="flex-row items-center gap-2 flex-1 pr-2">
+                      <HardDrive size={15} color={driveAccount ? '#10B981' : '#9CA3AF'} />
+                      <View className="flex-1">
+                        <Text className="text-xs font-bold text-light-textPrimary dark:text-dark-textPrimary">
+                          {driveAccount ? `Drive: ${driveAccount.email}` : 'Google Drive Not Connected'}
+                        </Text>
+                        <Text className="text-[11px] text-light-textMuted dark:text-dark-textMuted">
+                          {driveAccount
+                            ? 'Media uploads to ScribeX_Vault/ and cleans device storage'
+                            : 'Connect a Google Drive account for media eviction'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View className="flex-row items-center gap-1.5">
+                      <Pressable
+                        onPress={handleConnectOrSwitchDrive}
+                        disabled={isConnectingDrive}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Switch Google Drive Account"
+                        className="px-3 py-1.5 rounded-xl bg-cyan-500/15 active:opacity-80"
+                      >
+                        <Text className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400">
+                          {isConnectingDrive ? '...' : driveAccount ? 'Switch Account' : 'Connect'}
+                        </Text>
+                      </Pressable>
+                      {driveAccount && (
+                        <Pressable
+                          onPress={handleDisconnectDrive}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel="Disconnect Google Drive"
+                          className="px-2.5 py-1.5 rounded-xl bg-red-500/10 active:opacity-80"
+                        >
+                          <Text className="text-[11px] font-semibold text-red-500">Disconnect</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  </View>
+                </View>
+              )}
+            </View>
 
             {/* Section 1: Local Engine Status */}
             <View className="p-3.5 rounded-2xl bg-light-surface dark:bg-dark-surface/60 border border-light-border/60 dark:border-dark-border/30 mb-4">
@@ -430,6 +597,7 @@ OPTION: Run 1 more audit (2 votes)`,
                 {isSimulatingShare && <ActivityIndicator size="small" color="#10B981" />}
               </Pressable>
             </View>
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>

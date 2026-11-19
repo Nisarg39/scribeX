@@ -1,11 +1,12 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, ActivityIndicator, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '../src/theme';
 import { useAuth } from '../src/context';
-import { Sun, Moon, ArrowRight, AlertCircle, X, ShieldCheck } from 'lucide-react-native';
+import { googleDriveVaultService } from '../src/services/drive/googleDriveVaultService';
+import { Sun, Moon, ArrowRight, AlertCircle, X, ShieldCheck, HardDrive } from 'lucide-react-native';
 
 const GoogleMark: React.FC<{ size?: number }> = ({ size = 18 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -33,6 +34,8 @@ export default function SignInScreen() {
   const router = useRouter();
   const { isDark, toggleTheme } = useTheme();
   const {
+    user,
+    userId,
     signInWithGoogle,
     continueAsGuest,
     isSigningIn,
@@ -41,12 +44,28 @@ export default function SignInScreen() {
     isAuthenticated,
   } = useAuth();
 
-  // Automatically enter workspace once Google OAuth completes
+  const [step, setStep] = useState<'auth' | 'drive_select'>('auth');
+  const [isConnectingDrive, setIsConnectingDrive] = useState(false);
+  const [driveError, setDriveError] = useState<string | null>(null);
+
+  // After Google OAuth completes, prompt for Google Drive account selection once during onboarding
   useEffect(() => {
-    if (isAuthenticated) {
-      router.replace('/home');
+    let active = true;
+    async function checkDriveOnboarding() {
+      if (!isAuthenticated || !userId || userId === 'user-default') return;
+      const done = await googleDriveVaultService.hasCompletedDriveOnboarding(userId);
+      if (!active) return;
+      if (done) {
+        router.replace('/home');
+      } else {
+        setStep('drive_select');
+      }
     }
-  }, [isAuthenticated, router]);
+    checkDriveOnboarding();
+    return () => {
+      active = false;
+    };
+  }, [isAuthenticated, userId, router]);
 
   const handleSkip = async () => {
     clearAuthError();
@@ -56,10 +75,37 @@ export default function SignInScreen() {
 
   const handleGoogleSignIn = async () => {
     const ok = await signInWithGoogle();
-    if (ok && Platform.OS !== 'web') {
-      router.replace('/home');
+    if (ok && Platform.OS !== 'web' && userId && userId !== 'user-default') {
+      const done = await googleDriveVaultService.hasCompletedDriveOnboarding(userId);
+      if (done) {
+        router.replace('/home');
+      } else {
+        setStep('drive_select');
+      }
     }
   };
+
+  const handleConnectDriveAccount = async () => {
+    setDriveError(null);
+    setIsConnectingDrive(true);
+    try {
+      const res = await googleDriveVaultService.connectOrSwitchDriveAccount(userId);
+      if (res.ok) {
+        router.replace('/home');
+      } else if (res.error) {
+        setDriveError(res.error);
+      }
+    } finally {
+      setIsConnectingDrive(false);
+    }
+  };
+
+  const handleSkipDriveSetup = async () => {
+    await googleDriveVaultService.markDriveOnboardingCompleted(userId);
+    router.replace('/home');
+  };
+
+  const activeError = step === 'drive_select' ? driveError : authError;
 
   return (
     <View
@@ -72,7 +118,7 @@ export default function SignInScreen() {
       {/* Top Header - Theme Toggle */}
       <View className="flex-row items-center justify-between">
         <Text className="text-xs uppercase tracking-widest font-semibold text-light-textMuted dark:text-dark-textMuted">
-          Authentication
+          {step === 'drive_select' ? 'Step 2 · Media Vault' : 'Authentication'}
         </Text>
 
         <Pressable
@@ -92,24 +138,40 @@ export default function SignInScreen() {
 
       {/* Main Editorial Prompt */}
       <View className="max-w-md w-full self-center">
-        <Text className="text-5xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight mb-4">
-          Welcome to ScribeX.
-        </Text>
-        <Text className="text-base text-light-textSecondary dark:text-dark-textSecondary leading-relaxed mb-6">
-          Sign in with Google to unlock real-time Cloud Sync across devices, Google Drive media backups, and Friday AI.
-        </Text>
+        {step === 'drive_select' ? (
+          <>
+            <View className="w-12 h-12 rounded-2xl bg-cyan-500/15 items-center justify-center mb-4">
+              <HardDrive size={24} color="#06B6D4" strokeWidth={2.2} />
+            </View>
+            <Text className="text-4xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight mb-3">
+              Connect Google Drive Vault.
+            </Text>
+            <Text className="text-base text-light-textSecondary dark:text-dark-textSecondary leading-relaxed mb-6">
+              Signed in as {user?.email || 'Google User'}. Select which Google Drive account stores your photos, audio memos, videos & exports in ScribeX_Vault/ so device storage stays ultra-lean.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text className="text-5xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight mb-4">
+              Welcome to ScribeX.
+            </Text>
+            <Text className="text-base text-light-textSecondary dark:text-dark-textSecondary leading-relaxed mb-6">
+              Sign in with Google to unlock real-time Cloud Sync across devices, Google Drive media backups, and Friday AI.
+            </Text>
+          </>
+        )}
 
-        {authError ? (
+        {activeError ? (
           <View
             accessibilityRole="alert"
             className="flex-row items-start gap-2.5 p-3.5 rounded-2xl border border-red-400/40 bg-red-500/10"
           >
             <AlertCircle size={18} color="#EF4444" strokeWidth={2} style={{ marginTop: 2 }} />
             <Text className="flex-1 text-xs leading-relaxed text-red-600 dark:text-red-400 font-medium">
-              {authError}
+              {activeError}
             </Text>
             <Pressable
-              onPress={clearAuthError}
+              onPress={() => (step === 'drive_select' ? setDriveError(null) : clearAuthError())}
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Dismiss sign-in error"
@@ -121,47 +183,90 @@ export default function SignInScreen() {
         ) : null}
       </View>
 
-      {/* Action Buttons: Google OAuth Primary & Offline Skip Secondary */}
-      <View className="max-w-md w-full self-center gap-3">
-        <Pressable
-          onPress={handleGoogleSignIn}
-          disabled={isSigningIn}
-          accessibilityRole="button"
-          accessibilityLabel="Continue with Google"
-          className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-3 active:scale-98 shadow-sm"
-          style={{ opacity: isSigningIn ? 0.75 : 1, minHeight: 54 }}
-        >
-          {isSigningIn ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <GoogleMark size={19} />
-          )}
-          <Text className="text-base font-semibold text-white">
-            {isSigningIn ? 'Connecting to Google...' : 'Continue with Google'}
-          </Text>
-        </Pressable>
+      {/* Action Buttons */}
+      {step === 'drive_select' ? (
+        <View className="max-w-md w-full self-center gap-3">
+          <Pressable
+            onPress={handleConnectDriveAccount}
+            disabled={isConnectingDrive}
+            accessibilityRole="button"
+            accessibilityLabel="Choose Google Drive Account"
+            className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-3 active:scale-98 shadow-sm"
+            style={{ opacity: isConnectingDrive ? 0.75 : 1, minHeight: 54 }}
+          >
+            {isConnectingDrive ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <GoogleMark size={19} />
+            )}
+            <Text className="text-base font-semibold text-white">
+              {isConnectingDrive ? 'Connecting Google Drive...' : 'Choose Google Drive Account'}
+            </Text>
+          </Pressable>
 
-        <Pressable
-          onPress={handleSkip}
-          disabled={isSigningIn}
-          accessibilityRole="button"
-          accessibilityLabel="Skip and use offline mode"
-          className="w-full py-3.5 rounded-2xl border border-light-border dark:border-dark-border flex-row items-center justify-center gap-2 active:scale-98"
-          style={{ minHeight: 50 }}
-        >
-          <Text className="text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary">
-            Skip & Use Offline Mode
-          </Text>
-          <ArrowRight size={16} color={isDark ? '#9CA3AF' : '#6B7280'} strokeWidth={2} />
-        </Pressable>
+          <Pressable
+            onPress={handleSkipDriveSetup}
+            disabled={isConnectingDrive}
+            accessibilityRole="button"
+            accessibilityLabel="Skip Google Drive setup for now"
+            className="w-full py-3.5 rounded-2xl border border-light-border dark:border-dark-border flex-row items-center justify-center gap-2 active:scale-98"
+            style={{ minHeight: 50 }}
+          >
+            <Text className="text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary">
+              Skip Drive Setup for Now
+            </Text>
+            <ArrowRight size={16} color={isDark ? '#9CA3AF' : '#6B7280'} strokeWidth={2} />
+          </Pressable>
 
-        <View className="flex-row items-center justify-center gap-1.5 pt-2">
-          <ShieldCheck size={14} color={isDark ? '#6B7280' : '#9CA3AF'} strokeWidth={2} />
-          <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center">
-            Cloud Sync and Friday AI require Google Sign-In. Skipping keeps your vault 100% local on this device.
-          </Text>
+          <View className="flex-row items-center justify-center gap-1.5 pt-2">
+            <ShieldCheck size={14} color={isDark ? '#6B7280' : '#9CA3AF'} strokeWidth={2} />
+            <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center">
+              You can connect or switch your Google Drive account anytime in Settings.
+            </Text>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View className="max-w-md w-full self-center gap-3">
+          <Pressable
+            onPress={handleGoogleSignIn}
+            disabled={isSigningIn}
+            accessibilityRole="button"
+            accessibilityLabel="Continue with Google"
+            className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-3 active:scale-98 shadow-sm"
+            style={{ opacity: isSigningIn ? 0.75 : 1, minHeight: 54 }}
+          >
+            {isSigningIn ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <GoogleMark size={19} />
+            )}
+            <Text className="text-base font-semibold text-white">
+              {isSigningIn ? 'Connecting to Google...' : 'Continue with Google'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleSkip}
+            disabled={isSigningIn}
+            accessibilityRole="button"
+            accessibilityLabel="Skip and use offline mode"
+            className="w-full py-3.5 rounded-2xl border border-light-border dark:border-dark-border flex-row items-center justify-center gap-2 active:scale-98"
+            style={{ minHeight: 50 }}
+          >
+            <Text className="text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary">
+              Skip & Use Offline Mode
+            </Text>
+            <ArrowRight size={16} color={isDark ? '#9CA3AF' : '#6B7280'} strokeWidth={2} />
+          </Pressable>
+
+          <View className="flex-row items-center justify-center gap-1.5 pt-2">
+            <ShieldCheck size={14} color={isDark ? '#6B7280' : '#9CA3AF'} strokeWidth={2} />
+            <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center">
+              Cloud Sync and Friday AI require Google Sign-In. Skipping keeps your vault 100% local on this device.
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

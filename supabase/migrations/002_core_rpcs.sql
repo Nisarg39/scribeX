@@ -1,7 +1,7 @@
 -- =============================================================================
 -- ScribeX Core Supabase PostgreSQL Stored Procedures (RPCs)
 -- Migration: 002_core_rpcs.sql
--- Source of Truth: docs/Unified_Backend_and_AI_Master_Specification.md (Section 5)
+-- Source of Truth: docs/Unified_Backend_and_AI_Master_Specification.md (Section 3.2 & 5)
 -- Purpose: Single Source of Action Pipeline Symmetry (Manual Client Sync + AI Tools)
 -- =============================================================================
 
@@ -37,7 +37,17 @@ CREATE OR REPLACE FUNCTION rpc_create_note(
   p_reminder_at TIMESTAMPTZ DEFAULT NULL,
   p_caller_platform TEXT DEFAULT 'local_client',
   p_id TEXT DEFAULT NULL,
-  p_ai_context_excluded BOOLEAN DEFAULT FALSE
+  p_ai_context_excluded BOOLEAN DEFAULT FALSE,
+  p_folder_path TEXT DEFAULT NULL,
+  p_is_favorite BOOLEAN DEFAULT FALSE,
+  p_is_pinned BOOLEAN DEFAULT FALSE,
+  p_status TEXT DEFAULT 'active',
+  p_is_locked BOOLEAN DEFAULT FALSE,
+  p_lock_type TEXT DEFAULT NULL,
+  p_lock_credential_kind TEXT DEFAULT NULL,
+  p_lock_hash TEXT DEFAULT NULL,
+  p_lock_salt TEXT DEFAULT NULL,
+  p_lock_hint TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -49,14 +59,14 @@ DECLARE
   v_sync_rev BIGINT;
   v_tag_name TEXT;
   v_tag_id TEXT;
-  v_folder_path TEXT := NULL;
+  v_folder_path TEXT := p_folder_path;
   v_result JSONB;
 BEGIN
   IF v_user_id IS NULL THEN
     RAISE EXCEPTION 'Unauthorized: User authentication required';
   END IF;
 
-  IF p_folder_id IS NOT NULL THEN
+  IF v_folder_path IS NULL AND p_folder_id IS NOT NULL THEN
     SELECT path INTO v_folder_path FROM folders WHERE id = p_folder_id AND user_id = v_user_id;
   END IF;
 
@@ -64,10 +74,15 @@ BEGIN
 
   INSERT INTO notes (
     id, user_id, folder_id, folder_path, title, content_markdown,
-    blocks_json, color_token, reminder_at, ai_context_excluded, sync_rev, created_at, updated_at
+    blocks_json, color_token, is_favorite, is_pinned, status, reminder_at,
+    is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
+    ai_context_excluded, sync_rev, created_at, updated_at
   ) VALUES (
-    v_note_id, v_user_id, p_folder_id, v_folder_path, p_title, p_content_markdown,
-    p_blocks_json, p_color_token, p_reminder_at, COALESCE(p_ai_context_excluded, FALSE), v_sync_rev, NOW(), NOW()
+    v_note_id, v_user_id, p_folder_id, COALESCE(v_folder_path, 'General'), p_title, COALESCE(p_content_markdown, ''),
+    COALESCE(p_blocks_json, '[]'::jsonb), COALESCE(p_color_token, 'apricot'),
+    COALESCE(p_is_favorite, FALSE), COALESCE(p_is_pinned, FALSE), COALESCE(p_status, 'active'), p_reminder_at,
+    COALESCE(p_is_locked, FALSE), p_lock_type, p_lock_credential_kind, p_lock_hash, p_lock_salt, p_lock_hint,
+    COALESCE(p_ai_context_excluded, FALSE), v_sync_rev, NOW(), NOW()
   )
   ON CONFLICT (id) DO UPDATE SET
     title = EXCLUDED.title,
@@ -76,7 +91,16 @@ BEGIN
     content_markdown = EXCLUDED.content_markdown,
     blocks_json = EXCLUDED.blocks_json,
     color_token = EXCLUDED.color_token,
+    is_favorite = EXCLUDED.is_favorite,
+    is_pinned = EXCLUDED.is_pinned,
+    status = EXCLUDED.status,
     reminder_at = EXCLUDED.reminder_at,
+    is_locked = EXCLUDED.is_locked,
+    lock_type = EXCLUDED.lock_type,
+    lock_credential_kind = EXCLUDED.lock_credential_kind,
+    lock_hash = EXCLUDED.lock_hash,
+    lock_salt = EXCLUDED.lock_salt,
+    lock_hint = EXCLUDED.lock_hint,
     ai_context_excluded = EXCLUDED.ai_context_excluded,
     sync_rev = EXCLUDED.sync_rev,
     updated_at = NOW()
@@ -84,6 +108,7 @@ BEGIN
 
   -- Process Tags
   IF p_tags IS NOT NULL AND array_length(p_tags, 1) > 0 THEN
+    DELETE FROM note_tags WHERE note_id = v_note_id;
     FOREACH v_tag_name IN ARRAY p_tags LOOP
       v_tag_name := lower(trim(v_tag_name));
       IF length(v_tag_name) > 0 THEN
@@ -116,9 +141,21 @@ BEGIN
     jsonb_build_object(
       'id', v_note_id,
       'title', p_title,
+      'content_markdown', LEFT(COALESCE(p_content_markdown, ''), 240),
+      'blocks_json', COALESCE(p_blocks_json, '[]'::jsonb),
       'folder_id', p_folder_id,
-      'color_token', p_color_token,
+      'folder_path', COALESCE(v_folder_path, 'General'),
+      'color_token', COALESCE(p_color_token, 'apricot'),
+      'is_favorite', COALESCE(p_is_favorite, FALSE),
+      'is_pinned', COALESCE(p_is_pinned, FALSE),
+      'status', COALESCE(p_status, 'active'),
       'reminder_at', p_reminder_at,
+      'is_locked', COALESCE(p_is_locked, FALSE),
+      'lock_type', p_lock_type,
+      'lock_credential_kind', p_lock_credential_kind,
+      'lock_hash', p_lock_hash,
+      'lock_salt', p_lock_salt,
+      'lock_hint', p_lock_hint,
       'ai_context_excluded', COALESCE(p_ai_context_excluded, FALSE)
     ),
     p_caller_platform, NOW()
@@ -140,7 +177,20 @@ CREATE OR REPLACE FUNCTION rpc_update_note(
   p_tags TEXT[] DEFAULT NULL,
   p_reminder_at TIMESTAMPTZ DEFAULT NULL,
   p_caller_platform TEXT DEFAULT 'local_client',
-  p_ai_context_excluded BOOLEAN DEFAULT NULL
+  p_ai_context_excluded BOOLEAN DEFAULT NULL,
+  p_content_markdown TEXT DEFAULT NULL,
+  p_folder_id TEXT DEFAULT NULL,
+  p_folder_path TEXT DEFAULT NULL,
+  p_color_token TEXT DEFAULT NULL,
+  p_is_favorite BOOLEAN DEFAULT NULL,
+  p_is_pinned BOOLEAN DEFAULT NULL,
+  p_status TEXT DEFAULT NULL,
+  p_is_locked BOOLEAN DEFAULT NULL,
+  p_lock_type TEXT DEFAULT NULL,
+  p_lock_credential_kind TEXT DEFAULT NULL,
+  p_lock_hash TEXT DEFAULT NULL,
+  p_lock_salt TEXT DEFAULT NULL,
+  p_lock_hint TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -151,6 +201,7 @@ DECLARE
   v_sync_rev BIGINT;
   v_tag_name TEXT;
   v_tag_id TEXT;
+  v_note RECORD;
   v_result JSONB;
 BEGIN
   IF v_user_id IS NULL THEN
@@ -161,16 +212,31 @@ BEGIN
 
   UPDATE notes
   SET title = COALESCE(p_title, title),
-      content_markdown = CASE 
-        WHEN p_append_markdown IS NOT NULL THEN content_markdown || E'\n\n' || p_append_markdown 
-        ELSE content_markdown 
+      content_markdown = CASE
+        WHEN p_content_markdown IS NOT NULL THEN p_content_markdown
+        WHEN p_append_markdown IS NOT NULL THEN content_markdown || E'\n\n' || p_append_markdown
+        ELSE content_markdown
       END,
       blocks_json = COALESCE(p_blocks_json, blocks_json),
+      folder_id = COALESCE(p_folder_id, folder_id),
+      folder_path = COALESCE(p_folder_path, folder_path),
+      color_token = COALESCE(p_color_token, color_token),
+      is_favorite = COALESCE(p_is_favorite, is_favorite),
+      is_pinned = COALESCE(p_is_pinned, is_pinned),
+      status = COALESCE(p_status, status),
       reminder_at = COALESCE(p_reminder_at, reminder_at),
+      is_locked = COALESCE(p_is_locked, is_locked),
+      lock_type = CASE WHEN p_is_locked = FALSE THEN NULL ELSE COALESCE(p_lock_type, lock_type) END,
+      lock_credential_kind = CASE WHEN p_is_locked = FALSE THEN NULL ELSE COALESCE(p_lock_credential_kind, lock_credential_kind) END,
+      lock_hash = CASE WHEN p_is_locked = FALSE THEN NULL ELSE COALESCE(p_lock_hash, lock_hash) END,
+      lock_salt = CASE WHEN p_is_locked = FALSE THEN NULL ELSE COALESCE(p_lock_salt, lock_salt) END,
+      lock_hint = CASE WHEN p_is_locked = FALSE THEN NULL ELSE COALESCE(p_lock_hint, lock_hint) END,
       ai_context_excluded = COALESCE(p_ai_context_excluded, ai_context_excluded),
+      trashed_at = CASE WHEN p_status = 'trashed' THEN NOW() WHEN p_status IS NOT NULL THEN NULL ELSE trashed_at END,
       sync_rev = v_sync_rev,
       updated_at = NOW()
-  WHERE id = p_note_id AND user_id = v_user_id;
+  WHERE id = p_note_id AND user_id = v_user_id
+  RETURNING * INTO v_note;
 
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Note not found or permission denied';
@@ -198,10 +264,23 @@ BEGIN
     gen_random_uuid()::text, v_user_id, v_sync_rev, 'note', p_note_id, 'update',
     jsonb_build_object(
       'id', p_note_id,
-      'title', p_title,
-      'append_markdown', p_append_markdown,
-      'reminder_at', p_reminder_at,
-      'ai_context_excluded', p_ai_context_excluded
+      'title', v_note.title,
+      'content_markdown', LEFT(COALESCE(v_note.content_markdown, ''), 240),
+      'blocks_json', v_note.blocks_json,
+      'folder_id', v_note.folder_id,
+      'folder_path', v_note.folder_path,
+      'color_token', v_note.color_token,
+      'is_favorite', v_note.is_favorite,
+      'is_pinned', v_note.is_pinned,
+      'status', v_note.status,
+      'reminder_at', v_note.reminder_at,
+      'is_locked', v_note.is_locked,
+      'lock_type', v_note.lock_type,
+      'lock_credential_kind', v_note.lock_credential_kind,
+      'lock_hash', v_note.lock_hash,
+      'lock_salt', v_note.lock_salt,
+      'lock_hint', v_note.lock_hint,
+      'ai_context_excluded', v_note.ai_context_excluded
     ),
     p_caller_platform, NOW()
   );
@@ -226,7 +305,13 @@ CREATE OR REPLACE FUNCTION rpc_upsert_folder(
   p_is_pinned BOOLEAN DEFAULT FALSE,
   p_is_archived BOOLEAN DEFAULT FALSE,
   p_ai_context_excluded BOOLEAN DEFAULT FALSE,
-  p_caller_platform TEXT DEFAULT 'local_client'
+  p_caller_platform TEXT DEFAULT 'local_client',
+  p_is_locked BOOLEAN DEFAULT FALSE,
+  p_lock_type TEXT DEFAULT NULL,
+  p_lock_credential_kind TEXT DEFAULT NULL,
+  p_lock_hash TEXT DEFAULT NULL,
+  p_lock_salt TEXT DEFAULT NULL,
+  p_lock_hint TEXT DEFAULT NULL
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -246,10 +331,13 @@ BEGIN
 
   INSERT INTO folders (
     id, user_id, name, parent_id, path, color_token, icon, cover_image,
-    is_favorite, is_pinned, is_archived, ai_context_excluded, sync_rev, created_at, updated_at
+    is_favorite, is_pinned, is_archived,
+    is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
+    ai_context_excluded, sync_rev, created_at, updated_at
   ) VALUES (
-    v_folder_id, v_user_id, p_name, p_parent_id, p_path, p_color_token, p_icon, p_cover_image,
+    v_folder_id, v_user_id, p_name, p_parent_id, p_path, COALESCE(p_color_token, 'apricot'), p_icon, p_cover_image,
     COALESCE(p_is_favorite, FALSE), COALESCE(p_is_pinned, FALSE), COALESCE(p_is_archived, FALSE),
+    COALESCE(p_is_locked, FALSE), p_lock_type, p_lock_credential_kind, p_lock_hash, p_lock_salt, p_lock_hint,
     COALESCE(p_ai_context_excluded, FALSE), v_sync_rev, NOW(), NOW()
   )
   ON CONFLICT (id) DO UPDATE SET
@@ -262,6 +350,12 @@ BEGIN
     is_favorite = EXCLUDED.is_favorite,
     is_pinned = EXCLUDED.is_pinned,
     is_archived = EXCLUDED.is_archived,
+    is_locked = EXCLUDED.is_locked,
+    lock_type = EXCLUDED.lock_type,
+    lock_credential_kind = EXCLUDED.lock_credential_kind,
+    lock_hash = EXCLUDED.lock_hash,
+    lock_salt = EXCLUDED.lock_salt,
+    lock_hint = EXCLUDED.lock_hint,
     ai_context_excluded = EXCLUDED.ai_context_excluded,
     sync_rev = EXCLUDED.sync_rev,
     updated_at = NOW()
@@ -275,11 +369,20 @@ BEGIN
     jsonb_build_object(
       'id', v_folder_id,
       'name', p_name,
+      'parent_id', p_parent_id,
       'path', p_path,
-      'is_favorite', p_is_favorite,
-      'is_pinned', p_is_pinned,
-      'is_archived', p_is_archived,
-      'ai_context_excluded', p_ai_context_excluded
+      'color_token', COALESCE(p_color_token, 'apricot'),
+      'icon', p_icon,
+      'is_favorite', COALESCE(p_is_favorite, FALSE),
+      'is_pinned', COALESCE(p_is_pinned, FALSE),
+      'is_archived', COALESCE(p_is_archived, FALSE),
+      'is_locked', COALESCE(p_is_locked, FALSE),
+      'lock_type', p_lock_type,
+      'lock_credential_kind', p_lock_credential_kind,
+      'lock_hash', p_lock_hash,
+      'lock_salt', p_lock_salt,
+      'lock_hint', p_lock_hint,
+      'ai_context_excluded', COALESCE(p_ai_context_excluded, FALSE)
     ),
     p_caller_platform, NOW()
   );
@@ -544,6 +647,8 @@ BEGIN
     jsonb_build_object(
       'app_lock_enabled', p_app_lock_enabled,
       'master_credential_type', p_master_credential_type,
+      'master_hash', p_master_hash,
+      'master_salt', p_master_salt,
       'master_hint', p_master_hint,
       'auto_relock_seconds', p_auto_relock_seconds
     ),
@@ -597,5 +702,174 @@ BEGIN
   ) matches;
 
   RETURN COALESCE(v_result, '[]'::jsonb);
+END;
+$$;
+
+-- =============================================================================
+-- 10. RPC: List Notes Paginated (Lightweight Card Previews — Omits Heavy blocks_json)
+-- =============================================================================
+CREATE OR REPLACE FUNCTION rpc_list_notes_paginated(
+  p_status TEXT DEFAULT 'active',
+  p_folder_id TEXT DEFAULT NULL,
+  p_folder_path TEXT DEFAULT NULL,
+  p_is_favorite BOOLEAN DEFAULT NULL,
+  p_search_query TEXT DEFAULT NULL,
+  p_limit INTEGER DEFAULT 20,
+  p_offset INTEGER DEFAULT 0
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_user_id TEXT := auth.uid()::text;
+  v_result JSONB;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Unauthorized: User authentication required';
+  END IF;
+
+  SELECT json_agg(row_to_json(cards))::jsonb INTO v_result
+  FROM (
+    SELECT
+      n.id,
+      n.user_id,
+      n.folder_id,
+      n.folder_path,
+      n.group_name,
+      n.title,
+      LEFT(COALESCE(n.content_markdown, ''), 240) AS content_markdown,
+      '[]'::jsonb AS blocks_json,
+      n.color_token,
+      n.is_favorite,
+      n.is_pinned,
+      n.status,
+      n.priority_score,
+      n.reminder_at,
+      n.is_locked,
+      n.lock_type,
+      n.lock_credential_kind,
+      n.lock_hash,
+      n.lock_salt,
+      n.lock_hint,
+      n.ai_context_excluded,
+      n.sync_rev,
+      n.created_at,
+      n.updated_at,
+      n.trashed_at,
+      COALESCE(
+        (
+          SELECT json_agg(t.name)
+          FROM note_tags nt
+          INNER JOIN tags t ON t.id = nt.tag_id
+          WHERE nt.note_id = n.id
+        ),
+        '[]'::json
+      ) AS tags
+    FROM notes n
+    WHERE n.user_id = v_user_id
+      AND (p_status IS NULL OR n.status = p_status)
+      AND (p_folder_id IS NULL OR n.folder_id = p_folder_id)
+      AND (p_folder_path IS NULL OR n.folder_path = p_folder_path OR n.folder_path LIKE p_folder_path || '/%')
+      AND (p_is_favorite IS NULL OR n.is_favorite = p_is_favorite)
+      AND (
+        p_search_query IS NULL
+        OR trim(p_search_query) = ''
+        OR n.title ILIKE '%' || trim(p_search_query) || '%'
+        OR n.content_markdown ILIKE '%' || trim(p_search_query) || '%'
+      )
+    ORDER BY n.is_pinned DESC, n.updated_at DESC
+    LIMIT GREATEST(COALESCE(p_limit, 20), 1)
+    OFFSET GREATEST(COALESCE(p_offset, 0), 0)
+  ) cards;
+
+  RETURN COALESCE(v_result, '[]'::jsonb);
+END;
+$$;
+
+-- =============================================================================
+-- 11. RPC: Get Full Note By ID (On-Demand Editor Hydration with Full blocks_json)
+-- =============================================================================
+CREATE OR REPLACE FUNCTION rpc_get_note_by_id(
+  p_note_id TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_user_id TEXT := auth.uid()::text;
+  v_result JSONB;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Unauthorized: User authentication required';
+  END IF;
+
+  SELECT row_to_json(full_note)::jsonb INTO v_result
+  FROM (
+    SELECT
+      n.*,
+      COALESCE(
+        (
+          SELECT json_agg(t.name)
+          FROM note_tags nt
+          INNER JOIN tags t ON t.id = nt.tag_id
+          WHERE nt.note_id = n.id
+        ),
+        '[]'::json
+      ) AS tags
+    FROM notes n
+    WHERE n.id = p_note_id AND n.user_id = v_user_id
+    LIMIT 1
+  ) full_note;
+
+  RETURN v_result;
+END;
+$$;
+
+-- =============================================================================
+-- 12. RPC: Delete Entity Permanently (Notes, Folders, Tasks, Reminders)
+-- =============================================================================
+CREATE OR REPLACE FUNCTION rpc_delete_entity(
+  p_entity_type TEXT,
+  p_entity_id TEXT,
+  p_caller_platform TEXT DEFAULT 'local_client'
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  v_user_id TEXT := auth.uid()::text;
+  v_sync_rev BIGINT;
+BEGIN
+  IF v_user_id IS NULL THEN
+    RAISE EXCEPTION 'Unauthorized: User authentication required';
+  END IF;
+
+  v_sync_rev := get_next_sync_rev(v_user_id);
+
+  IF p_entity_type = 'note' THEN
+    DELETE FROM notes WHERE id = p_entity_id AND user_id = v_user_id;
+  ELSIF p_entity_type = 'folder' THEN
+    DELETE FROM folders WHERE id = p_entity_id AND user_id = v_user_id;
+  ELSIF p_entity_type = 'task' THEN
+    DELETE FROM tasks WHERE id = p_entity_id AND user_id = v_user_id;
+  ELSIF p_entity_type = 'reminder' THEN
+    DELETE FROM reminders WHERE id = p_entity_id AND user_id = v_user_id;
+  ELSE
+    RAISE EXCEPTION 'Unsupported entity_type for deletion: %', p_entity_type;
+  END IF;
+
+  INSERT INTO sync_changelog (
+    id, user_id, sync_rev, entity_type, entity_id, change_type,
+    delta_payload, caller_platform, created_at
+  ) VALUES (
+    gen_random_uuid()::text, v_user_id, v_sync_rev, p_entity_type, p_entity_id, 'delete',
+    jsonb_build_object('id', p_entity_id),
+    p_caller_platform, NOW()
+  );
+
+  RETURN jsonb_build_object('deleted', TRUE, 'id', p_entity_id, 'entity_type', p_entity_type, 'sync_rev', v_sync_rev);
 END;
 $$;

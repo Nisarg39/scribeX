@@ -6,6 +6,7 @@ import * as WebBrowser from 'expo-web-browser';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../services/supabase/supabaseClient';
 import { migrateGuestVaultToUser } from '../db/vaultMigration';
+import { googleDriveVaultService } from '../services/drive/googleDriveVaultService';
 
 if (Platform.OS === 'web') {
   try {
@@ -120,6 +121,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const handleAuthenticatedSession = useCallback(async (session: Session | null) => {
     const extracted = extractUserFromSession(session);
     if (!extracted) return;
+
+    await googleDriveVaultService.syncDriveTokenFromSupabaseSession(session).catch(() => {});
 
     try {
       await migrateGuestVaultToUser(extracted.id);

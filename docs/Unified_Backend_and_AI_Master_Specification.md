@@ -134,6 +134,25 @@ To ensure complete consistency across human actions and autonomous AI operations
   2. Every RPC automatically appends an entry to `sync_changelog` with an incrementing monotonic `sync_rev`.
   3. When a task is marked complete (manually or by AI), `rpc_toggle_task` automatically updates the `reminders` table to cancel the pending alarm in the same atomic transaction.
 
+### 3.2.1. Lean Device Storage, Paginated Cloud Hydration, Real-Time Editor Convergence & Google Drive Media Eviction
+When authenticated (`isAuthenticated === true`), Supabase and Google Drive serve as the authoritative cloud vault, and ScribeX enforces an ultra-lean device footprint:
+
+1. **Page 1 Lightweight Card Cache + On-Demand Editor Hydration:**
+   * **Local SQLite Footprint (Logged-In Mode):** Local SQLite stores **only Page 1 (20 notes) of lightweight note card previews** (`id`, `title`, 2-line `snippet` in `content_markdown`, `color_token`, `folder_id`, `folder_path`, `is_favorite`, `is_pinned`, `is_locked`, `status`, `updated_at`, `sync_rev`, with `blocks_json = '[]'`) for `<2ms` cold app startup.
+   * **Note Editor On-Demand Hydration & Eviction (`/note/[id]`):** Opening a note in the Editor fetches its full `blocks_json` from Supabase on demand (`rpc_get_note_by_id`), caches it in the active working row while editing, pushes updates to Supabase, and **evicts `blocks_json` (and any non-Page-1 note rows) from local SQLite as soon as edits finish syncing and the note editor is closed**.
+2. **Home Screen Pagination (`PAGE_SIZE = 20`) & Server-Side Search/Filtering:**
+   * Scrolling on the Home screen loads paginated batches of 20 note cards via `rpc_list_notes_paginated`.
+   * Search queries, Folder selection, and Filter chips (`Favorites`, `Archive`, `Trash`) query Supabase directly with debounced pagination while keeping Page 1 of `All Notes` cached locally.
+3. **Google Drive Media Vault Account Selection & Temp Cache Lifecycle:**
+   * **Onboarding / Sign-In Prompt & Settings Control:** Right after completing Google Sign-In on `/signin`, the user is prompted to select/connect their **Google Drive account** (`prompt: 'select_account consent'`, scope `https://www.googleapis.com/auth/drive.file`), allowing them to choose either their signed-in Google account or a different Google account (or skip for later). A dedicated **Google Drive Media Vault** section in Workspace Settings allows connecting, switching, or disconnecting the Google Drive account at any time.
+   * **Immediate Local Binary Eviction & Temp Editor Playback Cache:** Once an attachment (`image`, `audio`, `video`, `file`, or WhatsApp `.zip`/`.txt`) is uploaded to `ScribeX_Vault/` in the user's Google Drive, the local file in device storage is **immediately deleted**. When a note is opened in the Editor, media files are hydrated into a temporary directory (`cacheDirectory/gdrive_temp/<noteId>/`) for smooth viewing/playback and **purged immediately when the note is closed**.
+4. **Real-Time Editor Sync & Multi-Device CDC Convergence:**
+   * **Active Device (Device A):** Keystrokes and block mutations commit locally in `<2ms` and auto-sync to Supabase with a **1.5-second debounce** while typing, plus an **immediate flush** on Back navigation or app backgrounding.
+   * **Other Logged-In Devices (Device B):** Supabase Realtime CDC broadcasts `postgres_changes` deltas in `~50ms`, updating Home screen note cards (title, snippet, color, pin order) and non-focused blocks inside an open Note Editor live in real time.
+5. **Temporary Offline Resilience & Dirty Queue Protection:**
+   * Any note, folder, task, reminder, or media file with uncommitted local edits (`sync_changelog` pending queue) is **strictly protected from eviction** until Cloud `200 OK` ACK is received, then auto-evicted.
+   * If a logged-in user temporarily loses internet and taps an older cloud-only note whose `blocks_json` was already evicted, the Editor displays a clean *"Reconnect to load this note from cloud"* state while still allowing creation and editing of new offline notes and tasks.
+
 ### 3.3. Two-Tier Hardware Reminder Architecture: Offline Local-Only vs Multi-Device CDC Sync
 Reminders adapt automatically to the user's authentication state:
 

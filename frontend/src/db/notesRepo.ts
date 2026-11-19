@@ -8,10 +8,26 @@ import { DBNote, CreateNoteDTO, UpdateNoteDTO, NoteFilter } from './types';
 import { NoteItem, ComposableBlock } from '../types/note';
 import { NoteColorToken } from '../theme/tokens';
 import { tagsRepo } from './tagsRepo';
+import { syncEngine } from '../services/sync/syncEngine';
+import { googleDriveVaultService } from '../services/drive/googleDriveVaultService';
 
 const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 export class NotesRepository {
+  private async queueNoteSyncDelta(
+    entityId: string,
+    changeType: 'insert' | 'update' | 'delete',
+    deltaPayload: Record<string, any>,
+    userId: string = 'user-default'
+  ): Promise<void> {
+    await dbClient.run(
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+       VALUES (?, ?, 1, 'note', ?, ?, ?);`,
+      [createLogId(), userId, entityId, changeType, JSON.stringify(deltaPayload)]
+    );
+    syncEngine.schedulePush();
+  }
+
   private mapToNoteItem(dbNote: DBNote, tags: string[] = []): NoteItem {
     let parsedBlocks: ComposableBlock[] = [];
     try {
@@ -41,6 +57,10 @@ export class NotesRepository {
       lockSalt: dbNote.lock_salt || undefined,
       lockHint: dbNote.lock_hint || undefined,
       aiContextExcluded: dbNote.ai_context_excluded === 1,
+      isDehydrated:
+        parsedBlocks.length === 0 &&
+        (dbNote.user_id !== 'user-default' || (dbNote.sync_rev || 0) > 0),
+      syncRev: dbNote.sync_rev,
       createdAt: dbNote.created_at,
       updatedAt: dbNote.updated_at,
     };
@@ -89,12 +109,8 @@ export class NotesRepository {
       }
     }
 
-    // Append to sync changelog
-    await dbClient.run(
-      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
-       VALUES (?, ?, 1, 'note', ?, 'insert', ?);`,
-      [createLogId(), userId, noteId, JSON.stringify({ id: noteId, title, content, colorToken })]
-    );
+    // Append to sync changelog and schedule debounced cloud push
+    await this.queueNoteSyncDelta(noteId, 'insert', { id: noteId, title, content, colorToken }, userId);
 
     const created = await this.getNoteById(noteId);
     return created!;
@@ -236,19 +252,14 @@ export class NotesRepository {
       await tagsRepo.setNoteTags(id, dto.tags);
     }
 
-    // Append changelog
-    await dbClient.run(
-      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
-       VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
-      [createLogId(), existing.userId, id, JSON.stringify(dto)]
-    );
+    // Append changelog & trigger debounced sync
+    await this.queueNoteSyncDelta(id, 'update', dto as Record<string, any>, existing.userId);
 
     const updated = await this.getNoteById(id);
     return updated!;
   }
 
   public async updateNoteBlocks(noteId: string, blocks: ComposableBlock[]): Promise<NoteItem> {
-    const blocksJson = JSON.stringify(blocks);
     const contentMarkdown = blocks.map((b) => b.content).join('\n\n');
 
     return this.updateNote(noteId, {
@@ -267,11 +278,7 @@ export class NotesRepository {
       [nextVal ? 1 : 0, id]
     );
 
-    await dbClient.run(
-      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
-       VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
-      [createLogId(), note.userId, id, JSON.stringify({ isFavorite: nextVal })]
-    );
+    await this.queueNoteSyncDelta(id, 'update', { isFavorite: nextVal }, note.userId);
 
     return nextVal;
   }
@@ -285,6 +292,8 @@ export class NotesRepository {
       `UPDATE notes SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
       [nextVal ? 1 : 0, id]
     );
+
+    await this.queueNoteSyncDelta(id, 'update', { isPinned: nextVal }, note.userId);
 
     return nextVal;
   }
@@ -300,57 +309,98 @@ export class NotesRepository {
       [id]
     );
 
-    await dbClient.run(
-      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
-       VALUES (?, ?, 1, 'note', ?, 'delete', ?);`,
-      [createLogId(), note.userId, id, JSON.stringify({ status: 'trashed' })]
-    );
+    // Trashing is a status update (not a permanent purge)
+    await this.queueNoteSyncDelta(id, 'update', { status: 'trashed' }, note.userId);
   }
 
   public async archiveNote(id: string): Promise<void> {
+    const note = await this.getNoteById(id);
     await dbClient.run(
       `UPDATE notes 
        SET status = 'archived', updated_at = CURRENT_TIMESTAMP 
        WHERE id = ?;`,
       [id]
     );
+    await this.queueNoteSyncDelta(id, 'update', { status: 'archived' }, note?.userId);
   }
 
   public async unarchiveNote(id: string): Promise<void> {
+    const note = await this.getNoteById(id);
     await dbClient.run(
       `UPDATE notes 
        SET status = 'active', updated_at = CURRENT_TIMESTAMP 
        WHERE id = ?;`,
       [id]
     );
+    await this.queueNoteSyncDelta(id, 'update', { status: 'active' }, note?.userId);
   }
 
   public async restoreNote(id: string): Promise<void> {
+    const note = await this.getNoteById(id);
     await dbClient.run(
       `UPDATE notes 
        SET status = 'active', trashed_at = NULL, updated_at = CURRENT_TIMESTAMP 
        WHERE id = ?;`,
       [id]
     );
+    await this.queueNoteSyncDelta(id, 'update', { status: 'active' }, note?.userId);
   }
 
   public async permanentlyDeleteNote(id: string): Promise<void> {
+    const rawNote = await dbClient.queryFirst<{
+      id: string;
+      user_id: string;
+      blocks_json: string;
+      content_markdown: string;
+    }>(`SELECT id, user_id, blocks_json, content_markdown FROM notes WHERE id = ?;`, [id]);
+
+    if (rawNote) {
+      await googleDriveVaultService
+        .cleanupMediaForDeletedNotes([
+          {
+            id: rawNote.id,
+            userId: rawNote.user_id,
+            blocksJson: rawNote.blocks_json,
+            contentMarkdown: rawNote.content_markdown,
+          },
+        ])
+        .catch(() => {});
+    }
+
     await dbClient.run(`DELETE FROM tasks WHERE note_id = ?;`, [id]);
     await dbClient.run(`DELETE FROM note_tags WHERE note_id = ?;`, [id]);
     await dbClient.run(`DELETE FROM entity_relations WHERE source_id = ? OR target_id = ?;`, [id, id]);
-    await dbClient.run(
-      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
-       VALUES (?, 'user-default', 1, 'note', ?, 'delete', ?);`,
-      [`log-purge-${id}-${Date.now()}`, id, JSON.stringify({ action: 'permanent_purge', timestamp: new Date().toISOString() })]
+    await this.queueNoteSyncDelta(
+      id,
+      'delete',
+      { action: 'permanent_purge', timestamp: new Date().toISOString() },
+      rawNote?.user_id
     );
     await dbClient.run(`DELETE FROM notes WHERE id = ?;`, [id]);
   }
 
   public async emptyTrashCascade(): Promise<number> {
-    const trashedNotes = await dbClient.query<{ id: string }>(
-      `SELECT id FROM notes WHERE status = 'trashed';`
+    const trashedNotes = await dbClient.query<{
+      id: string;
+      user_id: string;
+      blocks_json: string;
+      content_markdown: string;
+    }>(
+      `SELECT id, user_id, blocks_json, content_markdown FROM notes WHERE status = 'trashed';`
     );
     if (trashedNotes.length === 0) return 0;
+
+    await googleDriveVaultService
+      .cleanupMediaForDeletedNotes(
+        trashedNotes.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          blocksJson: r.blocks_json,
+          contentMarkdown: r.content_markdown,
+        }))
+      )
+      .catch(() => {});
+
     const ids = trashedNotes.map((r) => r.id);
     const placeholders = ids.map(() => '?').join(',');
 
@@ -361,11 +411,12 @@ export class NotesRepository {
       [...ids, ...ids]
     );
 
-    for (const id of ids) {
-      await dbClient.run(
-        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
-         VALUES (?, 'user-default', 1, 'note', ?, 'delete', ?);`,
-        [`log-purge-${id}-${Date.now()}`, id, JSON.stringify({ action: 'empty_trash_purge', timestamp: new Date().toISOString() })]
+    for (const row of trashedNotes) {
+      await this.queueNoteSyncDelta(
+        row.id,
+        'delete',
+        { action: 'empty_trash_purge', timestamp: new Date().toISOString() },
+        row.user_id
       );
     }
 
@@ -383,17 +434,47 @@ export class NotesRepository {
       ids
     );
     for (const id of ids) {
-      await dbClient.run(
-        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
-         VALUES (?, 'user-default', 1, 'note', ?, 'delete', ?);`,
-        [createLogId(), id, JSON.stringify({ status: 'trashed' })]
-      );
+      await this.queueNoteSyncDelta(id, 'update', { status: 'trashed' });
     }
   }
 
   public async batchPermanentlyDeleteNotes(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
+    const targetNotes = await dbClient.query<{
+      id: string;
+      user_id: string;
+      blocks_json: string;
+      content_markdown: string;
+    }>(
+      `SELECT id, user_id, blocks_json, content_markdown FROM notes WHERE id IN (${placeholders});`,
+      ids
+    );
+
+    if (targetNotes.length > 0) {
+      await googleDriveVaultService
+        .cleanupMediaForDeletedNotes(
+          targetNotes.map((r) => ({
+            id: r.id,
+            userId: r.user_id,
+            blocksJson: r.blocks_json,
+            contentMarkdown: r.content_markdown,
+          }))
+        )
+        .catch(() => {});
+    }
+
+    const userById = new Map(targetNotes.map((r) => [r.id, r.user_id]));
+    await dbClient.run(`DELETE FROM tasks WHERE note_id IN (${placeholders});`, ids);
+    await dbClient.run(`DELETE FROM note_tags WHERE note_id IN (${placeholders});`, ids);
+    for (const id of ids) {
+      await this.queueNoteSyncDelta(
+        id,
+        'delete',
+        { action: 'batch_permanent_purge' },
+        userById.get(id)
+      );
+    }
     await dbClient.run(`DELETE FROM notes WHERE id IN (${placeholders});`, ids);
   }
 
@@ -406,6 +487,9 @@ export class NotesRepository {
        WHERE id IN (${placeholders});`,
       ids
     );
+    for (const id of ids) {
+      await this.queueNoteSyncDelta(id, 'update', { status: 'active' });
+    }
   }
 
   public async batchArchiveNotes(ids: string[], archive: boolean): Promise<void> {
@@ -418,6 +502,9 @@ export class NotesRepository {
        WHERE id IN (${placeholders});`,
       [status, ...ids]
     );
+    for (const id of ids) {
+      await this.queueNoteSyncDelta(id, 'update', { status });
+    }
   }
 
   public async batchTogglePinNotes(ids: string[], pin: boolean): Promise<void> {
@@ -429,6 +516,9 @@ export class NotesRepository {
        WHERE id IN (${placeholders});`,
       [pin ? 1 : 0, ...ids]
     );
+    for (const id of ids) {
+      await this.queueNoteSyncDelta(id, 'update', { isPinned: pin });
+    }
   }
 
   public async batchMoveNotesToFolder(ids: string[], folderPath: string, folderId?: string): Promise<void> {
@@ -440,6 +530,9 @@ export class NotesRepository {
        WHERE id IN (${placeholders});`,
       [folderPath, folderId || null, ...ids]
     );
+    for (const id of ids) {
+      await this.queueNoteSyncDelta(id, 'update', { folderPath, folderId: folderId || null });
+    }
   }
 }
 
