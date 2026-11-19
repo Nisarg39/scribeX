@@ -34,6 +34,7 @@ export class SyncEngine {
   private config: SyncEngineConfig = {
     userId: 'user-default',
     isGuest: true,
+    isDriveConnected: false,
     debounceMs: 1500,
     autoSync: true,
   };
@@ -47,16 +48,35 @@ export class SyncEngine {
   private realtimeChannel: any = null;
   public readonly deviceSessionId: string = `client_${Platform.OS}_${Math.random().toString(36).slice(2, 10)}`;
 
+  private isGuestOrUnauthenticated(): boolean {
+    return Boolean(this.config.isGuest || !this.config.userId || this.config.userId === 'user-default');
+  }
+
   /**
-   * Initializes the sync engine, enforcing the Strict Auth Gate for guest users
+   * Hard runtime gate: Cloud Sync MUST NOT run unless user is authenticated AND Google Drive is connected.
+   */
+  private isSyncGateBlocked(): boolean {
+    return this.isGuestOrUnauthenticated() || !this.config.isDriveConnected;
+  }
+
+  public isCloudSyncEnabled(): boolean {
+    return !this.isSyncGateBlocked();
+  }
+
+  /**
+   * Initializes the sync engine, enforcing both the Strict Auth Gate and Mandatory Google Drive Gate
    */
   public async initialize(config?: Partial<SyncEngineConfig>): Promise<void> {
     if (config) {
       this.config = { ...this.config, ...config };
     }
 
-    if (this.config.isGuest || !this.config.userId || this.config.userId === 'user-default') {
-      this.status = 'offline_guest';
+    if (this.isSyncGateBlocked()) {
+      if (this.pushTimer) {
+        clearTimeout(this.pushTimer);
+        this.pushTimer = null;
+      }
+      this.status = this.isGuestOrUnauthenticated() ? 'offline_guest' : 'drive_required';
       this.disconnectRealtimeCDC();
       return;
     }
@@ -123,8 +143,8 @@ export class SyncEngine {
    * Schedules a 1.5s debounced background push of local uncommitted deltas
    */
   public schedulePush(delayMs: number = this.config.debounceMs || 1500): void {
-    if (this.config.isGuest || !this.config.userId || this.config.userId === 'user-default') {
-      this.status = 'offline_guest';
+    if (this.isSyncGateBlocked()) {
+      this.status = this.isGuestOrUnauthenticated() ? 'offline_guest' : 'drive_required';
       return;
     }
 
@@ -151,12 +171,12 @@ export class SyncEngine {
   }
 
   /**
-   * Pushes uncommitted entries from local sync_changelog Outbox to Supabase RPCs
+   * Pushes all uncommitted entries from local sync_changelog Outbox to Supabase RPCs in batches of 100
    * and deletes each committed row from local sync_changelog upon 200 OK ACK.
    */
   public async pushPendingDeltas(): Promise<number> {
-    if (this.config.isGuest || !this.config.userId || this.config.userId === 'user-default') {
-      this.status = 'offline_guest';
+    if (this.isSyncGateBlocked()) {
+      this.status = this.isGuestOrUnauthenticated() ? 'offline_guest' : 'drive_required';
       return 0;
     }
     if (this.isPushing) return 0;
@@ -165,65 +185,84 @@ export class SyncEngine {
     this.status = 'syncing';
     this.lastError = null;
 
+    const UPSERT_PRIORITY: Record<string, number> = {
+      folder: 1,
+      workspace_security: 2,
+      note: 3,
+      task: 4,
+      reminder: 5,
+    };
+
     try {
-      const rows = await dbClient.query<any>(
-        `SELECT * FROM sync_changelog ORDER BY rowid ASC LIMIT 100;`
-      );
-
-      if (!rows || rows.length === 0) {
-        this.status = 'idle';
-        this.isPushing = false;
-        return 0;
-      }
-
-      const deltas: SyncDelta[] = rows.map((r) => ({
-        id: r.id,
-        userId: r.user_id,
-        syncRev: r.sync_rev,
-        entityType: r.entity_type,
-        entityId: r.entity_id,
-        changeType: r.change_type,
-        deltaPayload:
-          typeof r.delta_payload === 'string' ? JSON.parse(r.delta_payload) : r.delta_payload,
-        callerPlatform: this.deviceSessionId,
-        createdAt: r.created_at,
-      }));
-
-      const UPSERT_PRIORITY: Record<string, number> = {
-        folder: 1,
-        workspace_security: 2,
-        note: 3,
-        task: 4,
-        reminder: 5,
-      };
-      deltas.sort((a, b) => {
-        const aIsDel = a.changeType === 'delete';
-        const bIsDel = b.changeType === 'delete';
-        if (aIsDel !== bIsDel) return aIsDel ? 1 : -1;
-        const pa = UPSERT_PRIORITY[a.entityType] ?? 99;
-        const pb = UPSERT_PRIORITY[b.entityType] ?? 99;
-        return aIsDel ? pb - pa : pa - pb;
-      });
-
       let pushedCount = 0;
+      const MAX_BATCHES = 50;
 
-      for (const delta of deltas) {
-        if (isSupabaseConfigured()) {
-          await this.pushSingleDeltaToSupabase(delta);
+      for (let batch = 0; batch < MAX_BATCHES; batch++) {
+        if (this.isSyncGateBlocked()) {
+          this.status = this.isGuestOrUnauthenticated() ? 'offline_guest' : 'drive_required';
+          break;
         }
 
-        // Remove committed Outbox entry from local SQLite so zero changelog bloat remains on device
-        await dbClient.run(`DELETE FROM sync_changelog WHERE id = ?;`, [delta.id]);
-        pushedCount++;
+        const rows = await dbClient.query<any>(
+          `SELECT * FROM sync_changelog ORDER BY rowid ASC LIMIT 100;`
+        );
 
-        if (delta.syncRev > this.lastPushedRev) {
-          this.lastPushedRev = delta.syncRev;
+        if (!rows || rows.length === 0) {
+          break;
+        }
+
+        const deltas: SyncDelta[] = rows.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          syncRev: r.sync_rev,
+          entityType: r.entity_type,
+          entityId: r.entity_id,
+          changeType: r.change_type,
+          deltaPayload:
+            typeof r.delta_payload === 'string' ? JSON.parse(r.delta_payload) : r.delta_payload,
+          callerPlatform: this.deviceSessionId,
+          createdAt: r.created_at,
+        }));
+
+        deltas.sort((a, b) => {
+          const aIsDel = a.changeType === 'delete';
+          const bIsDel = b.changeType === 'delete';
+          if (aIsDel !== bIsDel) return aIsDel ? 1 : -1;
+          const pa = UPSERT_PRIORITY[a.entityType] ?? 99;
+          const pb = UPSERT_PRIORITY[b.entityType] ?? 99;
+          return aIsDel ? pb - pa : pa - pb;
+        });
+
+        for (const delta of deltas) {
+          if (this.isSyncGateBlocked()) {
+            this.status = this.isGuestOrUnauthenticated() ? 'offline_guest' : 'drive_required';
+            break;
+          }
+          if (isSupabaseConfigured()) {
+            await this.pushSingleDeltaToSupabase(delta);
+          }
+
+          // Remove committed Outbox entry from local SQLite so zero changelog bloat remains on device
+          await dbClient.run(`DELETE FROM sync_changelog WHERE id = ?;`, [delta.id]);
+          pushedCount++;
+
+          if (delta.syncRev > this.lastPushedRev) {
+            this.lastPushedRev = delta.syncRev;
+          }
+        }
+
+        if (rows.length < 100) {
+          break;
         }
       }
 
-      await AsyncStorage.setItem(STORAGE_LAST_PUSHED_REV, this.lastPushedRev.toString());
-      this.lastSyncedAt = new Date().toISOString();
-      this.status = 'idle';
+      if (pushedCount > 0) {
+        await AsyncStorage.setItem(STORAGE_LAST_PUSHED_REV, this.lastPushedRev.toString());
+        this.lastSyncedAt = new Date().toISOString();
+      }
+      if (!this.isSyncGateBlocked()) {
+        this.status = 'idle';
+      }
       this.isPushing = false;
       return pushedCount;
     } catch (err: any) {
@@ -555,7 +594,7 @@ export class SyncEngine {
    * Fetches a paginated page of lightweight note card previews from Supabase (`rpc_list_notes_paginated`)
    */
   public async fetchPaginatedNotesFromCloud(query: PaginatedNotesQuery = {}): Promise<any[]> {
-    if (!isSupabaseConfigured() || this.config.isGuest) return [];
+    if (!isSupabaseConfigured() || this.isSyncGateBlocked()) return [];
 
     const { data, error } = await supabase.rpc('rpc_list_notes_paginated', {
       p_status: typeof query.status === 'undefined' ? 'active' : query.status,
@@ -578,7 +617,7 @@ export class SyncEngine {
    * for on-demand hydration when opening the Note Editor.
    */
   public async fetchFullNoteFromCloud(noteId: string): Promise<any | null> {
-    if (!isSupabaseConfigured() || this.config.isGuest || !noteId) return null;
+    if (!isSupabaseConfigured() || this.isSyncGateBlocked() || !noteId) return null;
 
     const { data, error } = await supabase.rpc('rpc_get_note_by_id', {
       p_note_id: noteId,
@@ -591,11 +630,7 @@ export class SyncEngine {
   }
 
   public isAuthenticatedSession(): boolean {
-    return (
-      !this.config.isGuest &&
-      Boolean(this.config.userId) &&
-      this.config.userId !== 'user-default'
-    );
+    return !this.isSyncGateBlocked();
   }
 
   /**
@@ -1021,7 +1056,7 @@ export class SyncEngine {
    * Connects to Supabase Realtime publication channel and begins streaming CDC deltas
    */
   public subscribeToRealtimeCDC(supabaseClient: any = supabase): () => void {
-    if (!supabaseClient || this.config.isGuest || !this.config.userId || this.config.userId === 'user-default') {
+    if (!supabaseClient || this.isSyncGateBlocked()) {
       return () => {};
     }
 

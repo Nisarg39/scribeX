@@ -99,6 +99,8 @@
       "authContext": "frontend/src/context/AuthContext.tsx",
       "initialSchemaSql": "supabase/migrations/001_initial_schema.sql",
       "coreRpcsSql": "supabase/migrations/002_core_rpcs.sql",
+      "googleDriveRefreshTokensSql": "supabase/migrations/003_google_drive_refresh_tokens.sql",
+      "googleDriveTokenEdgeFunction": "supabase/functions/google-drive-token/index.ts",
       "sqliteSchema": "frontend/src/db/schema.ts",
       "sqliteNativeClient": "frontend/src/db/client.native.ts",
       "sqliteWebClient": "frontend/src/db/client.web.ts",

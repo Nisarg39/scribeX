@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { useTheme } from '../src/theme';
 import { useAuth } from '../src/context';
-import { googleDriveVaultService } from '../src/services/drive/googleDriveVaultService';
-import { Sun, Moon, ArrowRight, AlertCircle, X, ShieldCheck, HardDrive } from 'lucide-react-native';
+import { Sun, Moon, ArrowRight, AlertCircle, X, ShieldCheck, HardDrive, LogOut } from 'lucide-react-native';
 
 const GoogleMark: React.FC<{ size?: number }> = ({ size = 18 }) => (
   <Svg width={size} height={size} viewBox="0 0 24 24">
@@ -35,37 +34,33 @@ export default function SignInScreen() {
   const { isDark, toggleTheme } = useTheme();
   const {
     user,
-    userId,
     signInWithGoogle,
     continueAsGuest,
+    signOut,
+    connectOrSwitchDrive,
     isSigningIn,
+    isDriveChecking,
+    isDriveConnected,
+    isCloudSyncReady,
     authError,
     clearAuthError,
     isAuthenticated,
+    isGuest,
   } = useAuth();
 
-  const [step, setStep] = useState<'auth' | 'drive_select'>('auth');
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
   const [driveError, setDriveError] = useState<string | null>(null);
 
-  // After Google OAuth completes, prompt for Google Drive account selection once during onboarding
+  const step: 'auth' | 'drive_required' =
+    isAuthenticated && !isGuest && !isDriveConnected ? 'drive_required' : 'auth';
+
+  // Only proceed to /home once BOTH Google Sign-In AND Google Drive Vault are verified connected
   useEffect(() => {
-    let active = true;
-    async function checkDriveOnboarding() {
-      if (!isAuthenticated || !userId || userId === 'user-default') return;
-      const done = await googleDriveVaultService.hasCompletedDriveOnboarding(userId);
-      if (!active) return;
-      if (done) {
-        router.replace('/home');
-      } else {
-        setStep('drive_select');
-      }
+    if (isDriveChecking) return;
+    if (isCloudSyncReady) {
+      router.replace('/home');
     }
-    checkDriveOnboarding();
-    return () => {
-      active = false;
-    };
-  }, [isAuthenticated, userId, router]);
+  }, [isDriveChecking, isCloudSyncReady, router]);
 
   const handleSkip = async () => {
     clearAuthError();
@@ -74,23 +69,16 @@ export default function SignInScreen() {
   };
 
   const handleGoogleSignIn = async () => {
-    const ok = await signInWithGoogle();
-    if (ok && Platform.OS !== 'web' && userId && userId !== 'user-default') {
-      const done = await googleDriveVaultService.hasCompletedDriveOnboarding(userId);
-      if (done) {
-        router.replace('/home');
-      } else {
-        setStep('drive_select');
-      }
-    }
+    setDriveError(null);
+    await signInWithGoogle();
   };
 
   const handleConnectDriveAccount = async () => {
     setDriveError(null);
     setIsConnectingDrive(true);
     try {
-      const res = await googleDriveVaultService.connectOrSwitchDriveAccount(userId);
-      if (res.ok) {
+      const res = await connectOrSwitchDrive();
+      if (res.ok && res.account) {
         router.replace('/home');
       } else if (res.error) {
         setDriveError(res.error);
@@ -100,12 +88,15 @@ export default function SignInScreen() {
     }
   };
 
-  const handleSkipDriveSetup = async () => {
-    await googleDriveVaultService.markDriveOnboardingCompleted(userId);
+  const handleSignOutToOffline = async () => {
+    setDriveError(null);
+    clearAuthError();
+    await signOut();
+    await continueAsGuest();
     router.replace('/home');
   };
 
-  const activeError = step === 'drive_select' ? driveError : authError;
+  const activeError = step === 'drive_required' ? driveError : authError;
 
   return (
     <View
@@ -118,7 +109,7 @@ export default function SignInScreen() {
       {/* Top Header - Theme Toggle */}
       <View className="flex-row items-center justify-between">
         <Text className="text-xs uppercase tracking-widest font-semibold text-light-textMuted dark:text-dark-textMuted">
-          {step === 'drive_select' ? 'Step 2 · Media Vault' : 'Authentication'}
+          {step === 'drive_required' ? 'Step 2 · Mandatory Media Vault' : 'Authentication'}
         </Text>
 
         <Pressable
@@ -138,16 +129,23 @@ export default function SignInScreen() {
 
       {/* Main Editorial Prompt */}
       <View className="max-w-md w-full self-center">
-        {step === 'drive_select' ? (
+        {isDriveChecking ? (
+          <View className="items-center py-8 gap-3">
+            <ActivityIndicator size="small" color="#06B6D4" />
+            <Text className="text-sm font-semibold text-light-textSecondary dark:text-dark-textSecondary">
+              Verifying Google Drive Vault permission...
+            </Text>
+          </View>
+        ) : step === 'drive_required' ? (
           <>
             <View className="w-12 h-12 rounded-2xl bg-cyan-500/15 items-center justify-center mb-4">
               <HardDrive size={24} color="#06B6D4" strokeWidth={2.2} />
             </View>
             <Text className="text-4xl font-extrabold text-light-textPrimary dark:text-dark-textPrimary tracking-tight mb-3">
-              Connect Google Drive Vault.
+              Connect Google Drive to Start Sync.
             </Text>
             <Text className="text-base text-light-textSecondary dark:text-dark-textSecondary leading-relaxed mb-6">
-              Signed in as {user?.email || 'Google User'}. Select which Google Drive account stores your photos, audio memos, videos & exports in ScribeX_Vault/ so device storage stays ultra-lean.
+              Signed in as {user?.email || 'Google User'}. Google Drive Vault (ScribeX_Vault/) is required before Cloud Sync begins so your notes, images, and offline files stay synced across devices.
             </Text>
           </>
         ) : (
@@ -156,7 +154,7 @@ export default function SignInScreen() {
               Welcome to ScribeX.
             </Text>
             <Text className="text-base text-light-textSecondary dark:text-dark-textSecondary leading-relaxed mb-6">
-              Sign in with Google to unlock real-time Cloud Sync across devices, Google Drive media backups, and Friday AI.
+              Sign in with Google and connect Google Drive Vault to unlock real-time Cloud Sync across devices, media backups, and Friday AI.
             </Text>
           </>
         )}
@@ -171,7 +169,7 @@ export default function SignInScreen() {
               {activeError}
             </Text>
             <Pressable
-              onPress={() => (step === 'drive_select' ? setDriveError(null) : clearAuthError())}
+              onPress={() => (step === 'drive_required' ? setDriveError(null) : clearAuthError())}
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Dismiss sign-in error"
@@ -184,15 +182,15 @@ export default function SignInScreen() {
       </View>
 
       {/* Action Buttons */}
-      {step === 'drive_select' ? (
+      {step === 'drive_required' ? (
         <View className="max-w-md w-full self-center gap-3">
           <Pressable
             onPress={handleConnectDriveAccount}
-            disabled={isConnectingDrive}
+            disabled={isConnectingDrive || isDriveChecking}
             accessibilityRole="button"
-            accessibilityLabel="Choose Google Drive Account"
+            accessibilityLabel="Connect Google Drive"
             className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-3 active:scale-98 shadow-sm"
-            style={{ opacity: isConnectingDrive ? 0.75 : 1, minHeight: 54 }}
+            style={{ opacity: isConnectingDrive || isDriveChecking ? 0.75 : 1, minHeight: 54 }}
           >
             {isConnectingDrive ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -200,28 +198,28 @@ export default function SignInScreen() {
               <GoogleMark size={19} />
             )}
             <Text className="text-base font-semibold text-white">
-              {isConnectingDrive ? 'Connecting Google Drive...' : 'Choose Google Drive Account'}
+              {isConnectingDrive ? 'Connecting Google Drive...' : 'Connect Google Drive'}
             </Text>
           </Pressable>
 
           <Pressable
-            onPress={handleSkipDriveSetup}
-            disabled={isConnectingDrive}
+            onPress={handleSignOutToOffline}
+            disabled={isConnectingDrive || isDriveChecking}
             accessibilityRole="button"
-            accessibilityLabel="Skip Google Drive setup for now"
+            accessibilityLabel="Sign Out and Use Offline Mode"
             className="w-full py-3.5 rounded-2xl border border-light-border dark:border-dark-border flex-row items-center justify-center gap-2 active:scale-98"
             style={{ minHeight: 50 }}
           >
+            <LogOut size={15} color={isDark ? '#9CA3AF' : '#6B7280'} strokeWidth={2} />
             <Text className="text-sm font-medium text-light-textSecondary dark:text-dark-textSecondary">
-              Skip Drive Setup for Now
+              Sign Out & Use Offline Mode
             </Text>
-            <ArrowRight size={16} color={isDark ? '#9CA3AF' : '#6B7280'} strokeWidth={2} />
           </Pressable>
 
           <View className="flex-row items-center justify-center gap-1.5 pt-2">
             <ShieldCheck size={14} color={isDark ? '#6B7280' : '#9CA3AF'} strokeWidth={2} />
             <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center">
-              You can connect or switch your Google Drive account anytime in Settings.
+              Cloud Sync remains paused until Google Drive is connected. You can switch your Drive account anytime in Settings.
             </Text>
           </View>
         </View>
@@ -229,11 +227,11 @@ export default function SignInScreen() {
         <View className="max-w-md w-full self-center gap-3">
           <Pressable
             onPress={handleGoogleSignIn}
-            disabled={isSigningIn}
+            disabled={isSigningIn || isDriveChecking}
             accessibilityRole="button"
             accessibilityLabel="Continue with Google"
             className="w-full py-4 rounded-2xl bg-light-iconBg dark:bg-dark-iconBg flex-row items-center justify-center gap-3 active:scale-98 shadow-sm"
-            style={{ opacity: isSigningIn ? 0.75 : 1, minHeight: 54 }}
+            style={{ opacity: isSigningIn || isDriveChecking ? 0.75 : 1, minHeight: 54 }}
           >
             {isSigningIn ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
@@ -247,7 +245,7 @@ export default function SignInScreen() {
 
           <Pressable
             onPress={handleSkip}
-            disabled={isSigningIn}
+            disabled={isSigningIn || isDriveChecking}
             accessibilityRole="button"
             accessibilityLabel="Skip and use offline mode"
             className="w-full py-3.5 rounded-2xl border border-light-border dark:border-dark-border flex-row items-center justify-center gap-2 active:scale-98"
@@ -262,7 +260,7 @@ export default function SignInScreen() {
           <View className="flex-row items-center justify-center gap-1.5 pt-2">
             <ShieldCheck size={14} color={isDark ? '#6B7280' : '#9CA3AF'} strokeWidth={2} />
             <Text className="text-xs text-light-textMuted dark:text-dark-textMuted text-center">
-              Cloud Sync and Friday AI require Google Sign-In. Skipping keeps your vault 100% local on this device.
+              Cloud Sync and Friday AI require Google Sign-In and a connected Google Drive Vault. Skipping keeps your vault 100% local on this device.
             </Text>
           </View>
         </View>

@@ -66,14 +66,89 @@ test('googleDriveVaultService.ts uses expo-file-system/legacy & exports full API
   assert.ok(src.includes('FileSystem.deleteAsync'), 'Must delete local binary after upload');
 });
 
-test('signin.tsx implements Post-Login Step 2 Google Drive Account Onboarding', () => {
+test('signin.tsx enforces Mandatory Step 2 Google Drive Gate (no Drive skip)', () => {
   const src = fs.readFileSync(path.join(feDir, 'app/signin.tsx'), 'utf-8');
-  assert.ok(src.includes("'drive_select'"), 'Missing drive_select step');
-  assert.ok(src.includes('Choose Google Drive Account'), 'Missing Drive picker CTA');
-  assert.ok(src.includes('Skip Drive Setup for Now'), 'Missing skip option');
-  assert.ok(src.includes('hasCompletedDriveOnboarding'), 'Must check onboarding completion flag');
-  assert.ok(src.includes('markDriveOnboardingCompleted'), 'Must persist skip/completion flag');
-  assert.ok(src.includes('Skip & Use Offline Mode'), 'Must retain guest mode escape hatch');
+  assert.ok(src.includes("'drive_required'"), 'Missing drive_required mandatory step');
+  assert.ok(src.includes('Connect Google Drive'), 'Missing Connect Google Drive CTA');
+  assert.ok(!src.includes('Skip Drive Setup for Now'), 'Must NOT allow skipping Google Drive setup');
+  assert.ok(src.includes('Sign Out & Use Offline Mode'), 'Must provide sign-out offline escape hatch');
+  assert.ok(src.includes('isCloudSyncReady'), 'Must wait for isCloudSyncReady before navigating to /home');
+  assert.ok(src.includes('Skip & Use Offline Mode'), 'Must retain guest mode escape hatch on Step 1');
+});
+
+test('AuthContext, SyncEngine & useNotesStore gate sync, migration & backfill behind verified Drive', () => {
+  const authSrc = fs.readFileSync(path.join(feDir, 'src/context/AuthContext.tsx'), 'utf-8');
+  const syncSrc = fs.readFileSync(path.join(feDir, 'src/services/sync/syncEngine.ts'), 'utf-8');
+  const syncTypesSrc = fs.readFileSync(path.join(feDir, 'src/services/sync/syncTypes.ts'), 'utf-8');
+  const storeSrc = fs.readFileSync(path.join(feDir, 'src/state/useNotesStore.tsx'), 'utf-8');
+  const driveSrc = fs.readFileSync(
+    path.join(feDir, 'src/services/drive/googleDriveVaultService.ts'),
+    'utf-8'
+  );
+  const indexSrc = fs.readFileSync(path.join(feDir, 'app/index.tsx'), 'utf-8');
+
+  assert.ok(
+    authSrc.includes("scopes: 'https://www.googleapis.com/auth/drive.file'"),
+    'AuthContext.signInWithGoogle must request drive.file scope'
+  );
+  assert.ok(authSrc.includes('isCloudSyncReady'), 'AuthContext must expose isCloudSyncReady');
+  assert.ok(authSrc.includes('subscribeDriveState'), 'AuthContext must reactively subscribe to Drive state');
+  assert.ok(
+    authSrc.includes('if (verifiedDrive?.accessToken)'),
+    'AuthContext must defer migrateGuestVaultToUser until Drive is verified'
+  );
+
+  assert.ok(syncTypesSrc.includes("'drive_required'"), 'SyncStatus must include drive_required');
+  assert.ok(syncTypesSrc.includes('isDriveConnected?: boolean'), 'SyncEngineConfig must include isDriveConnected');
+  assert.ok(syncSrc.includes('isSyncGateBlocked()'), 'SyncEngine must enforce isSyncGateBlocked()');
+  assert.ok(syncSrc.includes('MAX_BATCHES'), 'pushPendingDeltas must drain outbox across multiple batches');
+
+  assert.ok(driveSrc.includes('public async verifyDriveAccess('), 'Must verify drive.file scope via verifyDriveAccess');
+  assert.ok(driveSrc.includes('public subscribeDriveState('), 'Must expose subscribeDriveState pub/sub');
+  assert.ok(
+    driveSrc.includes('public async backfillOfflineMediaToDrive('),
+    'Must expose backfillOfflineMediaToDrive for pre-login offline media'
+  );
+
+  assert.ok(
+    storeSrc.includes('googleDriveVaultService.backfillOfflineMediaToDrive(userId)'),
+    'useNotesStore must backfill offline local media before flushing outbox'
+  );
+  assert.ok(
+    storeSrc.includes('isDriveConnected: true') && storeSrc.includes('isDriveConnected: false'),
+    'useNotesStore must toggle SyncEngine isDriveConnected reactively'
+  );
+  assert.ok(
+    indexSrc.includes('!isDriveConnected && !hasCompletedDriveSetup'),
+    'RootIndex must redirect authenticated users who have not completed Drive setup to /signin'
+  );
+});
+
+test('Permanent Google Drive Refresh Architecture: migration, Edge Function & silent auto-refresh contracts', () => {
+  const migPath = path.join(projectRoot, 'supabase/migrations/003_google_drive_refresh_tokens.sql');
+  const fnPath = path.join(projectRoot, 'supabase/functions/google-drive-token/index.ts');
+  assert.ok(fs.existsSync(migPath), 'Missing 003_google_drive_refresh_tokens.sql migration');
+  assert.ok(fs.existsSync(fnPath), 'Missing supabase/functions/google-drive-token/index.ts');
+
+  const migSrc = fs.readFileSync(migPath, 'utf-8');
+  assert.ok(migSrc.includes('CREATE TABLE IF NOT EXISTS public.google_drive_connections'), 'Missing google_drive_connections table');
+  assert.ok(migSrc.includes('REVOKE ALL ON TABLE public.google_drive_connections FROM anon'), 'Must revoke anon access');
+  assert.ok(migSrc.includes('REVOKE ALL ON TABLE public.google_drive_connections FROM authenticated'), 'Must revoke authenticated access');
+
+  const fnSrc = fs.readFileSync(fnPath, 'utf-8');
+  assert.ok(fnSrc.includes('AES-GCM'), 'Edge Function must encrypt refresh_token with AES-GCM');
+  assert.ok(fnSrc.includes('https://oauth2.googleapis.com/token'), 'Edge Function must refresh via Google OAuth token endpoint');
+  assert.ok(fnSrc.includes("action === 'store'") && fnSrc.includes("action === 'refresh'") && fnSrc.includes("action === 'revoke'"), 'Edge Function must support store, refresh, and revoke actions');
+  assert.ok(fnSrc.includes('invalid_grant'), 'Edge Function must clean up revoked refresh tokens on invalid_grant');
+
+  const driveSrc = fs.readFileSync(
+    path.join(feDir, 'src/services/drive/googleDriveVaultService.ts'),
+    'utf-8'
+  );
+  assert.ok(driveSrc.includes('provider_refresh_token'), 'Drive service must capture session.provider_refresh_token');
+  assert.ok(driveSrc.includes('refreshAccessTokenFromBackend'), 'Drive service must silently refresh expired tokens via backend');
+  assert.ok(driveSrc.includes('storeRefreshTokenInBackend'), 'Drive service must store refresh token in backend');
+  assert.ok(driveSrc.includes("action: 'revoke'"), 'disconnectDriveAccount must revoke remote refresh token');
 });
 
 test('SideNavbarModal.tsx enforces Strict Auth Gate on Sync & AI status row', () => {
@@ -257,6 +332,49 @@ test('End-to-end local binary delete -> gdrive:// persist -> temp hydrate -> deh
   } finally {
     fs.rmSync(sandbox, { recursive: true, force: true });
   }
+});
+
+test('Mandatory Drive Gate state machine: blocks sync until Drive verified, preserves guest notes on abort, pauses on disconnect', () => {
+  const resolveSyncGate = ({ isAuthenticated, isGuest, isDriveConnected }) => {
+    if (!isAuthenticated || isGuest) return { allowed: false, status: 'offline_guest' };
+    if (!isDriveConnected) return { allowed: false, status: 'drive_required' };
+    return { allowed: true, status: 'idle' };
+  };
+
+  // 1. Offline guest creates note with local image
+  const guestNotes = [{ id: 'n1', user_id: 'user-default', mediaUri: 'file:///local_media/a.jpg' }];
+  assert.deepStrictEqual(
+    resolveSyncGate({ isAuthenticated: false, isGuest: true, isDriveConnected: false }),
+    { allowed: false, status: 'offline_guest' }
+  );
+
+  // 2. Guest signs in with Google but unchecks Drive checkbox -> sync blocked, guest note NOT migrated
+  const partialGate = resolveSyncGate({
+    isAuthenticated: true,
+    isGuest: false,
+    isDriveConnected: false,
+  });
+  assert.deepStrictEqual(partialGate, { allowed: false, status: 'drive_required' });
+  assert.strictEqual(guestNotes[0].user_id, 'user-default', 'Guest note must remain untouched until Drive connects');
+
+  // 3. User connects Drive -> migration + backfill + sync unlocked
+  const unlockedGate = resolveSyncGate({
+    isAuthenticated: true,
+    isGuest: false,
+    isDriveConnected: true,
+  });
+  assert.deepStrictEqual(unlockedGate, { allowed: true, status: 'idle' });
+  guestNotes[0].user_id = 'google-uid-123';
+  guestNotes[0].mediaUri = 'gdrive://driveFile999';
+  assert.strictEqual(guestNotes[0].mediaUri, 'gdrive://driveFile999');
+
+  // 4. User disconnects Drive in Settings -> sync pauses immediately
+  const pausedGate = resolveSyncGate({
+    isAuthenticated: true,
+    isGuest: false,
+    isDriveConnected: false,
+  });
+  assert.deepStrictEqual(pausedGate, { allowed: false, status: 'drive_required' });
 });
 
 // -----------------------------------------------------------------------------

@@ -17,48 +17,42 @@ import { useTheme } from '../../src/theme';
 import { NoteColors } from '../../src/theme/tokens';
 import { useAuth, useSecurity } from '../../src/context';
 import { useNotesStore } from '../../src/state/useNotesStore';
-import {
-  googleDriveVaultService,
-  type GoogleDriveAccountState,
-} from '../../src/services/drive/googleDriveVaultService';
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { colors, isDark } = useTheme();
   const { securityConfig, hasMasterConfigured } = useSecurity();
-  const { user, isAuthenticated, isGuest } = useAuth();
+  const {
+    user,
+    isAuthenticated,
+    isGuest,
+    driveAccount,
+    isDriveConnected,
+    connectOrSwitchDrive,
+    disconnectDrive,
+    refreshDriveState,
+  } = useAuth();
   const { notes, folders } = useNotesStore();
 
   const [isSecurityExpanded, setIsSecurityExpanded] = useState(false);
-  const [driveAccount, setDriveAccount] = useState<GoogleDriveAccountState | null>(null);
   const [isDriveBusy, setIsDriveBusy] = useState(false);
   const [driveStatusMsg, setDriveStatusMsg] = useState<string | null>(null);
 
   const cloudSyncUnlocked = isAuthenticated && !isGuest && Boolean(user?.id);
 
   useEffect(() => {
-    let active = true;
-    if (!cloudSyncUnlocked || !user?.id) {
-      setDriveAccount(null);
-      return;
-    }
-    void googleDriveVaultService.getDriveAccountState(user.id).then((state) => {
-      if (active) setDriveAccount(state);
-    });
-    return () => {
-      active = false;
-    };
-  }, [cloudSyncUnlocked, user?.id]);
+    if (!cloudSyncUnlocked) return;
+    void refreshDriveState();
+  }, [cloudSyncUnlocked, refreshDriveState]);
 
   const handleConnectOrSwitchDrive = async () => {
     if (!cloudSyncUnlocked || !user?.id || isDriveBusy) return;
     setIsDriveBusy(true);
     setDriveStatusMsg(null);
-    const result = await googleDriveVaultService.connectOrSwitchDriveAccount(user.id);
+    const result = await connectOrSwitchDrive();
     if (result.ok && result.account) {
-      setDriveAccount(result.account);
-      setDriveStatusMsg(`Connected to ${result.account.email}`);
+      setDriveStatusMsg(`Connected to ${result.account.email}. Cloud Sync active.`);
     } else if (result.error) {
       setDriveStatusMsg(result.error);
     }
@@ -69,9 +63,8 @@ export default function SettingsScreen() {
     if (!cloudSyncUnlocked || !user?.id || isDriveBusy) return;
     setIsDriveBusy(true);
     setDriveStatusMsg(null);
-    await googleDriveVaultService.disconnectDriveAccount(user.id);
-    setDriveAccount(null);
-    setDriveStatusMsg('Google Drive Vault disconnected.');
+    await disconnectDrive();
+    setDriveStatusMsg('Google Drive Vault disconnected. Cloud Sync is paused until reconnected.');
     setIsDriveBusy(false);
   };
 
@@ -164,13 +157,13 @@ export default function SettingsScreen() {
                 className="rounded-full px-2.5 py-1"
                 style={{
                   backgroundColor: cloudSyncUnlocked
-                    ? driveAccount
+                    ? isDriveConnected
                       ? isDark
                         ? 'rgba(8, 196, 229, 0.15)'
                         : '#E0F7FA'
                       : isDark
-                      ? 'rgba(255, 255, 255, 0.08)'
-                      : '#F1F5F9'
+                      ? 'rgba(245, 158, 11, 0.16)'
+                      : '#FEF3C7'
                     : isDark
                     ? 'rgba(255, 255, 255, 0.08)'
                     : '#F1F5F9',
@@ -179,15 +172,18 @@ export default function SettingsScreen() {
                 <Text
                   className="text-[11px] font-bold"
                   style={{
-                    color:
-                      cloudSyncUnlocked && driveAccount ? NoteColors.cyan : colors.textSecondary,
+                    color: !cloudSyncUnlocked
+                      ? colors.textSecondary
+                      : isDriveConnected
+                      ? NoteColors.cyan
+                      : '#D97706',
                   }}
                 >
                   {!cloudSyncUnlocked
                     ? 'Offline'
-                    : driveAccount
+                    : isDriveConnected
                     ? 'Connected'
-                    : 'Not Linked'}
+                    : 'Sync Paused'}
                 </Text>
               </View>
             </View>
@@ -213,7 +209,7 @@ export default function SettingsScreen() {
                 <View className="flex-row items-center">
                   <HardDrive
                     size={15}
-                    color={driveAccount ? NoteColors.cyan : colors.textMuted}
+                    color={isDriveConnected ? NoteColors.cyan : '#D97706'}
                   />
                   <Text
                     className="ml-2 flex-1 text-[13px] font-medium"
@@ -221,7 +217,7 @@ export default function SettingsScreen() {
                   >
                     {driveAccount
                       ? `Drive Vault: ${driveAccount.email}`
-                      : 'No Google Drive account connected for media vault'}
+                      : 'Cloud Sync is paused until Google Drive is connected.'}
                   </Text>
                 </View>
 

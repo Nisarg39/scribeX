@@ -31,7 +31,7 @@ export const SideNavbarModal: React.FC<SideNavbarModalProps> = ({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { colors, isDark } = useTheme();
-  const { user, isAuthenticated, isGuest } = useAuth();
+  const { user, isAuthenticated, isGuest, isDriveConnected } = useAuth();
   const {
     securityConfig,
     hasMasterConfigured,
@@ -41,6 +41,7 @@ export const SideNavbarModal: React.FC<SideNavbarModalProps> = ({
 
   const syncStats = syncEngine.getStats();
   const isGuestLocked = !isAuthenticated || isGuest;
+  const isDrivePaused = !isGuestLocked && !isDriveConnected;
 
   const canLockNow =
     (securityConfig.appLockEnabled && hasMasterConfigured) || activeUnlockedCount > 0;
@@ -129,7 +130,7 @@ export const SideNavbarModal: React.FC<SideNavbarModalProps> = ({
                 <View className="flex-row items-center gap-3 flex-1 pr-2">
                   <View
                     className={`w-2.5 h-2.5 rounded-full ${
-                      isGuestLocked
+                      isGuestLocked || isDrivePaused
                         ? 'bg-amber-400'
                         : syncStats.status === 'syncing'
                         ? 'bg-cyan-400'
@@ -143,6 +144,8 @@ export const SideNavbarModal: React.FC<SideNavbarModalProps> = ({
                     >
                       {isGuestLocked
                         ? 'Offline Mode · Sign in with Google to Sync'
+                        : isDrivePaused
+                        ? 'Sync Paused · Connect Google Drive'
                         : syncStats.status === 'syncing'
                         ? 'Syncing to Cloud...'
                         : 'Cloud Synced'}
@@ -150,6 +153,8 @@ export const SideNavbarModal: React.FC<SideNavbarModalProps> = ({
                     <Text className="text-[11.5px] mt-0.5" style={{ color: colors.textMuted }}>
                       {isGuestLocked
                         ? 'Tap to sign in with Google & unlock sync'
+                        : isDrivePaused
+                        ? 'Tap to reconnect Google Drive Vault & resume sync'
                         : user?.email || 'Supabase Realtime & Drive Media Vault'}
                     </Text>
                   </View>

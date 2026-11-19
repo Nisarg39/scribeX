@@ -15,6 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSecurity } from '../context/SecurityContext';
 import { computeLockedNoteIdSet } from '../core/security/vaultLockHelpers';
 import { notificationService } from '../services/notifications/NotificationService';
+import { googleDriveVaultService } from '../services/drive/googleDriveVaultService';
 import { syncEngine } from '../services/sync/syncEngine';
 import { isSupabaseConfigured } from '../services/supabase/supabaseClient';
 import { ReminderRecord, parseReminderString, getNextOccurrence } from '../types/reminder';
@@ -319,7 +320,15 @@ const NotesContext = createContext<NotesContextValue>({
 });
 
 export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { userId, isAuthenticated, isGuest, isLoading: isAuthLoading } = useAuth();
+  const {
+    userId,
+    isAuthenticated,
+    isGuest,
+    isLoading: isAuthLoading,
+    isDriveConnected,
+    isDriveChecking,
+    isCloudSyncReady,
+  } = useAuth();
   const {
     unlockedNoteIds,
     unlockedFolderPaths,
@@ -555,8 +564,7 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }));
 
     if (
-      isAuthenticated &&
-      !isGuest &&
+      isCloudSyncReady &&
       isSupabaseConfigured() &&
       hasMoreCloud &&
       !isFetchingCloudPageRef.current
@@ -898,15 +906,19 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Auth-Gated Initialization: Guest = 100% Local Offline, Authenticated = Cloud Sync + Lean Page-1 Cache
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || isDriveChecking) return;
 
     let isActive = true;
     let unsubscribeCDC: (() => void) | null = null;
 
     async function bootstrapWorkspace() {
-      if (isGuest || !isAuthenticated || !userId || userId === 'user-default') {
+      if (!isCloudSyncReady || isGuest || !isAuthenticated || !userId || userId === 'user-default') {
         await syncEngine
-          .initialize({ userId: 'user-default', isGuest: true })
+          .initialize({
+            userId: isGuest || !isAuthenticated ? 'user-default' : userId,
+            isGuest: isGuest || !isAuthenticated,
+            isDriveConnected: false,
+          })
           .catch(() => {});
         if (isActive) {
           setHasMoreCloud(false);
@@ -916,10 +928,13 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         return;
       }
 
-      // Logged-In Cloud Mode: Initialize SyncEngine, Subscribe Realtime CDC, Flush Outbox & Sync Page 1 Cache
-      await syncEngine.initialize({ userId, isGuest: false }).catch((err) => {
-        console.warn('Failed to init authenticated syncEngine:', err);
-      });
+      // Logged-In + Verified Google Drive Mode: Initialize SyncEngine, Subscribe Realtime CDC,
+      // Backfill Offline Media to Drive, Drain Outbox & Sync Page 1 Cache
+      await syncEngine
+        .initialize({ userId, isGuest: false, isDriveConnected: true })
+        .catch((err) => {
+          console.warn('Failed to init authenticated syncEngine:', err);
+        });
       if (!isActive) return;
 
       unsubscribeCDC = syncEngine.subscribeToRealtimeCDC();
@@ -928,6 +943,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
       if (isSupabaseConfigured()) {
         try {
+          await googleDriveVaultService.backfillOfflineMediaToDrive(userId).catch((err) => {
+            console.warn('Offline media backfill deferred cleanly:', err);
+          });
+          if (!isActive) return;
+
           await syncEngine.flushNow().catch((err) => {
             console.warn('Initial Outbox flush deferred (offline or retryable):', err);
           });
@@ -995,11 +1015,19 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       unsubscribeDelivery();
       clearInterval(reminderCheckTimer);
     };
-  }, [isAuthLoading, isAuthenticated, isGuest, userId]);
+  }, [
+    isAuthLoading,
+    isDriveChecking,
+    isAuthenticated,
+    isGuest,
+    isDriveConnected,
+    isCloudSyncReady,
+    userId,
+  ]);
 
-  // Server-Side Debounced Query for Search, Folder Selection, and Filter Chips (Logged-In Mode)
+  // Server-Side Debounced Query for Search, Folder Selection, and Filter Chips (Logged-In + Drive Connected Mode)
   useEffect(() => {
-    if (isAuthLoading || isGuest || !isAuthenticated || !isSupabaseConfigured()) return;
+    if (isAuthLoading || isDriveChecking || !isCloudSyncReady || !isSupabaseConfigured()) return;
 
     const hasServerFilter =
       queryRequest.searchQuery.trim().length > 0 ||
@@ -1026,8 +1054,8 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return () => clearTimeout(timer);
   }, [
     isAuthLoading,
-    isAuthenticated,
-    isGuest,
+    isDriveChecking,
+    isCloudSyncReady,
     queryRequest.searchQuery,
     queryRequest.folderPath,
     queryRequest.statusScope,

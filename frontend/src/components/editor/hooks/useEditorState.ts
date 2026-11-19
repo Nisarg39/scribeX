@@ -60,7 +60,7 @@ export const useEditorState = ({
   onNoteUpdated,
   onNoteDeleted,
 }: UseEditorStateProps) => {
-  const { userId, isAuthenticated, isGuest } = useAuth();
+  const { userId, isAuthenticated, isGuest, isCloudSyncReady } = useAuth();
   const noteIdRef = useRef<string>(note.id);
   const uploadingMediaRef = useRef<boolean>(false);
   useEffect(() => {
@@ -376,8 +376,7 @@ export const useEditorState = ({
       onNoteUpdated(updated);
 
       const hasPendingLocalMedia =
-        isAuthenticated &&
-        !isGuest &&
+        isCloudSyncReady &&
         Boolean(userId) &&
         blocksToPersist.some((b) => isLocalUploadableUri(extractMediaUriFromBlock(b)));
 

@@ -26,10 +26,6 @@ import { useNotesStore } from '../../state/useNotesStore';
 import { workspaceBackupService } from '../../services/workspaceBackupService';
 import { shareIngestService } from '../../services/share/ShareIngestService';
 import { syncEngine } from '../../services/sync/syncEngine';
-import {
-  googleDriveVaultService,
-  GoogleDriveAccountState,
-} from '../../services/drive/googleDriveVaultService';
 import { RestoreBackupModal } from './RestoreBackupModal';
 import { getAncestorFolderPaths, normalizeFolderPath } from '../../core/security/vaultLockHelpers';
 
@@ -44,7 +40,16 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
 }) => {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const { user, userId, isAuthenticated, isGuest } = useAuth();
+  const {
+    user,
+    isAuthenticated,
+    isGuest,
+    driveAccount,
+    isDriveConnected,
+    connectOrSwitchDrive,
+    disconnectDrive,
+    refreshDriveState,
+  } = useAuth();
   const {
     refreshSecurityConfig,
     promptUnlockNote,
@@ -74,22 +79,15 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
   const [isPurgingTrash, setIsPurgingTrash] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isSimulatingShare, setIsSimulatingShare] = useState(false);
-  const [driveAccount, setDriveAccount] = useState<GoogleDriveAccountState | null>(null);
   const [isConnectingDrive, setIsConnectingDrive] = useState(false);
   const [isSyncingNow, setIsSyncingNow] = useState(false);
 
   const isGuestLocked = !isAuthenticated || isGuest;
 
   useEffect(() => {
-    if (!visible || isGuestLocked) {
-      setDriveAccount(null);
-      return;
-    }
-    googleDriveVaultService
-      .getDriveAccountState(userId)
-      .then((acc) => setDriveAccount(acc))
-      .catch(() => {});
-  }, [visible, isGuestLocked, userId]);
+    if (!visible || isGuestLocked) return;
+    void refreshDriveState();
+  }, [visible, isGuestLocked, refreshDriveState]);
 
   if (!visible) return null;
 
@@ -97,9 +95,8 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
     if (isGuestLocked) return;
     setIsConnectingDrive(true);
     try {
-      const res = await googleDriveVaultService.connectOrSwitchDriveAccount(userId);
+      const res = await connectOrSwitchDrive();
       if (res.ok && res.account) {
-        setDriveAccount(res.account);
         setExportNotice(`Connected Drive Vault: ${res.account.email}`);
         setTimeout(() => setExportNotice(null), 3000);
       } else if (res.error) {
@@ -113,14 +110,13 @@ export const WorkspaceSettingsModal: React.FC<WorkspaceSettingsModalProps> = ({
 
   const handleDisconnectDrive = async () => {
     if (isGuestLocked) return;
-    await googleDriveVaultService.disconnectDriveAccount(userId);
-    setDriveAccount(null);
-    setExportNotice('Disconnected Google Drive Media Vault');
+    await disconnectDrive();
+    setExportNotice('Disconnected Google Drive. Cloud Sync paused until reconnected.');
     setTimeout(() => setExportNotice(null), 3000);
   };
 
   const handleSyncNow = async () => {
-    if (isGuestLocked || isSyncingNow) return;
+    if (isGuestLocked || !isDriveConnected || isSyncingNow) return;
     setIsSyncingNow(true);
     try {
       const pushed = await syncEngine.flushNow();
@@ -328,14 +324,15 @@ OPTION: Run 1 more audit (2 votes)`,
                 {!isGuestLocked && (
                   <Pressable
                     onPress={handleSyncNow}
-                    disabled={isSyncingNow}
+                    disabled={isSyncingNow || !isDriveConnected}
                     hitSlop={8}
                     accessibilityRole="button"
                     accessibilityLabel="Sync workspace now"
                     className="px-2.5 py-1 rounded-full bg-cyan-500/15 active:opacity-75"
+                    style={{ opacity: !isDriveConnected ? 0.45 : 1 }}
                   >
                     <Text className="text-[11px] font-bold text-cyan-600 dark:text-cyan-400">
-                      {isSyncingNow ? 'Syncing...' : 'Sync Now'}
+                      {!isDriveConnected ? 'Sync Paused' : isSyncingNow ? 'Syncing...' : 'Sync Now'}
                     </Text>
                   </Pressable>
                 )}
@@ -376,7 +373,7 @@ OPTION: Run 1 more audit (2 votes)`,
                         <Text className="text-[11px] text-light-textMuted dark:text-dark-textMuted">
                           {driveAccount
                             ? 'Media uploads to ScribeX_Vault/ and cleans device storage'
-                            : 'Connect a Google Drive account for media eviction'}
+                            : 'Cloud Sync paused — connect Google Drive to resume'}
                         </Text>
                       </View>
                     </View>

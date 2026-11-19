@@ -20,7 +20,7 @@ export default function NoteEditorScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { userId, isAuthenticated, isGuest } = useAuth();
+  const { userId, isAuthenticated, isGuest, isCloudSyncReady } = useAuth();
   const {
     unlockedNoteIds,
     unlockedFolderPaths,
@@ -112,10 +112,10 @@ export default function NoteEditorScreen() {
             ? storeMatch
             : null;
 
-        if (isGuest || !isAuthenticated || (hasPendingLocalEdits && localNonDehydrated)) {
+        if (!isCloudSyncReady || (hasPendingLocalEdits && localNonDehydrated)) {
           let candidate = localNonDehydrated || dbMatch || storeMatch || null;
 
-          if (candidate && isAuthenticated && !isGuest && userId && candidate.blocks?.length > 0) {
+          if (candidate && isCloudSyncReady && userId && candidate.blocks?.length > 0) {
             const hydratedMediaBlocks = await googleDriveVaultService.hydrateNoteMediaToTempCache(
               candidate.id,
               candidate.blocks,
@@ -198,11 +198,11 @@ export default function NoteEditorScreen() {
     return () => {
       isMounted = false;
     };
-  }, [id, retryNonce, isAuthenticated, isGuest, userId]);
+  }, [id, retryNonce, isAuthenticated, isGuest, isCloudSyncReady, userId]);
 
   // Flush pending deltas immediately when app moves to background while Editor is open
   useEffect(() => {
-    if (isGuest || !isAuthenticated) return;
+    if (!isCloudSyncReady) return;
 
     const sub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'background' || nextState === 'inactive') {
@@ -213,7 +213,7 @@ export default function NoteEditorScreen() {
     return () => {
       sub.remove();
     };
-  }, [isAuthenticated, isGuest]);
+  }, [isCloudSyncReady]);
 
   // Immediate-on-exit auto-relock + Cloud Flush + Lean Local Eviction + Drive Temp Cache Purge on Editor unmount
   useEffect(() => {
@@ -224,7 +224,7 @@ export default function NoteEditorScreen() {
       if (activeId && !activeId.startsWith('draft-')) {
         relockNoteOnEditorExit(activeId);
         googleDriveVaultService.purgeNoteTempCache(activeId).catch(() => {});
-        if (isAuthenticated && !isGuest) {
+        if (isCloudSyncReady) {
           syncEngine
             .flushNow()
             .catch(() => {})
@@ -237,7 +237,7 @@ export default function NoteEditorScreen() {
       }
       registerActiveEditorNote(null);
     };
-  }, [localNote?.id, relockNoteOnEditorExit, isAuthenticated, isGuest, getPageOneNoteIds, registerActiveEditorNote]);
+  }, [localNote?.id, relockNoteOnEditorExit, isCloudSyncReady, getPageOneNoteIds, registerActiveEditorNote]);
 
   const lockInspection =
     localNote && !localNote.id.startsWith('draft-')
@@ -265,7 +265,7 @@ export default function NoteEditorScreen() {
     if (activeId && !activeId.startsWith('draft-')) {
       relockNoteOnEditorExit(activeId);
       await googleDriveVaultService.purgeNoteTempCache(activeId).catch(() => {});
-      if (isAuthenticated && !isGuest) {
+      if (isCloudSyncReady) {
         await syncEngine.flushNow().catch(() => {});
         await leanCacheManager.dehydrateNoteAfterSync(activeId, getPageOneNoteIds()).catch(() => {});
       }

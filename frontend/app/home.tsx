@@ -42,7 +42,11 @@ export default function HomeContainerScreen() {
     }
   }, [params.tab, params.taskId]);
 
-  const handleSignOut = async () => {
+  const handleAuthAction = async () => {
+    if (isGuest) {
+      router.push('/signin');
+      return;
+    }
     await signOut();
     router.replace('/signin');
   };
@@ -158,7 +162,7 @@ export default function HomeContainerScreen() {
 
               {/* Auth Button: Sign In for Guests / Sign Out for Authenticated */}
               <Pressable
-                onPress={handleSignOut}
+                onPress={handleAuthAction}
                 accessibilityRole="button"
                 accessibilityLabel={isGuest ? 'Sign In to Account' : 'Sign Out'}
                 style={({ pressed }) => pressed ? { transform: [{ scale: 0.95 }] } : undefined}

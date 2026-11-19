@@ -3,7 +3,13 @@
  * Source of Truth: docs/Unified_Backend_and_AI_Master_Specification.md (Section 3 & Phase 2)
  */
 
-export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'offline_guest' | 'error';
+export type SyncStatus =
+  | 'idle'
+  | 'syncing'
+  | 'offline'
+  | 'offline_guest'
+  | 'drive_required'
+  | 'error';
 
 export type SyncEntityType =
   | 'note'
@@ -43,6 +49,7 @@ export interface SyncEngineConfig {
   supabaseAnonKey?: string;
   userId: string;
   isGuest?: boolean;
+  isDriveConnected?: boolean;
   debounceMs?: number;
   autoSync?: boolean;
 }

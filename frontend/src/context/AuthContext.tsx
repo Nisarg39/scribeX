@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Platform } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import type { Session } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../services/supabase/supabaseClient';
 import { migrateGuestVaultToUser } from '../db/vaultMigration';
-import { googleDriveVaultService } from '../services/drive/googleDriveVaultService';
+import {
+  googleDriveVaultService,
+  type GoogleDriveAccountState,
+} from '../services/drive/googleDriveVaultService';
 
 if (Platform.OS === 'web') {
   try {
@@ -32,10 +35,22 @@ interface AuthContextValue {
   isLoading: boolean;
   isSigningIn: boolean;
   authError: string | null;
+  driveAccount: GoogleDriveAccountState | null;
+  isDriveConnected: boolean;
+  isDriveChecking: boolean;
+  hasCompletedDriveSetup: boolean;
+  isCloudSyncReady: boolean;
   completeOnboarding: () => Promise<void>;
   continueAsGuest: () => Promise<void>;
   signIn: () => Promise<void>;
   signInWithGoogle: () => Promise<boolean>;
+  connectOrSwitchDrive: () => Promise<{
+    ok: boolean;
+    account?: GoogleDriveAccountState;
+    error?: string;
+  }>;
+  disconnectDrive: () => Promise<void>;
+  refreshDriveState: () => Promise<void>;
   signOut: () => Promise<void>;
   clearAuthError: () => void;
   resetAllState: () => Promise<void>;
@@ -56,10 +71,18 @@ const AuthContext = createContext<AuthContextValue>({
   isLoading: true,
   isSigningIn: false,
   authError: null,
+  driveAccount: null,
+  isDriveConnected: false,
+  isDriveChecking: false,
+  hasCompletedDriveSetup: false,
+  isCloudSyncReady: false,
   completeOnboarding: async () => {},
   continueAsGuest: async () => {},
   signIn: async () => {},
   signInWithGoogle: async () => false,
+  connectOrSwitchDrive: async () => ({ ok: false }),
+  disconnectDrive: async () => {},
+  refreshDriveState: async () => {},
   signOut: async () => {},
   clearAuthError: () => {},
   resetAllState: async () => {},
@@ -117,31 +140,111 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [driveAccount, setDriveAccount] = useState<GoogleDriveAccountState | null>(null);
+  const [isDriveChecking, setIsDriveChecking] = useState<boolean>(false);
+  const [hasCompletedDriveSetup, setHasCompletedDriveSetup] = useState<boolean>(false);
 
   const handleAuthenticatedSession = useCallback(async (session: Session | null) => {
     const extracted = extractUserFromSession(session);
     if (!extracted) return;
 
-    await googleDriveVaultService.syncDriveTokenFromSupabaseSession(session).catch(() => {});
+    setIsDriveChecking(true);
+    let verifiedDrive: GoogleDriveAccountState | null = null;
+    let driveOnboarded = false;
 
     try {
-      await migrateGuestVaultToUser(extracted.id);
-    } catch (migErr) {
-      console.warn('Guest vault migration failed cleanly without blocking login:', migErr);
-    }
+      verifiedDrive =
+        (await googleDriveVaultService
+          .syncDriveTokenFromSupabaseSession(session)
+          .catch(() => null)) ||
+        (await googleDriveVaultService.getDriveAccountState(extracted.id).catch(() => null));
 
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, 'authenticated');
-      await AsyncStorage.removeItem(STORAGE_KEYS.GUEST_MODE);
-    } catch (storageErr) {
-      console.warn('Failed to persist auth flags:', storageErr);
-    }
+      driveOnboarded = await googleDriveVaultService
+        .hasCompletedDriveOnboarding(extracted.id)
+        .catch(() => false);
 
-    setUser(extracted);
-    setIsAuthenticated(true);
-    setIsGuest(false);
-    setAuthError(null);
+      // Defer lossless guest vault migration until Google Drive is verified connected.
+      // This ensures guest notes remain untouched in 'user-default' if the user cancels Drive setup and returns to offline mode.
+      if (verifiedDrive?.accessToken) {
+        try {
+          await migrateGuestVaultToUser(extracted.id);
+        } catch (migErr) {
+          console.warn('Guest vault migration failed cleanly without blocking login:', migErr);
+        }
+      }
+
+      try {
+        await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, 'authenticated');
+        await AsyncStorage.removeItem(STORAGE_KEYS.GUEST_MODE);
+      } catch (storageErr) {
+        console.warn('Failed to persist auth flags:', storageErr);
+      }
+
+      setUser(extracted);
+      setIsAuthenticated(true);
+      setIsGuest(false);
+      setDriveAccount(verifiedDrive);
+      setHasCompletedDriveSetup(Boolean(driveOnboarded || verifiedDrive?.accessToken));
+      setAuthError(null);
+    } finally {
+      setIsDriveChecking(false);
+    }
   }, []);
+
+  // Subscribe to reactive Google Drive account state updates (connect, switch, disconnect, 401 expiry)
+  useEffect(() => {
+    const unsubscribe = googleDriveVaultService.subscribeDriveState((changedUserId, nextAccount) => {
+      if (!user?.id || changedUserId !== user.id) return;
+      setDriveAccount(nextAccount);
+      if (nextAccount?.accessToken) {
+        setHasCompletedDriveSetup(true);
+      }
+    });
+    return unsubscribe;
+  }, [user?.id]);
+
+  // Proactively keep Google Drive connected across long idle sessions, tab resumes, and foreground transitions
+  useEffect(() => {
+    if (!isAuthenticated || isGuest || !user?.id) return;
+
+    const keepDriveFresh = () => {
+      void googleDriveVaultService.getDriveAccountState(user.id).then((acc) => {
+        if (acc?.accessToken) {
+          setDriveAccount(acc);
+          setHasCompletedDriveSetup(true);
+        }
+      });
+    };
+
+    const intervalId = setInterval(keepDriveFresh, 45 * 60 * 1000);
+
+    let appStateSub: { remove: () => void } | undefined;
+    if (Platform.OS !== 'web') {
+      appStateSub = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+        if (nextState === 'active') {
+          keepDriveFresh();
+        }
+      });
+    }
+
+    let visibilityHandler: (() => void) | undefined;
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      visibilityHandler = () => {
+        if (document.visibilityState === 'visible') {
+          keepDriveFresh();
+        }
+      };
+      document.addEventListener('visibilitychange', visibilityHandler);
+    }
+
+    return () => {
+      clearInterval(intervalId);
+      appStateSub?.remove();
+      if (visibilityHandler && typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', visibilityHandler);
+      }
+    };
+  }, [isAuthenticated, isGuest, user?.id]);
 
   // Load persistent state and subscribe to Supabase Auth changes on mount
   useEffect(() => {
@@ -172,6 +275,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setIsGuest(true);
           setIsAuthenticated(false);
           setUser(null);
+          setDriveAccount(null);
+          setHasCompletedDriveSetup(false);
         }
       } catch (err) {
         console.warn('Failed to load persisted auth/onboarding state:', err);
@@ -194,6 +299,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } else if (event === 'SIGNED_OUT') {
           setUser(null);
           setIsAuthenticated(false);
+          setDriveAccount(null);
+          setHasCompletedDriveSetup(false);
           await AsyncStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN).catch(() => {});
         }
       });
@@ -222,6 +329,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setIsGuest(true);
       setIsAuthenticated(false);
+      setDriveAccount(null);
+      setHasCompletedDriveSetup(false);
       setAuthError(null);
     } catch (err) {
       console.warn('Failed to persist guest mode state:', err);
@@ -247,6 +356,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           provider: 'google',
           options: {
             redirectTo,
+            scopes: 'https://www.googleapis.com/auth/drive.file',
             queryParams: {
               access_type: 'offline',
               prompt: 'consent',
@@ -261,13 +371,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return true;
       }
 
-      // Mobile (iOS / Android) PKCE/OAuth session flow
+      // Mobile (iOS / Android) PKCE/OAuth session flow (includes mandatory drive.file scope)
       const redirectTo = Linking.createURL('auth/callback');
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo,
           skipBrowserRedirect: true,
+          scopes: 'https://www.googleapis.com/auth/drive.file',
           queryParams: {
             access_type: 'offline',
             prompt: 'consent',
@@ -333,6 +444,47 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await signInWithGoogle();
   };
 
+  const refreshDriveState = useCallback(async () => {
+    if (!user?.id || isGuest || !isAuthenticated) {
+      setDriveAccount(null);
+      return;
+    }
+    setIsDriveChecking(true);
+    try {
+      const [acc, onboarded] = await Promise.all([
+        googleDriveVaultService.getDriveAccountState(user.id).catch(() => null),
+        googleDriveVaultService.hasCompletedDriveOnboarding(user.id).catch(() => false),
+      ]);
+      setDriveAccount(acc);
+      setHasCompletedDriveSetup(Boolean(onboarded || acc?.accessToken));
+    } finally {
+      setIsDriveChecking(false);
+    }
+  }, [user?.id, isGuest, isAuthenticated]);
+
+  const connectOrSwitchDrive = useCallback(async () => {
+    if (!user?.id || isGuest || !isAuthenticated) {
+      return { ok: false, error: 'Sign in with Google first to connect Google Drive.' };
+    }
+    const res = await googleDriveVaultService.connectOrSwitchDriveAccount(user.id);
+    if (res.ok && res.account?.accessToken) {
+      try {
+        await migrateGuestVaultToUser(user.id);
+      } catch (migErr) {
+        console.warn('Guest vault migration failed cleanly after Drive connect:', migErr);
+      }
+      setDriveAccount(res.account);
+      setHasCompletedDriveSetup(true);
+    }
+    return res;
+  }, [user?.id, isGuest, isAuthenticated]);
+
+  const disconnectDrive = useCallback(async () => {
+    if (!user?.id) return;
+    await googleDriveVaultService.disconnectDriveAccount(user.id);
+    setDriveAccount(null);
+  }, [user?.id]);
+
   const signOut = async () => {
     try {
       if (isSupabaseConfigured()) {
@@ -342,6 +494,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(null);
       setIsAuthenticated(false);
       setIsGuest(false);
+      setDriveAccount(null);
+      setHasCompletedDriveSetup(false);
       setAuthError(null);
     } catch (err) {
       console.warn('Failed to remove auth state:', err);
@@ -362,6 +516,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setHasCompletedOnboarding(false);
       setIsAuthenticated(false);
       setIsGuest(false);
+      setDriveAccount(null);
+      setHasCompletedDriveSetup(false);
       setAuthError(null);
     } catch (err) {
       console.warn('Failed to reset state:', err);
@@ -369,6 +525,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const clearAuthError = () => setAuthError(null);
+
+  const isDriveConnected = Boolean(
+    isAuthenticated && !isGuest && user?.id && driveAccount?.accessToken
+  );
+  const isCloudSyncReady = isDriveConnected;
 
   return (
     <AuthContext.Provider
@@ -381,10 +542,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isSigningIn,
         authError,
+        driveAccount,
+        isDriveConnected,
+        isDriveChecking,
+        hasCompletedDriveSetup,
+        isCloudSyncReady,
         completeOnboarding,
         continueAsGuest,
         signIn,
         signInWithGoogle,
+        connectOrSwitchDrive,
+        disconnectDrive,
+        refreshDriveState,
         signOut,
         clearAuthError,
         resetAllState,
