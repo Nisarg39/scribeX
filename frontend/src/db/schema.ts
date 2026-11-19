@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS in_app_notifications (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
   reminder_id TEXT,
-  target_type TEXT CHECK(target_type IN ('task', 'note', 'system')) NOT NULL,
+  target_type TEXT CHECK(target_type IN ('task', 'note', 'event', 'checklist_point', 'system')) NOT NULL,
   target_id TEXT NOT NULL,
   note_id TEXT,
   title TEXT NOT NULL,

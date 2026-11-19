@@ -9,6 +9,7 @@
  */
 
 import { dbClient } from './client';
+import { syncEngine } from '../services/sync/syncEngine';
 import { DBSearchHistory, SearchHistoryItem, SearchHistorySource } from './types';
 
 const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -65,7 +66,7 @@ export class SearchHistoryRepository {
    */
   public async loadRecentSearches(
     limit: number = 8,
-    userId: string = 'user-default'
+    userId: string = syncEngine.getActiveUserId()
   ): Promise<SearchHistoryItem[]> {
     await this.ensureTable();
     const rows = await dbClient.query<DBSearchHistory>(
@@ -81,13 +82,13 @@ export class SearchHistoryRepository {
   /**
    * Deduplicates by case-insensitive `query_text`, increments `use_count`,
    * updates `last_used_at`, increments `sync_rev`, and appends a delta entry
-   * to `sync_changelog` for future multi-device cloud sync.
+   * to `sync_changelog` for multi-device cloud sync.
    */
   public async upsertSearchQuery(
     rawQueryText: string,
     source: SearchHistorySource = 'text',
     filterSnapshot: Record<string, any> = {},
-    userId: string = 'user-default'
+    userId: string = syncEngine.getActiveUserId()
   ): Promise<SearchHistoryItem | null> {
     const cleanQuery = rawQueryText.trim();
     if (cleanQuery.length < 2) return null;
@@ -137,6 +138,7 @@ export class SearchHistoryRepository {
           }),
         ]
       );
+      syncEngine.schedulePush();
 
       const updated = await dbClient.queryFirst<DBSearchHistory>(
         `SELECT * FROM search_history WHERE id = ?;`,
@@ -173,6 +175,7 @@ export class SearchHistoryRepository {
         }),
       ]
     );
+    syncEngine.schedulePush();
 
     const created = await dbClient.queryFirst<DBSearchHistory>(
       `SELECT * FROM search_history WHERE id = ?;`,
@@ -186,7 +189,7 @@ export class SearchHistoryRepository {
    */
   public async deleteSearchHistoryItem(
     idOrQuery: string,
-    userId: string = 'user-default'
+    userId: string = syncEngine.getActiveUserId()
   ): Promise<void> {
     await this.ensureTable();
 
@@ -211,12 +214,13 @@ export class SearchHistoryRepository {
         JSON.stringify({ id: target.id, queryText: target.query_text }),
       ]
     );
+    syncEngine.schedulePush();
   }
 
   /**
    * Clears all search history for the user and logs a batch delete delta in `sync_changelog`.
    */
-  public async clearAllSearchHistory(userId: string = 'user-default'): Promise<void> {
+  public async clearAllSearchHistory(userId: string = syncEngine.getActiveUserId()): Promise<void> {
     await this.ensureTable();
 
     await dbClient.run(`DELETE FROM search_history WHERE user_id = ?;`, [userId]);
@@ -226,6 +230,7 @@ export class SearchHistoryRepository {
        VALUES (?, ?, 1, 'search_history', 'all', 'delete', ?);`,
       [createLogId(), userId, JSON.stringify({ clearedAt: new Date().toISOString() })]
     );
+    syncEngine.schedulePush();
   }
 }
 

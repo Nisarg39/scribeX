@@ -60,9 +60,13 @@
       "actionHistory": "frontend/src/core/actionTracker/ActionHistoryManager.ts",
       "noteTemplates": "frontend/src/core/templates/noteTemplates.ts",
       "notesRepo": "frontend/src/db/notesRepo.ts",
+      "foldersRepo": "frontend/src/db/foldersRepo.ts",
+      "tagsRepo": "frontend/src/db/tagsRepo.ts",
       "tasksRepo": "frontend/src/db/tasksRepo.ts",
       "remindersRepo": "frontend/src/db/remindersRepo.ts",
+      "notificationsRepo": "frontend/src/db/notificationsRepo.ts",
       "searchHistoryRepo": "frontend/src/db/searchHistoryRepo.ts",
+      "workspaceBackupService": "frontend/src/services/workspaceBackupService.ts",
       "types": "frontend/src/types/note.ts",
       "reminderTypes": "frontend/src/types/reminder.ts",
       "notificationService": "frontend/src/services/notifications/NotificationService.ts",
@@ -101,6 +105,7 @@
       "initialSchemaSql": "supabase/migrations/001_initial_schema.sql",
       "coreRpcsSql": "supabase/migrations/002_core_rpcs.sql",
       "googleDriveRefreshTokensSql": "supabase/migrations/003_google_drive_refresh_tokens.sql",
+      "multiDeviceSyncParitySql": "supabase/migrations/004_multi_device_sync_parity.sql",
       "googleDriveTokenEdgeFunction": "supabase/functions/google-drive-token/index.ts",
       "sqliteSchema": "frontend/src/db/schema.ts",
       "sqliteNativeClient": "frontend/src/db/client.native.ts",
@@ -110,6 +115,7 @@
     "docsAndReports": {
       "envExample": "frontend/.env.example",
       "supabaseAuthSetupGuide": "docs/Supabase_and_Google_OAuth_Setup_Guide.md",
+      "multiDeviceSyncPlan": "docs/Multi_Device_Cloud_Sync_Audit_and_Gap_Fix_Plan.md",
       "implementationPlan": "implementation_plan.md",
       "index": "docs/README.md",
       "masterTracker": "docs/Master_Tasks_Tracker.md",
@@ -134,6 +140,7 @@
     "leanCacheTest": "node scripts/test_lean_cache_and_pagination.mjs",
     "googleDriveVaultTest": "node scripts/test_google_drive_vault.mjs",
     "offlineCloudMergeTest": "node scripts/test_offline_cloud_note_merge.mjs",
+    "multiDeviceSyncParityTest": "node scripts/test_multi_device_sync_parity.mjs",
     "allSuites": "npm --prefix frontend run test:all"
   }
 }

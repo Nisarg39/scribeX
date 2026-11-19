@@ -101,6 +101,17 @@ export async function hydrateNoteForEditing(cloudNote: any): Promise<NoteItem> {
       ? cloudNote.blocks_json
       : JSON.stringify(mapped.blocks);
 
+  let safeFolderId: string | null = mapped.folderId || null;
+  if (safeFolderId) {
+    const folderExists = await dbClient.queryFirst<{ id: string }>(
+      `SELECT id FROM folders WHERE id = ? LIMIT 1;`,
+      [safeFolderId]
+    );
+    if (!folderExists) {
+      safeFolderId = null;
+    }
+  }
+
   await dbClient.run(
     `INSERT INTO notes (
       id, user_id, folder_id, folder_path, group_name, title,
@@ -133,7 +144,7 @@ export async function hydrateNoteForEditing(cloudNote: any): Promise<NoteItem> {
     [
       mapped.id,
       mapped.userId,
-      mapped.folderId || null,
+      safeFolderId,
       mapped.folderPath || 'General',
       cloudNote.group_name || null,
       mapped.title,
@@ -159,9 +170,8 @@ export async function hydrateNoteForEditing(cloudNote: any): Promise<NoteItem> {
     ]
   );
 
-  if (mapped.tags && mapped.tags.length > 0) {
-    await tagsRepo.setNoteTags(mapped.id, mapped.tags).catch(() => {});
-  }
+  // Always sync note_tags (even when empty []) so clearing all tags on Device A clears stale tags locally
+  await tagsRepo.setNoteTags(mapped.id, mapped.tags || [], mapped.userId).catch(() => {});
 
   return { ...mapped, isDehydrated: false };
 }
@@ -179,6 +189,8 @@ export async function cachePageOnePreviews(
   const dirtyIds = await getDirtyNoteIdsSet();
   const pageOneSlice = cloudNotes.slice(0, CLOUD_PAGE_SIZE);
   const pageOneIds: string[] = [];
+  const localFolderRows = await dbClient.query<{ id: string }>(`SELECT id FROM folders;`);
+  const validFolderIds = new Set(localFolderRows.map((r) => r.id));
 
   await dbClient.withTransaction(async () => {
     for (const c of pageOneSlice) {
@@ -190,6 +202,7 @@ export async function cachePageOnePreviews(
       }
 
       const snippet = String(c.content_markdown || '').slice(0, 240);
+      const safeFolderId = c.folder_id && validFolderIds.has(c.folder_id) ? c.folder_id : null;
       await dbClient.run(
         `INSERT INTO notes (
           id, user_id, folder_id, folder_path, group_name, title,
@@ -222,7 +235,7 @@ export async function cachePageOnePreviews(
         [
           c.id,
           c.user_id || authenticatedUserId,
-          c.folder_id || null,
+          safeFolderId,
           c.folder_path || 'General',
           c.group_name || null,
           c.title || 'Untitled Note',
@@ -246,6 +259,15 @@ export async function cachePageOnePreviews(
           c.trashed_at || null,
         ]
       );
+
+      // Sync Page-1 card tags into local SQLite note_tags so Home cards & tag filter chips hydrate immediately
+      await tagsRepo
+        .setNoteTags(
+          c.id,
+          Array.isArray(c.tags) ? c.tags : [],
+          c.user_id || authenticatedUserId
+        )
+        .catch(() => {});
     }
   });
 

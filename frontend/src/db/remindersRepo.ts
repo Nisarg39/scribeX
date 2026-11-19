@@ -32,7 +32,7 @@ export class RemindersRepository {
 
   public async createReminder(dto: CreateReminderDTO): Promise<ReminderRecord> {
     const id = dto.id || `rem-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const userId = dto.userId || 'user-default';
+    const userId = dto.userId || syncEngine.getActiveUserId();
     const channelId = 'scribex_reminders';
     const deviceId = 'local_client';
 
@@ -144,15 +144,10 @@ export class RemindersRepository {
     const reminder = await this.getReminderById(id);
     if (!reminder) return;
 
+    // OS notification handles are strictly device-local and intentionally excluded from sync_changelog
     await dbClient.run(
       `UPDATE reminders SET notification_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
       [notificationId, id]
-    );
-
-    await dbClient.run(
-      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
-       VALUES (?, ?, 1, 'reminder', ?, 'update', ?);`,
-      [createLogId(), reminder.userId, id, JSON.stringify({ notificationId })]
     );
   }
 

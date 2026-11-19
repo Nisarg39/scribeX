@@ -225,7 +225,7 @@ export interface UpdateNoteDTO {
   contentMarkdown?: string;
   blocks?: ComposableBlock[];
   colorToken?: NoteColorToken;
-  folderId?: string;
+  folderId?: string | null;
   folderPath?: string;
   isFavorite?: boolean;
   isPinned?: boolean;

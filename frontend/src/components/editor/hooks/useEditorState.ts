@@ -170,17 +170,51 @@ export const useEditorState = ({
     collectMediaRefs(blocks)
   );
 
-  // Device B Live Convergence: Merge incoming Realtime CDC deltas for non-focused blocks
+  // Device B Live Convergence: Merge incoming Realtime CDC deltas for non-focused blocks, tags & folder cascades
   useEffect(() => {
     const unsubscribe = syncEngine.subscribe(async (delta) => {
       const targetId = noteIdRef.current;
       if (
         !targetId ||
         targetId.startsWith('draft-') ||
-        delta.entityType !== 'note' ||
-        delta.entityId !== targetId ||
         delta.callerPlatform === syncEngine.deviceSessionId
       ) {
+        return;
+      }
+
+      // Mirror remote folder rename/move/delete cascades onto the open editor's folderPathRef so typing never reverts them
+      if (delta.entityType === 'folder') {
+        const fp = delta.deltaPayload || {};
+        const curPath = (folderPathRef.current || 'General').trim().replace(/^\/+|\/+$/g, '');
+        if (fp.action === 'cascade_path') {
+          const oldPath = String(fp.old_path || fp.oldPath || '').trim().replace(/^\/+|\/+$/g, '');
+          const newPath = String(fp.new_path || fp.newPath || '').trim().replace(/^\/+|\/+$/g, '');
+          if (oldPath && newPath && oldPath !== newPath) {
+            if (curPath === oldPath) {
+              setFolderPath(newPath);
+              folderPathRef.current = newPath;
+            } else if (curPath.startsWith(`${oldPath}/`)) {
+              const nextPath = `${newPath}${curPath.slice(oldPath.length)}`;
+              setFolderPath(nextPath);
+              folderPathRef.current = nextPath;
+            }
+          }
+        } else if (delta.changeType === 'delete') {
+          const deletedPath = String(fp.deleted_path || fp.deletedPath || '').trim().replace(/^\/+|\/+$/g, '');
+          const noteAction = fp.note_action || fp.noteAction || 'moveToGeneral';
+          if (deletedPath && (curPath === deletedPath || curPath.startsWith(`${deletedPath}/`))) {
+            if (noteAction === 'trash' || noteAction === 'moveToTrash') {
+              onNoteDeleted(targetId);
+            } else {
+              setFolderPath('General');
+              folderPathRef.current = 'General';
+            }
+          }
+        }
+        return;
+      }
+
+      if (delta.entityType !== 'note' || delta.entityId !== targetId) {
         return;
       }
 
@@ -208,6 +242,15 @@ export const useEditorState = ({
       if (typeof p.is_pinned === 'boolean') {
         setIsPinned(p.is_pinned);
         isPinnedRef.current = p.is_pinned;
+      }
+      if (typeof p.folder_path === 'string' && p.folder_path !== folderPathRef.current) {
+        setFolderPath(p.folder_path);
+        folderPathRef.current = p.folder_path;
+      }
+      if (Array.isArray(p.tags)) {
+        const remoteTags = p.tags.filter((t: any) => typeof t === 'string' && t.trim().length > 0);
+        setTags(remoteTags);
+        tagsRef.current = remoteTags;
       }
 
       if (p.blocks_json) {

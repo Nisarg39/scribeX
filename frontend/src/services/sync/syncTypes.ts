@@ -19,7 +19,9 @@ export type SyncEntityType =
   | 'tag'
   | 'asset'
   | 'relation'
-  | 'workspace_security';
+  | 'workspace_security'
+  | 'in_app_notification'
+  | 'search_history';
 
 export type SyncChangeType = 'insert' | 'update' | 'delete';
 

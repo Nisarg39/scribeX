@@ -19,7 +19,7 @@ const createLogId = () => `log-${Date.now()}-${Math.random().toString(36).slice(
 export class FoldersRepository {
   public async createFolder(dto: CreateFolderDTO): Promise<DBFolder> {
     const id = dto.id || `folder-${Date.now()}`;
-    const userId = dto.userId || 'user-default';
+    const userId = dto.userId || syncEngine.getActiveUserId();
     const colorToken = dto.colorToken || 'cyan';
     const isFavorite = dto.isFavorite ? 1 : 0;
     const isPinned = dto.isPinned ? 1 : 0;
@@ -120,20 +120,20 @@ export class FoldersRepository {
     );
     const directNotesCount = directNotesRow?.count || 0;
 
-    // Nested notes in subfolders (folder_path starts with cleanPath + '/')
+    // Nested notes in subfolders (exact prefix match — immune to LIKE _ and % wildcards)
     const nestedNotesRow = await dbClient.queryFirst<{ count: number }>(
       `SELECT COUNT(*) as count FROM notes 
        WHERE status != 'trashed' 
-       AND folder_path LIKE ?;`,
-      [`${cleanPath}/%`]
+       AND SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/';`,
+      [cleanPath, cleanPath]
     );
     const nestedNotesCount = nestedNotesRow?.count || 0;
 
-    // Subfolders count in folders table
+    // Subfolders count in folders table (exact prefix match)
     const subfoldersRow = await dbClient.queryFirst<{ count: number }>(
       `SELECT COUNT(*) as count FROM folders 
-       WHERE path LIKE ?;`,
-      [`${cleanPath}/%`]
+       WHERE SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+      [cleanPath, cleanPath]
     );
     const subfoldersCount = subfoldersRow?.count || 0;
 
@@ -174,10 +174,10 @@ export class FoldersRepository {
     const updatedFolder = await this.getFolderById(id);
     const targetRev = updatedFolder?.sync_rev || 1;
 
-    // 2. Update all descendant subfolders in folders table
+    // 2. Update all descendant subfolders in folders table (exact prefix match — wildcard safe)
     const descendantFolders = await dbClient.query<DBFolder>(
-      `SELECT * FROM folders WHERE path LIKE ?;`,
-      [`${oldPath}/%`]
+      `SELECT * FROM folders WHERE SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+      [oldPath, oldPath]
     );
 
     for (const child of descendantFolders) {
@@ -200,34 +200,92 @@ export class FoldersRepository {
       );
     }
 
-    // 3. Update notes directly in this folder
-    await dbClient.run(
-      `UPDATE notes SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE folder_path = ? OR folder_id = ?;`,
-      [newPath, oldPath, id]
+    // 3. Capture & update notes directly in this folder (with sync_rev + sync_changelog outbox)
+    const directNotes = await dbClient.query<{ id: string; user_id: string; sync_rev: number }>(
+      `SELECT id, user_id, sync_rev FROM notes WHERE folder_path = ? OR folder_id = ?;`,
+      [oldPath, id]
     );
 
-    // 4. Update descendant notes whose folder_path starts with oldPath + '/'
-    const descendantNotes = await dbClient.query<{ id: string; folder_path: string }>(
-      `SELECT id, folder_path FROM notes WHERE folder_path LIKE ?;`,
-      [`${oldPath}/%`]
+    if (directNotes.length > 0) {
+      await dbClient.run(
+        `UPDATE notes SET folder_path = ?, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP WHERE folder_path = ? OR folder_id = ?;`,
+        [newPath, oldPath, id]
+      );
+    }
+
+    const queuedNoteIds = new Set<string>();
+    const nowIso = new Date().toISOString();
+    for (const n of directNotes) {
+      queuedNoteIds.add(n.id);
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, 'note', ?, 'update', ?);`,
+        [
+          createLogId(),
+          n.user_id || folder.user_id,
+          (n.sync_rev || 0) + 1,
+          n.id,
+          JSON.stringify({
+            action: 'folder_rename_cascade',
+            folderPath: newPath,
+            folderId: id,
+            timestamp: nowIso,
+          }),
+        ]
+      );
+    }
+
+    // 4. Capture & update descendant notes whose folder_path starts with oldPath + '/' (exact prefix match)
+    const descendantNotes = await dbClient.query<{ id: string; user_id: string; sync_rev: number; folder_path: string }>(
+      `SELECT id, user_id, sync_rev, folder_path FROM notes WHERE SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/';`,
+      [oldPath, oldPath]
     );
 
     for (const n of descendantNotes) {
-      if (n.folder_path) {
+      if (n.folder_path && !queuedNoteIds.has(n.id)) {
         const remainder = n.folder_path.slice(oldPath.length);
         const updatedNotePath = `${newPath}${remainder}`;
         await dbClient.run(
-          `UPDATE notes SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+          `UPDATE notes SET folder_path = ?, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
           [updatedNotePath, n.id]
+        );
+        queuedNoteIds.add(n.id);
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, ?, 'note', ?, 'update', ?);`,
+          [
+            createLogId(),
+            n.user_id || folder.user_id,
+            (n.sync_rev || 0) + 1,
+            n.id,
+            JSON.stringify({
+              action: 'folder_rename_cascade',
+              folderPath: updatedNotePath,
+              timestamp: nowIso,
+            }),
+          ]
         );
       }
     }
 
-    // Sync changelog for primary renamed folder
+    // Sync changelog for primary renamed folder (triggers server-side rpc_cascade_folder_path_change for non-cached notes too)
     await dbClient.run(
       `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
-      [createLogId(), folder.user_id, targetRev, id, JSON.stringify({ action: 'rename', oldPath, newPath, name: cleanNewName, timestamp: new Date().toISOString() })]
+      [
+        createLogId(),
+        folder.user_id,
+        targetRev,
+        id,
+        JSON.stringify({
+          action: 'cascade_path',
+          originalAction: 'rename',
+          oldPath,
+          newPath,
+          name: cleanNewName,
+          timestamp: nowIso,
+        }),
+      ]
     );
     syncEngine.schedulePush();
 
@@ -276,10 +334,10 @@ export class FoldersRepository {
     const updatedFolder = await this.getFolderById(id);
     const targetRev = updatedFolder?.sync_rev || 1;
 
-    // 2. Update descendant subfolders in folders table
+    // 2. Update descendant subfolders in folders table (exact prefix match — wildcard safe)
     const descendantFolders = await dbClient.query<DBFolder>(
-      `SELECT * FROM folders WHERE path LIKE ?;`,
-      [`${oldPath}/%`]
+      `SELECT * FROM folders WHERE SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+      [oldPath, oldPath]
     );
 
     for (const child of descendantFolders) {
@@ -302,30 +360,75 @@ export class FoldersRepository {
       );
     }
 
-    // 3. Update notes directly in this folder
-    await dbClient.run(
-      `UPDATE notes SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE folder_path = ? OR folder_id = ?;`,
-      [newPath, oldPath, id]
+    // 3. Capture & update notes directly in this folder (with sync_rev + sync_changelog outbox)
+    const directNotes = await dbClient.query<{ id: string; user_id: string; sync_rev: number }>(
+      `SELECT id, user_id, sync_rev FROM notes WHERE folder_path = ? OR folder_id = ?;`,
+      [oldPath, id]
     );
 
-    // 4. Update descendant notes
-    const descendantNotes = await dbClient.query<{ id: string; folder_path: string }>(
-      `SELECT id, folder_path FROM notes WHERE folder_path LIKE ?;`,
-      [`${oldPath}/%`]
+    if (directNotes.length > 0) {
+      await dbClient.run(
+        `UPDATE notes SET folder_path = ?, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP WHERE folder_path = ? OR folder_id = ?;`,
+        [newPath, oldPath, id]
+      );
+    }
+
+    const queuedNoteIds = new Set<string>();
+    const nowIso = new Date().toISOString();
+    for (const n of directNotes) {
+      queuedNoteIds.add(n.id);
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, 'note', ?, 'update', ?);`,
+        [
+          createLogId(),
+          n.user_id || folder.user_id,
+          (n.sync_rev || 0) + 1,
+          n.id,
+          JSON.stringify({
+            action: 'folder_move_cascade',
+            folderPath: newPath,
+            folderId: id,
+            timestamp: nowIso,
+          }),
+        ]
+      );
+    }
+
+    // 4. Capture & update descendant notes (exact prefix match — wildcard safe)
+    const descendantNotes = await dbClient.query<{ id: string; user_id: string; sync_rev: number; folder_path: string }>(
+      `SELECT id, user_id, sync_rev, folder_path FROM notes WHERE SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/';`,
+      [oldPath, oldPath]
     );
 
     for (const n of descendantNotes) {
-      if (n.folder_path) {
+      if (n.folder_path && !queuedNoteIds.has(n.id)) {
         const remainder = n.folder_path.slice(oldPath.length);
         const updatedNotePath = `${newPath}${remainder}`;
         await dbClient.run(
-          `UPDATE notes SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+          `UPDATE notes SET folder_path = ?, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
           [updatedNotePath, n.id]
+        );
+        queuedNoteIds.add(n.id);
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, ?, 'note', ?, 'update', ?);`,
+          [
+            createLogId(),
+            n.user_id || folder.user_id,
+            (n.sync_rev || 0) + 1,
+            n.id,
+            JSON.stringify({
+              action: 'folder_move_cascade',
+              folderPath: updatedNotePath,
+              timestamp: nowIso,
+            }),
+          ]
         );
       }
     }
 
-    // Sync changelog entry for moved folder
+    // Sync changelog entry for moved folder (triggers server-side rpc_cascade_folder_path_change for non-cached notes too)
     await dbClient.run(
       `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
        VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
@@ -334,7 +437,15 @@ export class FoldersRepository {
         folder.user_id,
         targetRev,
         id,
-        JSON.stringify({ action: 'move', oldPath, newPath, newParentId, timestamp: new Date().toISOString() })
+        JSON.stringify({
+          action: 'cascade_path',
+          originalAction: 'move',
+          oldPath,
+          newPath,
+          newParentId,
+          newParentPath: cleanParent || null,
+          timestamp: nowIso,
+        }),
       ]
     );
     syncEngine.schedulePush();
@@ -352,13 +463,14 @@ export class FoldersRepository {
       throw new Error('The default "General" folder cannot be deleted.');
     }
 
-    // Find notes to update (both direct and nested)
-    const affectedNotesList = await dbClient.query<{ id: string }>(
-      `SELECT id FROM notes 
-       WHERE folder_path = ? OR folder_path LIKE ? OR folder_id = ?;`,
-      [cleanPath, `${cleanPath}/%`, id]
+    // Find notes to update (both direct and nested — exact prefix match immune to LIKE wildcards)
+    const affectedNotesList = await dbClient.query<{ id: string; user_id: string; sync_rev: number }>(
+      `SELECT id, user_id, sync_rev FROM notes 
+       WHERE folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/' OR folder_id = ?;`,
+      [cleanPath, cleanPath, cleanPath, id]
     );
 
+    const nowIso = new Date().toISOString();
     if (affectedNotesList.length > 0) {
       const noteIds = affectedNotesList.map((n) => n.id);
       const placeholders = noteIds.map(() => '?').join(',');
@@ -366,29 +478,70 @@ export class FoldersRepository {
       if (noteAction === 'moveToGeneral') {
         await dbClient.run(
           `UPDATE notes 
-           SET folder_path = 'General', folder_id = NULL, updated_at = CURRENT_TIMESTAMP 
+           SET folder_path = 'General', folder_id = NULL, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
            WHERE id IN (${placeholders});`,
           noteIds
         );
+        for (const n of affectedNotesList) {
+          await dbClient.run(
+            `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+             VALUES (?, ?, ?, 'note', ?, 'update', ?);`,
+            [
+              createLogId(),
+              n.user_id || syncEngine.getActiveUserId(),
+              (n.sync_rev || 0) + 1,
+              n.id,
+              JSON.stringify({
+                action: 'folder_delete_cascade',
+                folderPath: 'General',
+                folderId: null,
+                clearFolderId: true,
+                timestamp: nowIso,
+              }),
+            ]
+          );
+        }
       } else {
         // Move to Trash
         await dbClient.run(
           `UPDATE notes 
-           SET status = 'trashed', trashed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+           SET status = 'trashed', trashed_at = CURRENT_TIMESTAMP, folder_id = NULL, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
            WHERE id IN (${placeholders});`,
           noteIds
         );
+        for (const n of affectedNotesList) {
+          await dbClient.run(
+            `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+             VALUES (?, ?, ?, 'note', ?, 'update', ?);`,
+            [
+              createLogId(),
+              n.user_id || syncEngine.getActiveUserId(),
+              (n.sync_rev || 0) + 1,
+              n.id,
+              JSON.stringify({
+                action: 'folder_delete_cascade',
+                status: 'trashed',
+                folderId: null,
+                clearFolderId: true,
+                timestamp: nowIso,
+              }),
+            ]
+          );
+        }
       }
     }
 
-    // Delete folder and all its descendant subfolders
+    // Delete folder and all its descendant subfolders (exact prefix match — wildcard safe)
     const foldersToDelete = await dbClient.query<DBFolder>(
-      `SELECT * FROM folders WHERE id = ? OR path = ? OR path LIKE ?;`,
-      [id, cleanPath, `${cleanPath}/%`]
+      `SELECT * FROM folders WHERE id = ? OR path = ? OR SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+      [id, cleanPath, cleanPath, cleanPath]
     );
 
     // Record tombstone delete entries in sync_changelog for each folder before deletion
+    let recordedRootTombstone = false;
     for (const f of foldersToDelete) {
+      const isRoot = f.id === id;
+      if (isRoot) recordedRootTombstone = true;
       await dbClient.run(
         `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
          VALUES (?, ?, ?, 'folder', ?, 'delete', ?);`,
@@ -400,8 +553,28 @@ export class FoldersRepository {
           JSON.stringify({
             deletedPath: f.path,
             noteAction,
+            isCascadeRoot: isRoot,
             isTombstone: true,
-            deletedAt: new Date().toISOString(),
+            deletedAt: nowIso,
+          }),
+        ]
+      );
+    }
+
+    if (!recordedRootTombstone) {
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, 1, 'folder', ?, 'delete', ?);`,
+        [
+          createLogId(),
+          syncEngine.getActiveUserId(),
+          id,
+          JSON.stringify({
+            deletedPath: cleanPath,
+            noteAction,
+            isCascadeRoot: true,
+            isTombstone: true,
+            deletedAt: nowIso,
           }),
         ]
       );
@@ -444,13 +617,30 @@ export class FoldersRepository {
     const parentPath = parentSegments.join('/');
     const targetPath = parentPath ? `${parentPath}/${finalName}` : finalName;
 
-    // Create the cloned folder record
+    const effectiveUserId = folder?.user_id || syncEngine.getActiveUserId();
+
+    // When authenticated & cloud-sync ready (Lean Cache active), run atomic server-side duplication
+    // so clean dehydrated Page-1 notes and evicted Page-2+ notes clone with FULL blocks_json & note_tags.
+    if (syncEngine.isCloudSyncEnabled()) {
+      try {
+        const cloudDup = await syncEngine.duplicateFolderCascadeInCloud(id, cleanSourcePath, finalName);
+        if (cloudDup?.newFolder) {
+          return cloudDup;
+        }
+      } catch (cloudDupErr) {
+        console.warn('[FoldersRepository] Server folder duplicate fallback to local SQLite:', cloudDupErr);
+      }
+    }
+
+    // Create the cloned folder record locally (guest / offline fallback)
     const newFolder = await this.createFolder({
+      userId: effectiveUserId,
       name: finalName,
       path: targetPath,
       parentId: folder?.parent_id || undefined,
       colorToken: folder?.color_token || 'cyan',
       icon: folder?.icon || undefined,
+      aiContextExcluded: folder?.ai_context_excluded ? 1 : 0,
     });
 
     if (folder?.is_locked === 1) {
@@ -462,6 +652,7 @@ export class FoldersRepository {
              lock_hash = ?,
              lock_salt = ?,
              lock_hint = ?,
+             sync_rev = sync_rev + 1,
              updated_at = CURRENT_TIMESTAMP
          WHERE id = ?;`,
         [
@@ -479,6 +670,23 @@ export class FoldersRepository {
       newFolder.lock_hash = folder.lock_hash || null;
       newFolder.lock_salt = folder.lock_salt || null;
       newFolder.lock_hint = folder.lock_hint || null;
+
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, ?, 'folder', ?, 'update', ?);`,
+        [
+          createLogId(),
+          effectiveUserId,
+          (newFolder.sync_rev || 1) + 1,
+          newFolder.id,
+          JSON.stringify({
+            action: 'duplicate_lock_metadata',
+            isLocked: true,
+            lockType: folder.lock_type || null,
+            timestamp: new Date().toISOString(),
+          }),
+        ]
+      );
     }
 
     // Query non-trashed notes in the source folder
@@ -493,15 +701,16 @@ export class FoldersRepository {
     for (const note of notesToClone) {
       const clonedId = `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const clonedTitle = note.title ? `${note.title} (Copy)` : 'Untitled Note (Copy)';
+      const noteUserId = note.user_id || effectiveUserId;
 
       await dbClient.run(
         `INSERT INTO notes (
           id, user_id, folder_id, folder_path, group_name, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, status,
-          is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, ?, ?, ?, ?, ?);`,
+          is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint, ai_context_excluded, sync_rev
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'active', ?, ?, ?, ?, ?, ?, ?, 1);`,
         [
           clonedId,
-          note.user_id,
+          noteUserId,
           newFolder.id,
           targetPath,
           note.group_name,
@@ -515,10 +724,45 @@ export class FoldersRepository {
           note.lock_hash ?? null,
           note.lock_salt ?? null,
           note.lock_hint ?? null,
+          note.ai_context_excluded ?? 0,
+        ]
+      );
+
+      // Clone note_tags associations so duplicated notes keep their tags on all devices
+      const sourceTags = await dbClient.query<{ tag_id: string; name: string }>(
+        `SELECT nt.tag_id, t.name FROM note_tags nt INNER JOIN tags t ON t.id = nt.tag_id WHERE nt.note_id = ?;`,
+        [note.id]
+      );
+      for (const st of sourceTags) {
+        await dbClient.run(
+          `INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?);`,
+          [clonedId, st.tag_id]
+        );
+      }
+
+      // Enqueue sync_changelog insert delta for each cloned note
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, 1, 'note', ?, 'insert', ?);`,
+        [
+          createLogId(),
+          noteUserId,
+          clonedId,
+          JSON.stringify({
+            id: clonedId,
+            title: clonedTitle,
+            folderId: newFolder.id,
+            folderPath: targetPath,
+            tags: sourceTags.map((t) => t.name),
+            duplicatedFromNoteId: note.id,
+            timestamp: new Date().toISOString(),
+          }),
         ]
       );
       duplicatedCount++;
     }
+
+    syncEngine.schedulePush();
 
     return {
       newFolder,
@@ -664,25 +908,25 @@ export class FoldersRepository {
 
     const cleanPath = folder.path.trim().replace(/^\/+|\/+$/g, '');
 
-    // 1. Identify all folders to archive (the target folder + nested subfolders)
+    // 1. Identify all folders to archive (the target folder + nested subfolders — exact prefix match)
     const foldersToArchive = await dbClient.query<DBFolder>(
-      `SELECT * FROM folders WHERE (id = ? OR path LIKE ?) AND is_archived = 0;`,
-      [id, `${cleanPath}/%`]
+      `SELECT * FROM folders WHERE (id = ? OR SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/') AND is_archived = 0;`,
+      [id, cleanPath, cleanPath]
     );
 
-    // 2. Identify all active notes to archive
+    // 2. Identify all active notes to archive (exact prefix match)
     const notesToArchive = await dbClient.query<{ id: string; user_id: string; sync_rev: number }>(
       `SELECT id, user_id, sync_rev FROM notes 
        WHERE status = 'active' 
-       AND (folder_path = ? OR folder_path LIKE ? OR folder_id = ?);`,
-      [cleanPath, `${cleanPath}/%`, id]
+       AND (folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/' OR folder_id = ?);`,
+      [cleanPath, cleanPath, cleanPath, id]
     );
 
     // 3. Update folders table
     await dbClient.run(
       `UPDATE folders SET is_archived = 1, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = ? OR path LIKE ?;`,
-      [id, `${cleanPath}/%`]
+       WHERE id = ? OR SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+      [id, cleanPath, cleanPath]
     );
 
     // 4. Update notes table
@@ -690,8 +934,8 @@ export class FoldersRepository {
       await dbClient.run(
         `UPDATE notes SET status = 'archived', sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
          WHERE status = 'active' 
-         AND (folder_path = ? OR folder_path LIKE ? OR folder_id = ?);`,
-        [cleanPath, `${cleanPath}/%`, id]
+         AND (folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/' OR folder_id = ?);`,
+        [cleanPath, cleanPath, cleanPath, id]
       );
     }
 
@@ -708,6 +952,7 @@ export class FoldersRepository {
           JSON.stringify({
             action: 'archive',
             isArchived: true,
+            isCascadeRoot: f.id === id,
             path: f.path,
             timestamp: new Date().toISOString(),
           }),
@@ -751,18 +996,18 @@ export class FoldersRepository {
 
     const cleanPath = folder.path.trim().replace(/^\/+|\/+$/g, '');
 
-    // 1. Identify all archived folders in branch
+    // 1. Identify all archived folders in branch (exact prefix match — wildcard safe)
     const foldersToUnarchive = await dbClient.query<DBFolder>(
-      `SELECT * FROM folders WHERE (id = ? OR path LIKE ?) AND is_archived = 1;`,
-      [id, `${cleanPath}/%`]
+      `SELECT * FROM folders WHERE (id = ? OR SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/') AND is_archived = 1;`,
+      [id, cleanPath, cleanPath]
     );
 
-    // 2. Identify all archived notes in this folder branch
+    // 2. Identify all archived notes in this folder branch (exact prefix match)
     const notesToUnarchive = await dbClient.query<{ id: string; user_id: string; sync_rev: number }>(
       `SELECT id, user_id, sync_rev FROM notes 
        WHERE status = 'archived' 
-       AND (folder_path = ? OR folder_path LIKE ? OR folder_id = ?);`,
-      [cleanPath, `${cleanPath}/%`, id]
+       AND (folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/' OR folder_id = ?);`,
+      [cleanPath, cleanPath, cleanPath, id]
     );
 
     // 3. Ensure any ancestor folders are also unarchived so path isn't orphaned
@@ -779,8 +1024,8 @@ export class FoldersRepository {
     // 4. Update folders table for target and subfolders
     await dbClient.run(
       `UPDATE folders SET is_archived = 0, sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
-       WHERE id = ? OR path LIKE ?;`,
-      [id, `${cleanPath}/%`]
+       WHERE id = ? OR SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+      [id, cleanPath, cleanPath]
     );
 
     // 5. Update notes table
@@ -788,8 +1033,8 @@ export class FoldersRepository {
       await dbClient.run(
         `UPDATE notes SET status = 'active', sync_rev = sync_rev + 1, updated_at = CURRENT_TIMESTAMP 
          WHERE status = 'archived' 
-         AND (folder_path = ? OR folder_path LIKE ? OR folder_id = ?);`,
-        [cleanPath, `${cleanPath}/%`, id]
+         AND (folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/' OR folder_id = ?);`,
+        [cleanPath, cleanPath, cleanPath, id]
       );
     }
 
@@ -806,6 +1051,7 @@ export class FoldersRepository {
           JSON.stringify({
             action: 'unarchive',
             isArchived: false,
+            isCascadeRoot: f.id === id,
             path: f.path,
             timestamp: new Date().toISOString(),
           }),
@@ -957,10 +1203,10 @@ export class FoldersRepository {
         return { status: 'ignored_stale', folderId: entry.entity_id };
       }
 
-      if (payload.action === 'rename' || payload.newPath) {
-        await this.renameFolderCascade(entry.entity_id, payload.name || payload.newName);
-      } else if (payload.action === 'move') {
+      if (payload.action === 'move' || payload.originalAction === 'move') {
         await this.moveFolderCascade(entry.entity_id, payload.newParentPath || null);
+      } else if (payload.action === 'rename' || payload.originalAction === 'rename' || payload.newPath) {
+        await this.renameFolderCascade(entry.entity_id, payload.name || payload.newName);
       } else if (payload.action === 'color') {
         await dbClient.run(
           `UPDATE folders SET color_token = ?, sync_rev = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,

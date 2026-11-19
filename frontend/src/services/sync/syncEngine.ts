@@ -13,7 +13,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { dbClient } from '../../db/client';
-import { DBFolder, DBNote, DBReminder, DBTask, DBWorkspaceSecurity } from '../../db/types';
+import { tagsRepo } from '../../db/tagsRepo';
+import {
+  DBEntityRelation,
+  DBFolder,
+  DBInAppNotification,
+  DBNote,
+  DBReminder,
+  DBSearchHistory,
+  DBTask,
+  DBWorkspaceSecurity,
+} from '../../db/types';
 import { NoteItem } from '../../types/note';
 import { notificationService } from '../notifications/NotificationService';
 import { supabase, isSupabaseConfigured } from '../supabase/supabaseClient';
@@ -65,6 +75,10 @@ export class SyncEngine {
 
   public isCloudSyncEnabled(): boolean {
     return !this.isSyncGateBlocked();
+  }
+
+  public getActiveUserId(): string {
+    return this.isGuestOrUnauthenticated() ? 'user-default' : this.config.userId;
   }
 
   /**
@@ -195,6 +209,9 @@ export class SyncEngine {
       note: 3,
       task: 4,
       reminder: 5,
+      relation: 6,
+      in_app_notification: 7,
+      search_history: 8,
     };
 
     try {
@@ -418,7 +435,62 @@ export class SyncEngine {
    */
   private async pushSingleDeltaToSupabase(delta: SyncDelta): Promise<void> {
     if (delta.changeType === 'delete') {
-      if (['note', 'folder', 'task', 'reminder'].includes(delta.entityType)) {
+      if (delta.entityType === 'folder') {
+        const deletedPath = delta.deltaPayload?.deletedPath || delta.deltaPayload?.deleted_path;
+        const noteAction =
+          delta.deltaPayload?.noteAction || delta.deltaPayload?.note_action || 'moveToGeneral';
+        const isCascadeRoot = delta.deltaPayload?.isCascadeRoot !== false;
+        if (deletedPath && isCascadeRoot) {
+          const { error } = await supabase.rpc('rpc_delete_folder_cascade', {
+            p_folder_id: delta.entityId,
+            p_folder_path: deletedPath,
+            p_note_action: noteAction,
+            p_caller_platform: this.deviceSessionId,
+          });
+          if (error) throw new Error(error.message);
+        } else if (!deletedPath) {
+          const { error } = await supabase.rpc('rpc_delete_entity', {
+            p_entity_type: 'folder',
+            p_entity_id: delta.entityId,
+            p_caller_platform: this.deviceSessionId,
+          });
+          if (error) throw new Error(error.message);
+        }
+        return;
+      }
+
+      if (delta.entityType === 'in_app_notification') {
+        const { error } = await supabase.rpc('rpc_delete_in_app_notification', {
+          p_id: delta.entityId === 'all' ? null : delta.entityId,
+          p_caller_platform: this.deviceSessionId,
+        });
+        if (error) throw new Error(error.message);
+        return;
+      }
+
+      if (delta.entityType === 'search_history') {
+        const isAll = delta.entityId === 'all';
+        const { error } = await supabase.rpc('rpc_delete_search_history', {
+          p_query_text: isAll
+            ? null
+            : delta.deltaPayload?.queryText || delta.deltaPayload?.query_text || null,
+          p_id: isAll ? null : delta.entityId,
+          p_caller_platform: this.deviceSessionId,
+        });
+        if (error) throw new Error(error.message);
+        return;
+      }
+
+      if (delta.entityType === 'relation') {
+        const { error } = await supabase.rpc('rpc_delete_entity_relation', {
+          p_id: delta.entityId,
+          p_caller_platform: this.deviceSessionId,
+        });
+        if (error) throw new Error(error.message);
+        return;
+      }
+
+      if (['note', 'task', 'reminder'].includes(delta.entityType)) {
         const { error } = await supabase.rpc('rpc_delete_entity', {
           p_entity_type: delta.entityType,
           p_entity_id: delta.entityId,
@@ -454,6 +526,19 @@ export class SyncEngine {
           (typeof delta.deltaPayload.blocks !== 'undefined' ||
             typeof delta.deltaPayload.blocks_json !== 'undefined');
 
+        const clearFolderId = Boolean(
+          delta.deltaPayload?.clearFolderId ||
+            (delta.deltaPayload &&
+              Object.prototype.hasOwnProperty.call(delta.deltaPayload, 'folderId') &&
+              delta.deltaPayload.folderId === null)
+        );
+        const clearReminderAt = Boolean(
+          delta.deltaPayload?.clearReminderAt ||
+            (delta.deltaPayload &&
+              Object.prototype.hasOwnProperty.call(delta.deltaPayload, 'reminderAt') &&
+              delta.deltaPayload.reminderAt === null)
+        );
+
         if (delta.changeType === 'insert') {
           await this.pushCreateNote(note, parsedBlocks, tags);
         } else {
@@ -463,7 +548,7 @@ export class SyncEngine {
             p_title: note.title,
             p_content_markdown: payloadHasBlocks ? note.content_markdown : null,
             p_blocks_json: payloadHasBlocks ? parsedBlocks : null,
-            p_tags: delta.deltaPayload?.tags ? tags : null,
+            p_tags: Array.isArray(delta.deltaPayload?.tags) ? tags : null,
             p_folder_id: note.folder_id,
             p_folder_path: note.folder_path,
             p_color_token: note.color_token,
@@ -478,6 +563,8 @@ export class SyncEngine {
             p_lock_salt: note.lock_salt || null,
             p_lock_hint: note.lock_hint || null,
             p_ai_context_excluded: Boolean(note.ai_context_excluded),
+            p_clear_folder_id: clearFolderId,
+            p_clear_reminder_at: clearReminderAt,
             p_caller_platform: this.deviceSessionId,
           });
           if (error) {
@@ -504,6 +591,32 @@ export class SyncEngine {
 
       case 'folder': {
         await this.ensureFolderSyncedToSupabase(delta.entityId);
+        const payload = delta.deltaPayload || {};
+        if (
+          payload.action === 'cascade_path' &&
+          payload.oldPath &&
+          payload.newPath &&
+          payload.oldPath !== payload.newPath
+        ) {
+          const { error } = await supabase.rpc('rpc_cascade_folder_path_change', {
+            p_old_path: payload.oldPath,
+            p_new_path: payload.newPath,
+            p_caller_platform: this.deviceSessionId,
+          });
+          if (error) throw new Error(error.message);
+        } else if (
+          (payload.action === 'archive' || payload.action === 'unarchive') &&
+          payload.isCascadeRoot &&
+          payload.path
+        ) {
+          const { error } = await supabase.rpc('rpc_cascade_folder_archive_change', {
+            p_folder_id: delta.entityId,
+            p_folder_path: payload.path,
+            p_is_archived: payload.action === 'archive',
+            p_caller_platform: this.deviceSessionId,
+          });
+          if (error) throw new Error(error.message);
+        }
         break;
       }
 
@@ -570,10 +683,10 @@ export class SyncEngine {
               throw new Error(error.message);
             }
           }
-          if (task.is_completed) {
+          if (task.is_completed || typeof delta.deltaPayload?.isCompleted === 'boolean') {
             await supabase.rpc('rpc_toggle_task', {
               p_task_id: task.id,
-              p_is_completed: true,
+              p_is_completed: Boolean(task.is_completed),
               p_caller_platform: this.deviceSessionId,
             });
           }
@@ -588,17 +701,25 @@ export class SyncEngine {
         );
         if (!reminder) return;
 
-        const { error } = await supabase.rpc('rpc_schedule_reminder', {
-          p_id: reminder.id,
-          p_target_type: reminder.target_type,
-          p_target_id: reminder.target_id,
-          p_trigger_at: reminder.trigger_at,
-          p_title: delta.deltaPayload?.title || 'Reminder',
-          p_body: delta.deltaPayload?.body || '',
-          p_recurrence_rule: delta.deltaPayload?.recurrenceRule || null,
-          p_caller_platform: this.deviceSessionId,
-        });
-        if (error) throw new Error(error.message);
+        if (reminder.is_dismissed || delta.deltaPayload?.isDismissed) {
+          const { error } = await supabase.rpc('rpc_dismiss_reminder', {
+            p_reminder_id: reminder.id,
+            p_caller_platform: this.deviceSessionId,
+          });
+          if (error) throw new Error(error.message);
+        } else {
+          const { error } = await supabase.rpc('rpc_schedule_reminder', {
+            p_id: reminder.id,
+            p_target_type: reminder.target_type,
+            p_target_id: reminder.target_id,
+            p_trigger_at: reminder.trigger_at,
+            p_title: delta.deltaPayload?.title || 'Reminder',
+            p_body: delta.deltaPayload?.body || '',
+            p_recurrence_rule: delta.deltaPayload?.recurrenceRule || null,
+            p_caller_platform: this.deviceSessionId,
+          });
+          if (error) throw new Error(error.message);
+        }
         break;
       }
 
@@ -616,6 +737,106 @@ export class SyncEngine {
           p_master_salt: ws.master_salt,
           p_master_hint: ws.master_hint,
           p_auto_relock_seconds: ws.auto_relock_seconds,
+          p_caller_platform: this.deviceSessionId,
+        });
+        if (error) throw new Error(error.message);
+        break;
+      }
+
+      case 'in_app_notification': {
+        const p = delta.deltaPayload || {};
+        if (
+          delta.changeType === 'update' &&
+          (delta.entityId === 'all' || typeof p.isRead !== 'undefined' || typeof p.is_read !== 'undefined')
+        ) {
+          const isRead = typeof p.isRead !== 'undefined' ? Boolean(p.isRead) : Boolean(p.is_read ?? true);
+          const { error } = await supabase.rpc('rpc_mark_notifications_read', {
+            p_id: delta.entityId === 'all' ? null : delta.entityId,
+            p_is_read: isRead,
+            p_caller_platform: this.deviceSessionId,
+          });
+          if (error) throw new Error(error.message);
+          break;
+        }
+
+        const notif = await dbClient.queryFirst<DBInAppNotification>(
+          `SELECT * FROM in_app_notifications WHERE id = ?;`,
+          [delta.entityId]
+        );
+        if (!notif) return;
+
+        const { error } = await supabase.rpc('rpc_upsert_in_app_notification', {
+          p_id: notif.id,
+          p_target_type: notif.target_type,
+          p_target_id: notif.target_id,
+          p_title: notif.title,
+          p_body: notif.body || '',
+          p_trigger_at: notif.trigger_at,
+          p_reminder_id: notif.reminder_id || null,
+          p_note_id: notif.note_id || null,
+          p_recurrence_rule: notif.recurrence_rule || null,
+          p_is_read: Boolean(notif.is_read),
+          p_read_at: notif.read_at || null,
+          p_is_cleared: Boolean(notif.is_cleared),
+          p_cleared_at: notif.cleared_at || null,
+          p_caller_platform: this.deviceSessionId,
+        });
+        if (error) throw new Error(error.message);
+        break;
+      }
+
+      case 'search_history': {
+        const row = await dbClient.queryFirst<DBSearchHistory>(
+          `SELECT * FROM search_history WHERE id = ?;`,
+          [delta.entityId]
+        );
+        const p = delta.deltaPayload || {};
+        const queryText = row?.query_text || p.queryText || p.query_text;
+        if (!queryText) return;
+
+        let filterSnapshot: Record<string, any> = {};
+        if (row?.filter_snapshot_json) {
+          try {
+            filterSnapshot = JSON.parse(row.filter_snapshot_json);
+          } catch {
+            filterSnapshot = {};
+          }
+        } else if (p.filterSnapshot && typeof p.filterSnapshot === 'object') {
+          filterSnapshot = p.filterSnapshot;
+        }
+
+        const { data, error } = await supabase.rpc('rpc_upsert_search_history', {
+          p_id: row?.id || delta.entityId,
+          p_query_text: queryText,
+          p_source: row?.source || p.source || 'text',
+          p_filter_snapshot: filterSnapshot,
+          p_use_count: row?.use_count || p.useCount || 1,
+          p_last_used_at: row?.last_used_at || p.lastUsedAt || new Date().toISOString(),
+          p_caller_platform: this.deviceSessionId,
+        });
+        if (error) throw new Error(error.message);
+        if (data?.id && row?.id && data.id !== row.id) {
+          await dbClient.run(`DELETE FROM search_history WHERE id = ?;`, [data.id]).catch(() => {});
+          await dbClient.run(`UPDATE search_history SET id = ? WHERE id = ?;`, [data.id, row.id]).catch(() => {});
+        }
+        break;
+      }
+
+      case 'relation': {
+        const rel = await dbClient.queryFirst<DBEntityRelation>(
+          `SELECT * FROM entity_relations WHERE id = ?;`,
+          [delta.entityId]
+        );
+        if (!rel) return;
+
+        const { error } = await supabase.rpc('rpc_upsert_entity_relation', {
+          p_id: rel.id,
+          p_source_id: rel.source_id,
+          p_target_id: rel.target_id,
+          p_relation_type: rel.relation_type,
+          p_created_by: rel.created_by || 'user',
+          p_confidence_score: typeof rel.confidence_score === 'number' ? rel.confidence_score : 1.0,
+          p_metadata: delta.deltaPayload?.metadata || {},
           p_caller_platform: this.deviceSessionId,
         });
         if (error) throw new Error(error.message);
@@ -671,6 +892,80 @@ export class SyncEngine {
   }
 
   /**
+   * Executes Lean-Cache-safe server-side folder duplication (`rpc_duplicate_folder_cascade`)
+   * so clean dehydrated Page-1 notes and evicted Page-2+ notes clone with FULL `blocks_json`
+   * and `note_tags` on Supabase and broadcast cleanly to Device B.
+   */
+  public async duplicateFolderCascadeInCloud(
+    sourceFolderId: string,
+    sourcePath: string,
+    newName?: string
+  ): Promise<{ newFolder: DBFolder; duplicatedNotesCount: number } | null> {
+    if (!isSupabaseConfigured() || this.isSyncGateBlocked()) return null;
+
+    // Flush any pending local edits (e.g. recently edited notes in the source folder) first
+    await this.flushNow().catch(() => {});
+
+    const clientFolderId = `folder-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const { data, error } = await supabase.rpc('rpc_duplicate_folder_cascade', {
+      p_source_folder_id: sourceFolderId,
+      p_source_path: sourcePath,
+      p_new_folder_id: clientFolderId,
+      p_new_name: newName || null,
+      p_caller_platform: this.deviceSessionId,
+    });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!data?.folder?.id) return null;
+
+    const uid = this.config.userId;
+    const cf = data.folder;
+    const clonedNotes: any[] = Array.isArray(data.notes) ? data.notes : [];
+
+    await dbClient.withTransaction(async () => {
+      await this.applyFolderDelta({
+        id: `dup-folder-${cf.id}`,
+        userId: uid,
+        syncRev: cf.sync_rev || 1,
+        entityType: 'folder',
+        entityId: cf.id,
+        changeType: 'insert',
+        deltaPayload: cf,
+        callerPlatform: 'cloud_dup',
+        createdAt: cf.created_at || new Date().toISOString(),
+      });
+
+      for (const cn of clonedNotes) {
+        if (!cn?.id) continue;
+        await this.applyNoteDelta({
+          id: `dup-note-${cn.id}`,
+          userId: uid,
+          syncRev: cn.sync_rev || 1,
+          entityType: 'note',
+          entityId: cn.id,
+          changeType: 'insert',
+          deltaPayload: cn,
+          callerPlatform: 'cloud_dup',
+          createdAt: cn.created_at || new Date().toISOString(),
+        });
+      }
+    });
+
+    const localFolder = await dbClient.queryFirst<DBFolder>(
+      `SELECT * FROM folders WHERE id = ?;`,
+      [cf.id]
+    );
+    if (!localFolder) return null;
+
+    return {
+      newFolder: localFolder,
+      duplicatedNotesCount: Number(data.duplicated_notes_count ?? clonedNotes.length) || 0,
+    };
+  }
+
+  /**
    * Reconciles pending offline/guest notes against existing cloud notes BEFORE flushing:
    * - Matching note.id in cloud -> merges non-destructively (blocks by block.id + tag union)
    * - Unmatched note.id -> prepares clean brand-new note insert with folder path remapping
@@ -690,21 +985,53 @@ export class SyncEngine {
     if (!isSupabaseConfigured() || !this.isAuthenticatedSession()) return;
 
     const uid = this.config.userId;
-    const [foldersRes, tasksRes, remindersRes, securityRes, dirtyRows] = await Promise.all([
+    const [
+      foldersRes,
+      tasksRes,
+      remindersRes,
+      securityRes,
+      notificationsRes,
+      searchHistoryRes,
+      relationsRes,
+      dirtyRows,
+    ] = await Promise.all([
       supabase.from('folders').select('*').eq('user_id', uid),
       supabase.from('tasks').select('*').eq('user_id', uid),
       supabase.from('reminders').select('*').eq('user_id', uid).eq('is_dismissed', false),
       supabase.from('workspace_security').select('*').eq('user_id', uid).maybeSingle(),
+      supabase
+        .from('in_app_notifications')
+        .select('*')
+        .eq('user_id', uid)
+        .eq('is_cleared', false)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      supabase
+        .from('search_history')
+        .select('*')
+        .eq('user_id', uid)
+        .order('last_used_at', { ascending: false })
+        .limit(50),
+      supabase.from('entity_relations').select('*').eq('user_id', uid),
       dbClient.query<{ entity_type: string; entity_id: string }>(
         `SELECT DISTINCT entity_type, entity_id FROM sync_changelog;`
       ),
     ]);
 
     const dirtyKeySet = new Set(dirtyRows.map((r) => `${r.entity_type}:${r.entity_id}`));
+    const remindersToCancelAlarm: string[] = [];
 
     await dbClient.withTransaction(async () => {
-      if (Array.isArray(foldersRes.data)) {
-        for (const f of foldersRes.data) {
+      if (!foldersRes.error && Array.isArray(foldersRes.data)) {
+        // Sort folders by path depth ascending so parents are ALWAYS inserted before children (PRAGMA foreign_keys = ON)
+        const sortedFolders = [...foldersRes.data].sort((a, b) => {
+          const depthA = String(a.path || a.name || '').split('/').filter(Boolean).length;
+          const depthB = String(b.path || b.name || '').split('/').filter(Boolean).length;
+          return depthA - depthB || String(a.path || '').localeCompare(String(b.path || ''));
+        });
+        const cloudFolderIds = new Set<string>();
+        for (const f of sortedFolders) {
+          if (f?.id) cloudFolderIds.add(f.id);
           if (dirtyKeySet.has(`folder:${f.id}`)) continue;
           await this.applyFolderDelta({
             id: `pull-folder-${f.id}`,
@@ -718,10 +1045,22 @@ export class SyncEngine {
             createdAt: f.created_at || new Date().toISOString(),
           });
         }
+        // Reconcile remotely deleted folders (only clean local rows belonging to this user)
+        const localFolders = await dbClient.query<{ id: string }>(
+          `SELECT id FROM folders WHERE user_id = ?;`,
+          [uid]
+        );
+        for (const lf of localFolders) {
+          if (!cloudFolderIds.has(lf.id) && !dirtyKeySet.has(`folder:${lf.id}`)) {
+            await dbClient.run(`DELETE FROM folders WHERE id = ?;`, [lf.id]);
+          }
+        }
       }
 
-      if (Array.isArray(tasksRes.data)) {
+      if (!tasksRes.error && Array.isArray(tasksRes.data)) {
+        const cloudTaskIds = new Set<string>();
         for (const t of tasksRes.data) {
+          if (t?.id) cloudTaskIds.add(t.id);
           if (dirtyKeySet.has(`task:${t.id}`)) continue;
           await this.applyTaskDelta({
             id: `pull-task-${t.id}`,
@@ -735,10 +1074,22 @@ export class SyncEngine {
             createdAt: t.created_at || new Date().toISOString(),
           });
         }
+        // Reconcile remotely deleted tasks
+        const localTasks = await dbClient.query<{ id: string }>(
+          `SELECT id FROM tasks WHERE user_id = ?;`,
+          [uid]
+        );
+        for (const lt of localTasks) {
+          if (!cloudTaskIds.has(lt.id) && !dirtyKeySet.has(`task:${lt.id}`)) {
+            await dbClient.run(`DELETE FROM tasks WHERE id = ?;`, [lt.id]);
+          }
+        }
       }
 
-      if (Array.isArray(remindersRes.data)) {
+      if (!remindersRes.error && Array.isArray(remindersRes.data)) {
+        const cloudActiveReminderIds = new Set<string>();
         for (const r of remindersRes.data) {
+          if (r?.id) cloudActiveReminderIds.add(r.id);
           if (dirtyKeySet.has(`reminder:${r.id}`)) continue;
           await this.applyReminderDelta({
             id: `pull-rem-${r.id}`,
@@ -752,9 +1103,23 @@ export class SyncEngine {
             createdAt: r.created_at || new Date().toISOString(),
           });
         }
+        // Reconcile remotely dismissed/deleted reminders
+        const localActiveReminders = await dbClient.query<{ id: string; notification_id: string | null }>(
+          `SELECT id, notification_id FROM reminders WHERE user_id = ? AND is_dismissed = 0;`,
+          [uid]
+        );
+        for (const lr of localActiveReminders) {
+          if (!cloudActiveReminderIds.has(lr.id) && !dirtyKeySet.has(`reminder:${lr.id}`)) {
+            await dbClient.run(
+              `UPDATE reminders SET is_dismissed = 1, dismissed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+              [lr.id]
+            );
+            remindersToCancelAlarm.push(lr.notification_id || lr.id);
+          }
+        }
       }
 
-      if (securityRes.data && !dirtyKeySet.has('workspace_security:default')) {
+      if (!securityRes.error && securityRes.data && !dirtyKeySet.has('workspace_security:default')) {
         await this.applyWorkspaceSecurityDelta({
           id: `pull-ws-${uid}`,
           userId: uid,
@@ -767,7 +1132,109 @@ export class SyncEngine {
           createdAt: securityRes.data.updated_at || new Date().toISOString(),
         });
       }
+
+      if (
+        !notificationsRes.error &&
+        Array.isArray(notificationsRes.data) &&
+        !dirtyKeySet.has('in_app_notification:all')
+      ) {
+        const cloudNotifIds = new Set<string>();
+        for (const n of notificationsRes.data) {
+          if (n?.id) cloudNotifIds.add(n.id);
+          if (dirtyKeySet.has(`in_app_notification:${n.id}`)) continue;
+          await this.applyNotificationDelta({
+            id: `pull-notif-${n.id}`,
+            userId: uid,
+            syncRev: n.sync_rev || 1,
+            entityType: 'in_app_notification',
+            entityId: n.id,
+            changeType: 'insert',
+            deltaPayload: n,
+            callerPlatform: 'cloud_pull',
+            createdAt: n.created_at || new Date().toISOString(),
+          });
+        }
+        // Reconcile remotely cleared notifications
+        const localUncleared = await dbClient.query<{ id: string }>(
+          `SELECT id FROM in_app_notifications WHERE user_id = ? AND is_cleared = 0;`,
+          [uid]
+        );
+        for (const ln of localUncleared) {
+          if (!cloudNotifIds.has(ln.id) && !dirtyKeySet.has(`in_app_notification:${ln.id}`)) {
+            await dbClient.run(
+              `UPDATE in_app_notifications SET is_cleared = 1, cleared_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+              [ln.id]
+            );
+          }
+        }
+      }
+
+      if (
+        !searchHistoryRes.error &&
+        Array.isArray(searchHistoryRes.data) &&
+        !dirtyKeySet.has('search_history:all')
+      ) {
+        const cloudSearchIds = new Set<string>();
+        for (const sh of searchHistoryRes.data) {
+          if (sh?.id) cloudSearchIds.add(sh.id);
+          if (dirtyKeySet.has(`search_history:${sh.id}`)) continue;
+          await this.applySearchHistoryDelta({
+            id: `pull-sh-${sh.id}`,
+            userId: uid,
+            syncRev: sh.sync_rev || 1,
+            entityType: 'search_history',
+            entityId: sh.id,
+            changeType: 'insert',
+            deltaPayload: sh,
+            callerPlatform: 'cloud_pull',
+            createdAt: sh.created_at || new Date().toISOString(),
+          });
+        }
+        // Reconcile remotely deleted/cleared search history items
+        const localSearchRows = await dbClient.query<{ id: string }>(
+          `SELECT id FROM search_history WHERE user_id = ?;`,
+          [uid]
+        );
+        for (const lsh of localSearchRows) {
+          if (!cloudSearchIds.has(lsh.id) && !dirtyKeySet.has(`search_history:${lsh.id}`)) {
+            await dbClient.run(`DELETE FROM search_history WHERE id = ?;`, [lsh.id]);
+          }
+        }
+      }
+
+      if (!relationsRes.error && Array.isArray(relationsRes.data)) {
+        const cloudRelIds = new Set<string>();
+        for (const rel of relationsRes.data) {
+          if (rel?.id) cloudRelIds.add(rel.id);
+          if (dirtyKeySet.has(`relation:${rel.id}`)) continue;
+          await this.applyRelationDelta({
+            id: `pull-rel-${rel.id}`,
+            userId: uid,
+            syncRev: 1,
+            entityType: 'relation',
+            entityId: rel.id,
+            changeType: 'insert',
+            deltaPayload: rel,
+            callerPlatform: 'cloud_pull',
+            createdAt: rel.created_at || new Date().toISOString(),
+          });
+        }
+        // Reconcile remotely deleted entity relations
+        const localRels = await dbClient.query<{ id: string }>(
+          `SELECT id FROM entity_relations WHERE user_id = ?;`,
+          [uid]
+        );
+        for (const lr of localRels) {
+          if (!cloudRelIds.has(lr.id) && !dirtyKeySet.has(`relation:${lr.id}`)) {
+            await dbClient.run(`DELETE FROM entity_relations WHERE id = ?;`, [lr.id]);
+          }
+        }
+      }
     });
+
+    for (const alarmKey of remindersToCancelAlarm) {
+      await notificationService.cancelReminder(alarmKey).catch(() => {});
+    }
   }
 
   /**
@@ -800,6 +1267,18 @@ export class SyncEngine {
           }
           case 'workspace_security': {
             await this.applyWorkspaceSecurityDelta(delta);
+            break;
+          }
+          case 'in_app_notification': {
+            await this.applyNotificationDelta(delta);
+            break;
+          }
+          case 'search_history': {
+            await this.applySearchHistoryDelta(delta);
+            break;
+          }
+          case 'relation': {
+            await this.applyRelationDelta(delta);
             break;
           }
           default:
@@ -941,18 +1420,54 @@ export class SyncEngine {
   }
 
   /**
-   * Applies incoming remote note delta (preserving lock & AI context flags)
+   * Applies incoming remote note delta (preserving lock, AI context & omitted partial fields cleanly)
    */
   private async applyNoteDelta(delta: SyncDelta): Promise<void> {
     const p = delta.deltaPayload || {};
+    const effectiveUserId = delta.userId || this.config.userId;
 
     if (delta.changeType === 'delete') {
+      await dbClient.run(`DELETE FROM note_tags WHERE note_id = ?;`, [delta.entityId]);
+      await dbClient.run(`DELETE FROM entity_relations WHERE source_id = ? OR target_id = ?;`, [
+        delta.entityId,
+        delta.entityId,
+      ]);
       await dbClient.run(`DELETE FROM notes WHERE id = ?;`, [delta.entityId]);
     } else {
       const blocksJsonStr =
         typeof p.blocks_json === 'string'
           ? p.blocks_json
           : JSON.stringify(p.blocks_json || []);
+
+      const hasKey = (key: string) => Object.prototype.hasOwnProperty.call(p, key) ? 1 : 0;
+
+      // Validate folder_id against local folders table so out-of-order CDC never crashes PRAGMA foreign_keys = ON
+      let safeFolderId: string | null = p.folder_id || null;
+      if (safeFolderId) {
+        const folderExists = await dbClient.queryFirst<{ id: string }>(
+          `SELECT id FROM folders WHERE id = ? LIMIT 1;`,
+          [safeFolderId]
+        );
+        if (!folderExists) {
+          safeFolderId = null;
+        }
+      }
+
+      const hasTitle = hasKey('title');
+      const hasFolderId = hasKey('folder_id');
+      const hasFolderPath = hasKey('folder_path');
+      const hasColorToken = hasKey('color_token');
+      const hasIsFavorite = hasKey('is_favorite');
+      const hasIsPinned = hasKey('is_pinned');
+      const hasStatus = hasKey('status');
+      const hasReminderAt = hasKey('reminder_at');
+      const hasIsLocked = hasKey('is_locked');
+      const hasLockType = hasKey('lock_type');
+      const hasLockCredKind = hasKey('lock_credential_kind');
+      const hasLockHash = hasKey('lock_hash');
+      const hasLockSalt = hasKey('lock_salt');
+      const hasLockHint = hasKey('lock_hint');
+      const hasAiContextExcluded = hasKey('ai_context_excluded');
 
       await dbClient.run(
         `INSERT INTO notes (
@@ -963,29 +1478,29 @@ export class SyncEngine {
           ai_context_excluded, sync_rev, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(id) DO UPDATE SET
-          title = COALESCE(excluded.title, notes.title),
-          folder_id = COALESCE(excluded.folder_id, notes.folder_id),
-          folder_path = COALESCE(excluded.folder_path, notes.folder_path),
+          title = CASE WHEN ? = 1 THEN excluded.title ELSE notes.title END,
+          folder_id = CASE WHEN ? = 1 THEN excluded.folder_id ELSE notes.folder_id END,
+          folder_path = CASE WHEN ? = 1 THEN excluded.folder_path ELSE notes.folder_path END,
           content_markdown = CASE WHEN excluded.content_markdown != '' THEN excluded.content_markdown ELSE notes.content_markdown END,
           blocks_json = CASE WHEN excluded.blocks_json != '[]' THEN excluded.blocks_json ELSE notes.blocks_json END,
-          color_token = COALESCE(excluded.color_token, notes.color_token),
-          is_favorite = excluded.is_favorite,
-          is_pinned = excluded.is_pinned,
-          status = COALESCE(excluded.status, notes.status),
-          reminder_at = excluded.reminder_at,
-          is_locked = excluded.is_locked,
-          lock_type = excluded.lock_type,
-          lock_credential_kind = excluded.lock_credential_kind,
-          lock_hash = excluded.lock_hash,
-          lock_salt = excluded.lock_salt,
-          lock_hint = excluded.lock_hint,
-          ai_context_excluded = excluded.ai_context_excluded,
+          color_token = CASE WHEN ? = 1 THEN excluded.color_token ELSE notes.color_token END,
+          is_favorite = CASE WHEN ? = 1 THEN excluded.is_favorite ELSE notes.is_favorite END,
+          is_pinned = CASE WHEN ? = 1 THEN excluded.is_pinned ELSE notes.is_pinned END,
+          status = CASE WHEN ? = 1 THEN excluded.status ELSE notes.status END,
+          reminder_at = CASE WHEN ? = 1 THEN excluded.reminder_at ELSE notes.reminder_at END,
+          is_locked = CASE WHEN ? = 1 THEN excluded.is_locked ELSE notes.is_locked END,
+          lock_type = CASE WHEN ? = 1 THEN excluded.lock_type ELSE notes.lock_type END,
+          lock_credential_kind = CASE WHEN ? = 1 THEN excluded.lock_credential_kind ELSE notes.lock_credential_kind END,
+          lock_hash = CASE WHEN ? = 1 THEN excluded.lock_hash ELSE notes.lock_hash END,
+          lock_salt = CASE WHEN ? = 1 THEN excluded.lock_salt ELSE notes.lock_salt END,
+          lock_hint = CASE WHEN ? = 1 THEN excluded.lock_hint ELSE notes.lock_hint END,
+          ai_context_excluded = CASE WHEN ? = 1 THEN excluded.ai_context_excluded ELSE notes.ai_context_excluded END,
           sync_rev = excluded.sync_rev,
           updated_at = CURRENT_TIMESTAMP;`,
         [
           delta.entityId,
-          delta.userId || this.config.userId,
-          p.folder_id || null,
+          effectiveUserId,
+          safeFolderId,
           p.folder_path || 'General',
           p.group_name || null,
           p.title || 'Untitled Note',
@@ -1005,67 +1520,455 @@ export class SyncEngine {
           p.lock_hint || null,
           p.ai_context_excluded ? 1 : 0,
           delta.syncRev,
+          hasTitle,
+          hasFolderId,
+          hasFolderPath,
+          hasColorToken,
+          hasIsFavorite,
+          hasIsPinned,
+          hasStatus,
+          hasReminderAt,
+          hasIsLocked,
+          hasLockType,
+          hasLockCredKind,
+          hasLockHash,
+          hasLockSalt,
+          hasLockHint,
+          hasAiContextExcluded,
         ]
       );
+
+      // Sync remote tags (including empty array [] clear) onto Device B immediately
+      if (Array.isArray(p.tags)) {
+        await tagsRepo.setNoteTags(delta.entityId, p.tags, effectiveUserId);
+      }
     }
   }
 
   /**
-   * Applies incoming remote folder delta
+   * Applies incoming remote folder delta (including server-side cascade_path, cascade_archive & cascade delete)
    */
   private async applyFolderDelta(delta: SyncDelta): Promise<void> {
     const p = delta.deltaPayload || {};
 
     if (delta.changeType === 'delete') {
-      await dbClient.run(`DELETE FROM folders WHERE id = ?;`, [delta.entityId]);
-    } else {
-      await dbClient.run(
-        `INSERT INTO folders (
-          id, user_id, name, parent_id, path, color_token, icon,
-          is_favorite, is_pinned, is_archived,
-          is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
-          ai_context_excluded, sync_rev, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(id) DO UPDATE SET
-          name = excluded.name,
-          parent_id = excluded.parent_id,
-          path = excluded.path,
-          color_token = excluded.color_token,
-          icon = excluded.icon,
-          is_favorite = excluded.is_favorite,
-          is_pinned = excluded.is_pinned,
-          is_archived = excluded.is_archived,
-          is_locked = excluded.is_locked,
-          lock_type = excluded.lock_type,
-          lock_credential_kind = excluded.lock_credential_kind,
-          lock_hash = excluded.lock_hash,
-          lock_salt = excluded.lock_salt,
-          lock_hint = excluded.lock_hint,
-          ai_context_excluded = excluded.ai_context_excluded,
-          sync_rev = excluded.sync_rev,
-          updated_at = CURRENT_TIMESTAMP;`,
-        [
-          delta.entityId,
-          delta.userId || this.config.userId,
-          p.name || 'Untitled Folder',
-          p.parent_id || null,
-          p.path || p.name || 'General',
-          p.color_token || 'cyan',
-          p.icon || null,
-          p.is_favorite ? 1 : 0,
-          p.is_pinned ? 1 : 0,
-          p.is_archived ? 1 : 0,
-          p.is_locked ? 1 : 0,
-          p.lock_type || null,
-          p.lock_credential_kind || null,
-          p.lock_hash || null,
-          p.lock_salt || null,
-          p.lock_hint || null,
-          p.ai_context_excluded ? 1 : 0,
-          delta.syncRev,
-        ]
-      );
+      const deletedPath = String(p.deleted_path || p.deletedPath || '')
+        .trim()
+        .replace(/^\/+|\/+$/g, '');
+      const noteAction = p.note_action || p.noteAction || 'moveToGeneral';
+
+      if (deletedPath) {
+        if (noteAction === 'trash' || noteAction === 'moveToTrash') {
+          await dbClient.run(
+            `UPDATE notes
+             SET status = 'trashed', trashed_at = CURRENT_TIMESTAMP, folder_id = NULL, updated_at = CURRENT_TIMESTAMP
+             WHERE folder_id = ? OR folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/';`,
+            [delta.entityId, deletedPath, deletedPath, deletedPath]
+          );
+        } else {
+          await dbClient.run(
+            `UPDATE notes
+             SET folder_path = 'General', folder_id = NULL, updated_at = CURRENT_TIMESTAMP
+             WHERE folder_id = ? OR folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/';`,
+            [delta.entityId, deletedPath, deletedPath, deletedPath]
+          );
+        }
+
+        await dbClient.run(
+          `DELETE FROM folders WHERE id = ? OR path = ? OR SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+          [delta.entityId, deletedPath, deletedPath, deletedPath]
+        );
+      } else {
+        await dbClient.run(`DELETE FROM folders WHERE id = ?;`, [delta.entityId]);
+      }
+      return;
     }
+
+    // Handle server-broadcast folder path rename/move cascade (exact prefix match — wildcard safe)
+    if (p.action === 'cascade_path') {
+      const oldPath = String(p.old_path || p.oldPath || '')
+        .trim()
+        .replace(/^\/+|\/+$/g, '');
+      const newPath = String(p.new_path || p.newPath || '')
+        .trim()
+        .replace(/^\/+|\/+$/g, '');
+      const folderId = p.folder_id || p.folderId || null;
+
+      if (oldPath && newPath && oldPath !== newPath) {
+        const newBasename = newPath.split('/').pop() || newPath;
+        await dbClient.run(
+          `UPDATE folders SET name = ?, path = ?, updated_at = CURRENT_TIMESTAMP WHERE path = ?;`,
+          [newBasename, newPath, oldPath]
+        );
+        const childFolders = await dbClient.query<{ id: string; path: string }>(
+          `SELECT id, path FROM folders WHERE SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+          [oldPath, oldPath]
+        );
+        for (const cf of childFolders) {
+          const updatedChildPath = `${newPath}${cf.path.slice(oldPath.length)}`;
+          await dbClient.run(
+            `UPDATE folders SET path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+            [updatedChildPath, cf.id]
+          );
+        }
+
+        if (folderId) {
+          await dbClient.run(
+            `UPDATE notes SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE folder_path = ? OR folder_id = ?;`,
+            [newPath, oldPath, folderId]
+          );
+        } else {
+          await dbClient.run(
+            `UPDATE notes SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE folder_path = ?;`,
+            [newPath, oldPath]
+          );
+        }
+
+        const childNotes = await dbClient.query<{ id: string; folder_path: string }>(
+          `SELECT id, folder_path FROM notes WHERE SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/';`,
+          [oldPath, oldPath]
+        );
+        for (const cn of childNotes) {
+          if (cn.folder_path && cn.folder_path.startsWith(`${oldPath}/`)) {
+            const updatedNotePath = `${newPath}${cn.folder_path.slice(oldPath.length)}`;
+            await dbClient.run(
+              `UPDATE notes SET folder_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+              [updatedNotePath, cn.id]
+            );
+          }
+        }
+      }
+      return;
+    }
+
+    // Handle server-broadcast folder archive/unarchive cascade (exact prefix match — wildcard safe)
+    if (p.action === 'cascade_archive') {
+      const cleanPath = String(p.path || '')
+        .trim()
+        .replace(/^\/+|\/+$/g, '');
+      const isArchived = Boolean(p.is_archived ?? p.isArchived);
+      const folderId = p.folder_id || p.folderId || delta.entityId;
+
+      if (cleanPath) {
+        if (!isArchived) {
+          const segments = cleanPath.split('/').filter(Boolean);
+          for (let i = 1; i < segments.length; i++) {
+            const ancestorPath = segments.slice(0, i).join('/');
+            await dbClient.run(
+              `UPDATE folders SET is_archived = 0, updated_at = CURRENT_TIMESTAMP WHERE path = ? AND is_archived = 1;`,
+              [ancestorPath]
+            );
+          }
+        }
+        await dbClient.run(
+          `UPDATE folders SET is_archived = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? OR path = ? OR SUBSTR(path, 1, LENGTH(?) + 1) = ? || '/';`,
+          [isArchived ? 1 : 0, folderId, cleanPath, cleanPath, cleanPath]
+        );
+        if (isArchived) {
+          await dbClient.run(
+            `UPDATE notes SET status = 'archived', updated_at = CURRENT_TIMESTAMP
+             WHERE status = 'active' AND (folder_id = ? OR folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/');`,
+            [folderId, cleanPath, cleanPath, cleanPath]
+          );
+        } else {
+          await dbClient.run(
+            `UPDATE notes SET status = 'active', updated_at = CURRENT_TIMESTAMP
+             WHERE status = 'archived' AND (folder_id = ? OR folder_path = ? OR SUBSTR(COALESCE(folder_path, ''), 1, LENGTH(?) + 1) = ? || '/');`,
+            [folderId, cleanPath, cleanPath, cleanPath]
+          );
+        }
+      }
+      return;
+    }
+
+    // Validate parent_id against local folders table so out-of-order CDC never fails PRAGMA foreign_keys = ON
+    let safeParentId: string | null = p.parent_id || null;
+    if (safeParentId && safeParentId !== delta.entityId) {
+      const parentExists = await dbClient.queryFirst<{ id: string }>(
+        `SELECT id FROM folders WHERE id = ? LIMIT 1;`,
+        [safeParentId]
+      );
+      if (!parentExists) {
+        safeParentId = null;
+      }
+    } else if (safeParentId === delta.entityId) {
+      safeParentId = null;
+    }
+
+    await dbClient.run(
+      `INSERT INTO folders (
+        id, user_id, name, parent_id, path, color_token, icon,
+        is_favorite, is_pinned, is_archived,
+        is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
+        ai_context_excluded, sync_rev, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name,
+        parent_id = excluded.parent_id,
+        path = excluded.path,
+        color_token = excluded.color_token,
+        icon = excluded.icon,
+        is_favorite = excluded.is_favorite,
+        is_pinned = excluded.is_pinned,
+        is_archived = excluded.is_archived,
+        is_locked = excluded.is_locked,
+        lock_type = excluded.lock_type,
+        lock_credential_kind = excluded.lock_credential_kind,
+        lock_hash = excluded.lock_hash,
+        lock_salt = excluded.lock_salt,
+        lock_hint = excluded.lock_hint,
+        ai_context_excluded = excluded.ai_context_excluded,
+        sync_rev = excluded.sync_rev,
+        updated_at = CURRENT_TIMESTAMP;`,
+      [
+        delta.entityId,
+        delta.userId || this.config.userId,
+        p.name || 'Untitled Folder',
+        safeParentId,
+        p.path || p.name || 'General',
+        p.color_token || 'cyan',
+        p.icon || null,
+        p.is_favorite ? 1 : 0,
+        p.is_pinned ? 1 : 0,
+        p.is_archived ? 1 : 0,
+        p.is_locked ? 1 : 0,
+        p.lock_type || null,
+        p.lock_credential_kind || null,
+        p.lock_hash || null,
+        p.lock_salt || null,
+        p.lock_hint || null,
+        p.ai_context_excluded ? 1 : 0,
+        delta.syncRev,
+      ]
+    );
+  }
+
+  /**
+   * Applies incoming remote in_app_notification delta (Gap 5)
+   */
+  private async applyNotificationDelta(delta: SyncDelta): Promise<void> {
+    const p = delta.deltaPayload || {};
+    const uid = delta.userId || this.config.userId;
+
+    if (delta.changeType === 'delete') {
+      const clearedAt = p.cleared_at || p.clearedAt || new Date().toISOString();
+      if (delta.entityId === 'all' || p.action === 'clear_all') {
+        await dbClient.run(
+          `UPDATE in_app_notifications SET is_cleared = 1, cleared_at = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND is_cleared = 0;`,
+          [clearedAt, uid]
+        );
+      } else {
+        await dbClient.run(
+          `UPDATE in_app_notifications SET is_cleared = 1, cleared_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+          [clearedAt, delta.entityId]
+        );
+      }
+      return;
+    }
+
+    if (
+      delta.changeType === 'update' &&
+      (delta.entityId === 'all' || p.action === 'mark_all_read' || (p.action === 'mark_read' && !p.title))
+    ) {
+      const isRead = Boolean(p.is_read ?? p.isRead ?? true);
+      const readAt = isRead ? p.read_at || p.readAt || new Date().toISOString() : null;
+      if (delta.entityId === 'all' || p.action === 'mark_all_read') {
+        await dbClient.run(
+          `UPDATE in_app_notifications SET is_read = ?, read_at = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND is_cleared = 0;`,
+          [isRead ? 1 : 0, readAt, uid]
+        );
+      } else {
+        await dbClient.run(
+          `UPDATE in_app_notifications SET is_read = ?, read_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;`,
+          [isRead ? 1 : 0, readAt, delta.entityId]
+        );
+      }
+      return;
+    }
+
+    const rawType = String(p.target_type || p.targetType || 'system');
+    const expandedTargetType = ['task', 'note', 'event', 'checklist_point', 'system'].includes(rawType)
+      ? rawType
+      : 'system';
+    const triggerAt = p.trigger_at || p.triggerAt || new Date().toISOString();
+
+    const upsertSql = `INSERT INTO in_app_notifications (
+        id, user_id, reminder_id, target_type, target_id, note_id,
+        title, body, trigger_at, recurrence_rule,
+        is_read, read_at, is_cleared, cleared_at,
+        sync_rev, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(id) DO UPDATE SET
+        reminder_id = excluded.reminder_id,
+        target_type = excluded.target_type,
+        target_id = excluded.target_id,
+        note_id = excluded.note_id,
+        title = excluded.title,
+        body = excluded.body,
+        trigger_at = excluded.trigger_at,
+        recurrence_rule = excluded.recurrence_rule,
+        is_read = excluded.is_read,
+        read_at = excluded.read_at,
+        is_cleared = excluded.is_cleared,
+        cleared_at = excluded.cleared_at,
+        sync_rev = excluded.sync_rev,
+        updated_at = CURRENT_TIMESTAMP;`;
+
+    const buildParams = (targetType: string) => [
+      delta.entityId,
+      uid,
+      p.reminder_id || p.reminderId || null,
+      targetType,
+      p.target_id || p.targetId || delta.entityId,
+      p.note_id || p.noteId || null,
+      p.title || 'Notification',
+      p.body || '',
+      triggerAt,
+      p.recurrence_rule || p.recurrenceRule || null,
+      p.is_read || p.isRead ? 1 : 0,
+      p.read_at || p.readAt || null,
+      p.is_cleared || p.isCleared ? 1 : 0,
+      p.cleared_at || p.clearedAt || null,
+      delta.syncRev || 1,
+      p.created_at || delta.createdAt || new Date().toISOString(),
+    ];
+
+    try {
+      await dbClient.run(upsertSql, buildParams(expandedTargetType));
+    } catch (insertErr: any) {
+      if (!['task', 'note', 'system'].includes(expandedTargetType)) {
+        await dbClient.run(upsertSql, buildParams('system'));
+      } else {
+        throw insertErr;
+      }
+    }
+  }
+
+  /**
+   * Applies incoming remote search_history delta (Gap 6)
+   */
+  private async applySearchHistoryDelta(delta: SyncDelta): Promise<void> {
+    const p = delta.deltaPayload || {};
+    const uid = delta.userId || this.config.userId;
+
+    if (delta.changeType === 'delete') {
+      if (delta.entityId === 'all' || p.action === 'clear_all') {
+        await dbClient.run(`DELETE FROM search_history WHERE user_id = ?;`, [uid]);
+      } else {
+        const queryText = p.query_text || p.queryText;
+        if (queryText) {
+          await dbClient.run(
+            `DELETE FROM search_history WHERE id = ? OR (user_id = ? AND LOWER(query_text) = LOWER(?));`,
+            [delta.entityId, uid, queryText]
+          );
+        } else {
+          await dbClient.run(`DELETE FROM search_history WHERE id = ?;`, [delta.entityId]);
+        }
+      }
+      return;
+    }
+
+    const queryText = String(p.query_text || p.queryText || '').trim();
+    if (!queryText) return;
+
+    const rawSource = String(p.source || 'text');
+    const safeSource = ['text', 'voice', 'ai'].includes(rawSource) ? rawSource : 'text';
+    const snapshotRaw = p.filter_snapshot_json ?? p.filterSnapshot ?? {};
+    const snapshotJson = typeof snapshotRaw === 'string' ? snapshotRaw : JSON.stringify(snapshotRaw);
+    const lastUsedAt = p.last_used_at || p.lastUsedAt || new Date().toISOString();
+
+    // Prevent UNIQUE(user_id, query_text) collisions if Device B already searched the same query under another local ID
+    await dbClient.run(
+      `DELETE FROM search_history WHERE user_id = ? AND LOWER(query_text) = LOWER(?) AND id != ?;`,
+      [uid, queryText, delta.entityId]
+    );
+
+    await dbClient.run(
+      `INSERT INTO search_history (
+        id, user_id, query_text, source, filter_snapshot_json,
+        use_count, sync_rev, created_at, last_used_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        query_text = excluded.query_text,
+        source = excluded.source,
+        filter_snapshot_json = excluded.filter_snapshot_json,
+        use_count = excluded.use_count,
+        sync_rev = excluded.sync_rev,
+        last_used_at = excluded.last_used_at;`,
+      [
+        delta.entityId,
+        uid,
+        queryText,
+        safeSource,
+        snapshotJson,
+        typeof p.use_count === 'number' ? p.use_count : typeof p.useCount === 'number' ? p.useCount : 1,
+        delta.syncRev || 1,
+        p.created_at || delta.createdAt || lastUsedAt,
+        lastUsedAt,
+      ]
+    );
+  }
+
+  /**
+   * Applies incoming remote entity_relations delta (Gap 7)
+   */
+  private async applyRelationDelta(delta: SyncDelta): Promise<void> {
+    const p = delta.deltaPayload || {};
+    const uid = delta.userId || this.config.userId;
+
+    if (delta.changeType === 'delete') {
+      await dbClient.run(`DELETE FROM entity_relations WHERE id = ?;`, [delta.entityId]);
+      return;
+    }
+
+    const sourceId = p.source_id || p.sourceId;
+    const targetId = p.target_id || p.targetId;
+    const rawRelType = String(p.relation_type || p.relationType || 'relates_to');
+    if (!sourceId || !targetId) return;
+
+    const safeRelType = ['relates_to', 'supersedes', 'derived_from', 'part_of', 'contradicts'].includes(
+      rawRelType
+    )
+      ? rawRelType
+      : 'relates_to';
+    const rawCreatedBy = String(p.created_by || p.createdBy || 'user');
+    const safeCreatedBy = ['user', 'friday_ai'].includes(rawCreatedBy) ? rawCreatedBy : 'user';
+    const confidence =
+      typeof p.confidence_score === 'number'
+        ? p.confidence_score
+        : typeof p.confidenceScore === 'number'
+          ? p.confidenceScore
+          : 1.0;
+
+    // Prevent UNIQUE(source_id, relation_type, target_id) collisions across devices
+    await dbClient.run(
+      `DELETE FROM entity_relations WHERE source_id = ? AND relation_type = ? AND target_id = ? AND id != ?;`,
+      [sourceId, safeRelType, targetId, delta.entityId]
+    );
+
+    await dbClient.run(
+      `INSERT INTO entity_relations (
+        id, user_id, source_id, relation_type, target_id,
+        created_by, confidence_score, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        source_id = excluded.source_id,
+        relation_type = excluded.relation_type,
+        target_id = excluded.target_id,
+        created_by = excluded.created_by,
+        confidence_score = excluded.confidence_score;`,
+      [
+        delta.entityId,
+        uid,
+        sourceId,
+        safeRelType,
+        targetId,
+        safeCreatedBy,
+        confidence,
+        p.created_at || delta.createdAt || new Date().toISOString(),
+      ]
+    );
   }
 
   /**

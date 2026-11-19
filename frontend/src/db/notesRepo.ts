@@ -18,7 +18,7 @@ export class NotesRepository {
     entityId: string,
     changeType: 'insert' | 'update' | 'delete',
     deltaPayload: Record<string, any>,
-    userId: string = 'user-default'
+    userId: string = syncEngine.getActiveUserId()
   ): Promise<void> {
     await dbClient.run(
       `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
@@ -68,7 +68,7 @@ export class NotesRepository {
 
   public async createNote(dto: CreateNoteDTO): Promise<NoteItem> {
     const noteId = dto.id || `note-${Date.now()}`;
-    const userId = dto.userId || 'user-default';
+    const userId = dto.userId || syncEngine.getActiveUserId();
     const title = dto.title.trim() || 'Untitled Note';
     const content = dto.contentMarkdown || '';
     const blocks = dto.blocks || [
@@ -77,6 +77,15 @@ export class NotesRepository {
     const blocksJson = JSON.stringify(blocks);
     const colorToken = dto.colorToken || 'apricot';
     const folderPath = dto.folderPath || 'General';
+
+    let resolvedFolderId: string | null = dto.folderId || null;
+    if (!resolvedFolderId && folderPath.trim().toLowerCase() !== 'general') {
+      const matched = await dbClient.queryFirst<{ id: string }>(
+        `SELECT id FROM folders WHERE path = ? LIMIT 1;`,
+        [folderPath.trim().replace(/^\/+|\/+$/g, '')]
+      );
+      resolvedFolderId = matched?.id || null;
+    }
 
     const insertSql = `
       INSERT INTO notes (
@@ -87,7 +96,7 @@ export class NotesRepository {
     await dbClient.run(insertSql, [
       noteId,
       userId,
-      dto.folderId || null,
+      resolvedFolderId,
       folderPath,
       dto.groupName || null,
       title,
@@ -100,17 +109,18 @@ export class NotesRepository {
       dto.aiContextExcluded ? 1 : 0,
     ]);
 
-    // Handle tags if provided
+    // Handle tags cleanly via tagsRepo (strips #, avoids UNIQUE(name) FK collisions)
     if (dto.tags && dto.tags.length > 0) {
-      for (const tag of dto.tags) {
-        const tagId = `tag-${tag.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
-        await dbClient.run(`INSERT OR IGNORE INTO tags (id, user_id, name) VALUES (?, ?, ?);`, [tagId, userId, tag]);
-        await dbClient.run(`INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?);`, [noteId, tagId]);
-      }
+      await tagsRepo.setNoteTags(noteId, dto.tags, userId);
     }
 
     // Append to sync changelog and schedule debounced cloud push
-    await this.queueNoteSyncDelta(noteId, 'insert', { id: noteId, title, content, colorToken }, userId);
+    await this.queueNoteSyncDelta(
+      noteId,
+      'insert',
+      { id: noteId, title, content, colorToken, folderId: resolvedFolderId, folderPath, tags: dto.tags || [] },
+      userId
+    );
 
     const created = await this.getNoteById(noteId);
     return created!;
@@ -212,9 +222,28 @@ export class NotesRepository {
       updates.push('color_token = ?');
       params.push(dto.colorToken);
     }
-    if (dto.folderId !== undefined) {
+    // When folderPath changes without explicit folderId (e.g., from Note Editor picker),
+    // keep folder_id in sync or clear it cleanly to NULL for root/'General' so stale folder_id never lingers.
+    let resolvedFolderIdUpdate: string | null | undefined = dto.folderId;
+    if (dto.folderPath !== undefined && dto.folderId === undefined) {
+      const cleanNextPath = dto.folderPath.trim().replace(/^\/+|\/+$/g, '') || 'General';
+      const cleanPrevPath = (existing.folderPath || 'General').trim().replace(/^\/+|\/+$/g, '');
+      if (cleanNextPath !== cleanPrevPath || (cleanNextPath.toLowerCase() === 'general' && existing.folderId)) {
+        if (cleanNextPath.toLowerCase() === 'general') {
+          resolvedFolderIdUpdate = null;
+        } else {
+          const matchedFolder = await dbClient.queryFirst<{ id: string }>(
+            `SELECT id FROM folders WHERE path = ? LIMIT 1;`,
+            [cleanNextPath]
+          );
+          resolvedFolderIdUpdate = matchedFolder?.id ?? null;
+        }
+      }
+    }
+
+    if (resolvedFolderIdUpdate !== undefined) {
       updates.push('folder_id = ?');
-      params.push(dto.folderId);
+      params.push(resolvedFolderIdUpdate);
     }
     if (dto.folderPath !== undefined) {
       updates.push('folder_path = ?');
@@ -249,11 +278,25 @@ export class NotesRepository {
 
     // Update tags if provided
     if (dto.tags !== undefined) {
-      await tagsRepo.setNoteTags(id, dto.tags);
+      await tagsRepo.setNoteTags(id, dto.tags, existing.userId);
+    }
+
+    // Build delta payload with explicit nullable clear flags so Supabase rpc_update_note can clear folder_id / reminder_at to NULL
+    const deltaPayload: Record<string, any> = {
+      ...(dto as Record<string, any>),
+    };
+    if (resolvedFolderIdUpdate !== undefined) {
+      deltaPayload.folderId = resolvedFolderIdUpdate;
+    }
+    if (dto.folderId === null || resolvedFolderIdUpdate === null) {
+      deltaPayload.clearFolderId = true;
+    }
+    if (dto.reminderAt === null) {
+      deltaPayload.clearReminderAt = true;
     }
 
     // Append changelog & trigger debounced sync
-    await this.queueNoteSyncDelta(id, 'update', dto as Record<string, any>, existing.userId);
+    await this.queueNoteSyncDelta(id, 'update', deltaPayload, existing.userId);
 
     const updated = await this.getNoteById(id);
     return updated!;
@@ -427,15 +470,29 @@ export class NotesRepository {
   public async batchSoftDeleteNotes(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
-    await dbClient.run(
-      `UPDATE notes 
-       SET status = 'trashed', trashed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
-       WHERE id IN (${placeholders});`,
-      ids
-    );
-    for (const id of ids) {
-      await this.queueNoteSyncDelta(id, 'update', { status: 'trashed' });
-    }
+    await dbClient.withTransaction(async () => {
+      const targetNotes = await dbClient.query<{ id: string; user_id: string }>(
+        `SELECT id, user_id FROM notes WHERE id IN (${placeholders});`,
+        ids
+      );
+      const userById = new Map(targetNotes.map((r) => [r.id, r.user_id]));
+      const fallbackUserId = syncEngine.getActiveUserId();
+
+      await dbClient.run(
+        `UPDATE notes 
+         SET status = 'trashed', trashed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
+         WHERE id IN (${placeholders});`,
+        ids
+      );
+      for (const id of ids) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
+          [createLogId(), userById.get(id) || fallbackUserId, id, JSON.stringify({ status: 'trashed' })]
+        );
+      }
+    });
+    syncEngine.schedulePush();
   }
 
   public async batchPermanentlyDeleteNotes(ids: string[]): Promise<void> {
@@ -465,74 +522,154 @@ export class NotesRepository {
     }
 
     const userById = new Map(targetNotes.map((r) => [r.id, r.user_id]));
-    await dbClient.run(`DELETE FROM tasks WHERE note_id IN (${placeholders});`, ids);
-    await dbClient.run(`DELETE FROM note_tags WHERE note_id IN (${placeholders});`, ids);
-    for (const id of ids) {
-      await this.queueNoteSyncDelta(
-        id,
-        'delete',
-        { action: 'batch_permanent_purge' },
-        userById.get(id)
+    const fallbackUserId = syncEngine.getActiveUserId();
+
+    await dbClient.withTransaction(async () => {
+      await dbClient.run(`DELETE FROM tasks WHERE note_id IN (${placeholders});`, ids);
+      await dbClient.run(`DELETE FROM note_tags WHERE note_id IN (${placeholders});`, ids);
+      await dbClient.run(
+        `DELETE FROM entity_relations WHERE source_id IN (${placeholders}) OR target_id IN (${placeholders});`,
+        [...ids, ...ids]
       );
-    }
-    await dbClient.run(`DELETE FROM notes WHERE id IN (${placeholders});`, ids);
+      for (const id of ids) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'note', ?, 'delete', ?);`,
+          [
+            createLogId(),
+            userById.get(id) || fallbackUserId,
+            id,
+            JSON.stringify({ action: 'batch_permanent_purge' }),
+          ]
+        );
+      }
+      await dbClient.run(`DELETE FROM notes WHERE id IN (${placeholders});`, ids);
+    });
+    syncEngine.schedulePush();
   }
 
   public async batchRestoreNotes(ids: string[]): Promise<void> {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
-    await dbClient.run(
-      `UPDATE notes 
-       SET status = 'active', trashed_at = NULL, updated_at = CURRENT_TIMESTAMP 
-       WHERE id IN (${placeholders});`,
-      ids
-    );
-    for (const id of ids) {
-      await this.queueNoteSyncDelta(id, 'update', { status: 'active' });
-    }
+    await dbClient.withTransaction(async () => {
+      const targetNotes = await dbClient.query<{ id: string; user_id: string }>(
+        `SELECT id, user_id FROM notes WHERE id IN (${placeholders});`,
+        ids
+      );
+      const userById = new Map(targetNotes.map((r) => [r.id, r.user_id]));
+      const fallbackUserId = syncEngine.getActiveUserId();
+
+      await dbClient.run(
+        `UPDATE notes 
+         SET status = 'active', trashed_at = NULL, updated_at = CURRENT_TIMESTAMP 
+         WHERE id IN (${placeholders});`,
+        ids
+      );
+      for (const id of ids) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
+          [createLogId(), userById.get(id) || fallbackUserId, id, JSON.stringify({ status: 'active' })]
+        );
+      }
+    });
+    syncEngine.schedulePush();
   }
 
   public async batchArchiveNotes(ids: string[], archive: boolean): Promise<void> {
     if (ids.length === 0) return;
     const status = archive ? 'archived' : 'active';
     const placeholders = ids.map(() => '?').join(',');
-    await dbClient.run(
-      `UPDATE notes 
-       SET status = ?, updated_at = CURRENT_TIMESTAMP 
-       WHERE id IN (${placeholders});`,
-      [status, ...ids]
-    );
-    for (const id of ids) {
-      await this.queueNoteSyncDelta(id, 'update', { status });
-    }
+    await dbClient.withTransaction(async () => {
+      const targetNotes = await dbClient.query<{ id: string; user_id: string }>(
+        `SELECT id, user_id FROM notes WHERE id IN (${placeholders});`,
+        ids
+      );
+      const userById = new Map(targetNotes.map((r) => [r.id, r.user_id]));
+      const fallbackUserId = syncEngine.getActiveUserId();
+
+      await dbClient.run(
+        `UPDATE notes 
+         SET status = ?, updated_at = CURRENT_TIMESTAMP 
+         WHERE id IN (${placeholders});`,
+        [status, ...ids]
+      );
+      for (const id of ids) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
+          [createLogId(), userById.get(id) || fallbackUserId, id, JSON.stringify({ status })]
+        );
+      }
+    });
+    syncEngine.schedulePush();
   }
 
   public async batchTogglePinNotes(ids: string[], pin: boolean): Promise<void> {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
-    await dbClient.run(
-      `UPDATE notes 
-       SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP 
-       WHERE id IN (${placeholders});`,
-      [pin ? 1 : 0, ...ids]
-    );
-    for (const id of ids) {
-      await this.queueNoteSyncDelta(id, 'update', { isPinned: pin });
-    }
+    await dbClient.withTransaction(async () => {
+      const targetNotes = await dbClient.query<{ id: string; user_id: string }>(
+        `SELECT id, user_id FROM notes WHERE id IN (${placeholders});`,
+        ids
+      );
+      const userById = new Map(targetNotes.map((r) => [r.id, r.user_id]));
+      const fallbackUserId = syncEngine.getActiveUserId();
+
+      await dbClient.run(
+        `UPDATE notes 
+         SET is_pinned = ?, updated_at = CURRENT_TIMESTAMP 
+         WHERE id IN (${placeholders});`,
+        [pin ? 1 : 0, ...ids]
+      );
+      for (const id of ids) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
+          [createLogId(), userById.get(id) || fallbackUserId, id, JSON.stringify({ isPinned: pin })]
+        );
+      }
+    });
+    syncEngine.schedulePush();
   }
 
   public async batchMoveNotesToFolder(ids: string[], folderPath: string, folderId?: string): Promise<void> {
     if (ids.length === 0) return;
     const placeholders = ids.map(() => '?').join(',');
-    await dbClient.run(
-      `UPDATE notes 
-       SET folder_path = ?, folder_id = ?, updated_at = CURRENT_TIMESTAMP 
-       WHERE id IN (${placeholders});`,
-      [folderPath, folderId || null, ...ids]
-    );
-    for (const id of ids) {
-      await this.queueNoteSyncDelta(id, 'update', { folderPath, folderId: folderId || null });
-    }
+    const resolvedFolderId = folderId || null;
+    const clearFolderId = resolvedFolderId === null;
+    await dbClient.withTransaction(async () => {
+      const targetNotes = await dbClient.query<{ id: string; user_id: string }>(
+        `SELECT id, user_id FROM notes WHERE id IN (${placeholders});`,
+        ids
+      );
+      const userById = new Map(targetNotes.map((r) => [r.id, r.user_id]));
+      const fallbackUserId = syncEngine.getActiveUserId();
+
+      await dbClient.run(
+        `UPDATE notes 
+         SET folder_path = ?, folder_id = ?, updated_at = CURRENT_TIMESTAMP 
+         WHERE id IN (${placeholders});`,
+        [folderPath, resolvedFolderId, ...ids]
+      );
+      for (const id of ids) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'note', ?, 'update', ?);`,
+          [
+            createLogId(),
+            userById.get(id) || fallbackUserId,
+            id,
+            JSON.stringify({
+              folderPath,
+              folderId: resolvedFolderId,
+              ...(clearFolderId ? { clearFolderId: true } : {}),
+            }),
+          ]
+        );
+      }
+    });
+    syncEngine.schedulePush();
   }
 }
 

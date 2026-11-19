@@ -2,6 +2,11 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { dbClient } from '../db/client';
+import { syncEngine } from './sync/syncEngine';
+import { googleDriveVaultService } from './drive/googleDriveVaultService';
+import { isSupabaseConfigured, supabase } from './supabase/supabaseClient';
+
+const createBackupSyncLogId = () => `log-bkp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 export interface ScribeXWorkspaceBackup {
   app: 'ScribeX';
@@ -142,11 +147,54 @@ class WorkspaceBackupService {
    */
   public async restoreBackup(
     backup: ScribeXWorkspaceBackup,
-    strategy: 'merge' | 'replace' = 'merge'
+    strategy: 'merge' | 'replace' = 'merge',
+    activeUserId?: string
   ): Promise<RestoreSummary> {
     const { workspace } = backup;
+    const resolvedActiveUid = activeUserId || syncEngine.getActiveUserId();
+    const resolveUserId = (rowUserId?: string) =>
+      resolvedActiveUid !== 'user-default' ? resolvedActiveUid : rowUserId || 'user-default';
+
+    // Track pre-existing IDs to tombstone during 'replace' so replaced cloud data does not return on next pull
+    const preExistingFolderIds = new Set<string>();
+    const preExistingNoteIds = new Set<string>();
+    const preExistingTaskIds = new Set<string>();
+    const preExistingRelationIds = new Set<string>();
 
     if (strategy === 'replace') {
+      const [localFolders, localNotes, localTasks, localRels] = await Promise.all([
+        dbClient.query<{ id: string }>(`SELECT id FROM folders;`).catch(() => []),
+        dbClient.query<{ id: string }>(`SELECT id FROM notes;`).catch(() => []),
+        dbClient.query<{ id: string }>(`SELECT id FROM tasks;`).catch(() => []),
+        dbClient.query<{ id: string }>(`SELECT id FROM entity_relations;`).catch(() => []),
+      ]);
+      for (const r of localFolders) preExistingFolderIds.add(r.id);
+      for (const r of localNotes) preExistingNoteIds.add(r.id);
+      for (const r of localTasks) preExistingTaskIds.add(r.id);
+      for (const r of localRels) preExistingRelationIds.add(r.id);
+
+      // In Lean-Cache cloud mode, also gather evicted cloud IDs so Clean Replace wipes them from Supabase & Device B
+      if (resolvedActiveUid !== 'user-default' && syncEngine.isCloudSyncEnabled() && isSupabaseConfigured()) {
+        try {
+          const [cf, cn, ct, cr] = await Promise.all([
+            supabase.from('folders').select('id').eq('user_id', resolvedActiveUid),
+            supabase.from('notes').select('id').eq('user_id', resolvedActiveUid),
+            supabase.from('tasks').select('id').eq('user_id', resolvedActiveUid),
+            supabase.from('entity_relations').select('id').eq('user_id', resolvedActiveUid),
+          ]);
+          for (const r of cf.data || []) if (r?.id) preExistingFolderIds.add(r.id);
+          for (const r of cn.data || []) if (r?.id) preExistingNoteIds.add(r.id);
+          for (const r of ct.data || []) if (r?.id) preExistingTaskIds.add(r.id);
+          for (const r of cr.data || []) if (r?.id) preExistingRelationIds.add(r.id);
+        } catch {
+          // Offline fallback: local IDs still tombstoned cleanly
+        }
+      }
+
+      // Clear stale pending sync_changelog rows for replaced tables before wiping
+      await dbClient.run(
+        `DELETE FROM sync_changelog WHERE entity_type IN ('folder', 'note', 'task', 'relation');`
+      );
       // Clear dependent child tables first
       await dbClient.run('DELETE FROM note_tags;');
       await dbClient.run('DELETE FROM tasks;');
@@ -164,22 +212,58 @@ class WorkspaceBackupService {
     let notesRestored = 0;
     let tasksRestored = 0;
 
-    // 1. Folders
+    const restoredFolders: { id: string; userId: string; name: string; path: string; parentId: string | null; syncRev: number }[] = [];
+    const restoredNotes: { id: string; userId: string; title: string; folderId: string | null; folderPath: string; syncRev: number; blocksJson: string }[] = [];
+    const restoredTasks: { id: string; userId: string; title: string; noteId: string | null; syncRev: number }[] = [];
+    const restoredRelations: { id: string; userId: string; sourceId: string; targetId: string; relationType: string }[] = [];
+    let importedSecurity = false;
+
+    const existingFolderRows = await dbClient.query<{ id: string }>(`SELECT id FROM folders;`).catch(() => []);
+    const validFolderIds = new Set<string>(existingFolderRows.map((r) => r.id));
+
+    // 1. Folders (sorted by path depth ascending so parents are ALWAYS inserted before children under PRAGMA foreign_keys = ON)
     if (Array.isArray(workspace.folders)) {
-      for (const f of workspace.folders) {
+      const sortedFolders = [...workspace.folders].sort((a, b) => {
+        const depthA = String(a?.path || a?.name || '').split('/').filter(Boolean).length;
+        const depthB = String(b?.path || b?.name || '').split('/').filter(Boolean).length;
+        return depthA - depthB || String(a?.path || '').localeCompare(String(b?.path || ''));
+      });
+      for (const f of sortedFolders) {
         if (!f.id || !f.name || !f.path) continue;
+        const rowUid = resolveUserId(f.user_id);
+        const safeParentId =
+          f.parent_id && f.parent_id !== f.id && validFolderIds.has(f.parent_id) ? f.parent_id : null;
         await dbClient.run(
-          `INSERT OR REPLACE INTO folders (
+          `INSERT INTO folders (
              id, user_id, name, parent_id, path, color_token, icon,
              is_favorite, is_pinned, is_archived,
              is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
              ai_context_excluded, sync_rev, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             user_id = excluded.user_id,
+             name = excluded.name,
+             parent_id = excluded.parent_id,
+             path = excluded.path,
+             color_token = excluded.color_token,
+             icon = excluded.icon,
+             is_favorite = excluded.is_favorite,
+             is_pinned = excluded.is_pinned,
+             is_archived = excluded.is_archived,
+             is_locked = excluded.is_locked,
+             lock_type = excluded.lock_type,
+             lock_credential_kind = excluded.lock_credential_kind,
+             lock_hash = excluded.lock_hash,
+             lock_salt = excluded.lock_salt,
+             lock_hint = excluded.lock_hint,
+             ai_context_excluded = excluded.ai_context_excluded,
+             sync_rev = excluded.sync_rev,
+             updated_at = excluded.updated_at;`,
           [
             f.id,
-            f.user_id || 'user-default',
+            rowUid,
             f.name,
-            f.parent_id || null,
+            safeParentId,
             f.path,
             f.color_token || 'cyan',
             f.icon || null,
@@ -198,49 +282,101 @@ class WorkspaceBackupService {
             f.updated_at || new Date().toISOString(),
           ]
         );
+        validFolderIds.add(f.id);
+        restoredFolders.push({
+          id: f.id,
+          userId: rowUid,
+          name: f.name,
+          path: f.path,
+          parentId: safeParentId,
+          syncRev: Math.max(f.sync_rev || 0, 1),
+        });
         foldersRestored++;
       }
     }
 
-    // 2. Tags
+    // 2. Tags (reuse existing tag IDs on case-insensitive name match so merge mode NEVER cascade-deletes existing note_tags!)
+    const tagIdRemap = new Map<string, string>();
     if (Array.isArray(workspace.tags)) {
       for (const t of workspace.tags) {
         if (!t.id || !t.name) continue;
+        const rowUid = resolveUserId(t.user_id);
+        const existingTag = await dbClient.queryFirst<{ id: string }>(
+          `SELECT id FROM tags WHERE LOWER(name) = LOWER(?) LIMIT 1;`,
+          [t.name]
+        );
+        if (existingTag?.id) {
+          tagIdRemap.set(t.id, existingTag.id);
+          tagsRestored++;
+          continue;
+        }
         await dbClient.run(
-          `INSERT OR REPLACE INTO tags (id, user_id, name, color_token, created_at)
+          `INSERT OR IGNORE INTO tags (id, user_id, name, color_token, created_at)
            VALUES (?, ?, ?, ?, ?);`,
           [
             t.id,
-            t.user_id || 'user-default',
+            rowUid,
             t.name,
             t.color_token || 'cyan',
             t.created_at || new Date().toISOString(),
           ]
         );
+        tagIdRemap.set(t.id, t.id);
         tagsRestored++;
       }
     }
 
-    // 3. Notes
+    // 3. Notes (ON CONFLICT DO UPDATE prevents cascade-deleting existing note_tags in merge mode; validates folder_id FK)
     if (Array.isArray(workspace.notes)) {
       for (const n of workspace.notes) {
-        if (!n.id || !n.title) continue;
+        if (!n.id) continue;
+        const rowUid = resolveUserId(n.user_id);
+        const noteTitle = (typeof n.title === 'string' && n.title.trim()) ? n.title : 'Untitled Note';
+        const safeFolderId = n.folder_id && validFolderIds.has(n.folder_id) ? n.folder_id : null;
+        const blocksJsonStr =
+          typeof n.blocks_json === 'string'
+            ? n.blocks_json
+            : JSON.stringify(n.blocks_json || []);
         await dbClient.run(
-          `INSERT OR REPLACE INTO notes (
+          `INSERT INTO notes (
              id, user_id, folder_id, folder_path, group_name, title, content_markdown,
              blocks_json, color_token, is_favorite, is_pinned, status, priority_score,
              reminder_at, is_locked, lock_type, lock_credential_kind, lock_hash, lock_salt, lock_hint,
              ai_context_excluded, sync_rev, created_at, updated_at, trashed_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             user_id = excluded.user_id,
+             folder_id = excluded.folder_id,
+             folder_path = excluded.folder_path,
+             group_name = excluded.group_name,
+             title = excluded.title,
+             content_markdown = excluded.content_markdown,
+             blocks_json = excluded.blocks_json,
+             color_token = excluded.color_token,
+             is_favorite = excluded.is_favorite,
+             is_pinned = excluded.is_pinned,
+             status = excluded.status,
+             priority_score = excluded.priority_score,
+             reminder_at = excluded.reminder_at,
+             is_locked = excluded.is_locked,
+             lock_type = excluded.lock_type,
+             lock_credential_kind = excluded.lock_credential_kind,
+             lock_hash = excluded.lock_hash,
+             lock_salt = excluded.lock_salt,
+             lock_hint = excluded.lock_hint,
+             ai_context_excluded = excluded.ai_context_excluded,
+             sync_rev = excluded.sync_rev,
+             updated_at = excluded.updated_at,
+             trashed_at = excluded.trashed_at;`,
           [
             n.id,
-            n.user_id || 'user-default',
-            n.folder_id || null,
+            rowUid,
+            safeFolderId,
             n.folder_path || 'General',
             n.group_name || null,
-            n.title,
+            noteTitle,
             n.content_markdown || '',
-            n.blocks_json || '[]',
+            blocksJsonStr,
             n.color_token || 'apricot',
             n.is_favorite ? 1 : 0,
             n.is_pinned ? 1 : 0,
@@ -260,17 +396,27 @@ class WorkspaceBackupService {
             n.trashed_at || null,
           ]
         );
+        restoredNotes.push({
+          id: n.id,
+          userId: rowUid,
+          title: noteTitle,
+          folderId: safeFolderId,
+          folderPath: n.folder_path || 'General',
+          syncRev: Math.max(n.sync_rev || 0, 1),
+          blocksJson: blocksJsonStr,
+        });
         notesRestored++;
       }
     }
 
-    // 4. Note Tags
+    // 4. Note Tags (apply remapped tag IDs so restored notes link cleanly without FK errors)
     if (Array.isArray(workspace.noteTags)) {
       for (const nt of workspace.noteTags) {
         if (!nt.note_id || !nt.tag_id) continue;
+        const resolvedTagId = tagIdRemap.get(nt.tag_id) || nt.tag_id;
         await dbClient.run(
           `INSERT OR IGNORE INTO note_tags (note_id, tag_id) VALUES (?, ?);`,
-          [nt.note_id, nt.tag_id]
+          [nt.note_id, resolvedTagId]
         );
       }
     }
@@ -279,14 +425,15 @@ class WorkspaceBackupService {
     if (Array.isArray(workspace.tasks)) {
       for (const tk of workspace.tasks) {
         if (!tk.id || !tk.title) continue;
+        const rowUid = resolveUserId(tk.user_id);
         await dbClient.run(
           `INSERT OR REPLACE INTO tasks (
              id, user_id, note_id, note_title, note_color_token, block_id, title,
-             is_completed, priority, due_date, sync_rev, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+             is_completed, priority, due_date, reminder_at, sync_rev, created_at, updated_at
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
           [
             tk.id,
-            tk.user_id || 'user-default',
+            rowUid,
             tk.note_id || null,
             tk.note_title || null,
             tk.note_color_token || null,
@@ -295,11 +442,19 @@ class WorkspaceBackupService {
             tk.is_completed ? 1 : 0,
             tk.priority || 'none',
             tk.due_date || null,
+            tk.reminder_at || null,
             tk.sync_rev || 0,
             tk.created_at || new Date().toISOString(),
             tk.updated_at || new Date().toISOString(),
           ]
         );
+        restoredTasks.push({
+          id: tk.id,
+          userId: rowUid,
+          title: tk.title,
+          noteId: tk.note_id || null,
+          syncRev: Math.max(tk.sync_rev || 0, 1),
+        });
         tasksRestored++;
       }
     }
@@ -308,13 +463,14 @@ class WorkspaceBackupService {
     if (Array.isArray(workspace.entityRelations)) {
       for (const rel of workspace.entityRelations) {
         if (!rel.id || !rel.source_id || !rel.target_id) continue;
+        const rowUid = resolveUserId(rel.user_id);
         await dbClient.run(
           `INSERT OR REPLACE INTO entity_relations (
              id, user_id, source_id, relation_type, target_id, created_by, confidence_score, created_at
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
           [
             rel.id,
-            rel.user_id || 'user-default',
+            rowUid,
             rel.source_id,
             rel.relation_type,
             rel.target_id,
@@ -323,6 +479,13 @@ class WorkspaceBackupService {
             rel.created_at || new Date().toISOString(),
           ]
         );
+        restoredRelations.push({
+          id: rel.id,
+          userId: rowUid,
+          sourceId: rel.source_id,
+          targetId: rel.target_id,
+          relationType: rel.relation_type,
+        });
       }
     }
 
@@ -358,9 +521,189 @@ class WorkspaceBackupService {
               sec.updated_at || new Date().toISOString(),
             ]
           );
+          importedSecurity = true;
         }
       }
     }
+
+    // 8. Enqueue sync_changelog deltas for all restored entities so Cloud Sync propagates across devices (Gap 4)
+    const nowIso = new Date().toISOString();
+    let hasLocalUploadableMedia = false;
+
+    await dbClient.withTransaction(async () => {
+      for (const f of restoredFolders) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, ?, 'folder', ?, 'insert', ?);`,
+          [
+            createBackupSyncLogId(),
+            f.userId,
+            f.syncRev,
+            f.id,
+            JSON.stringify({
+              id: f.id,
+              name: f.name,
+              path: f.path,
+              parentId: f.parentId,
+              restoredFromBackup: true,
+              timestamp: nowIso,
+            }),
+          ]
+        );
+      }
+
+      for (const n of restoredNotes) {
+        if (
+          !hasLocalUploadableMedia &&
+          (n.blocksJson.includes('file://') ||
+            n.blocksJson.includes('blob:') ||
+            n.blocksJson.includes('data:image/') ||
+            n.blocksJson.includes('data:audio/') ||
+            n.blocksJson.includes('data:video/') ||
+            n.blocksJson.includes('data:application/'))
+        ) {
+          hasLocalUploadableMedia = true;
+        }
+
+        const tagRows = await dbClient.query<{ name: string }>(
+          `SELECT t.name FROM tags t INNER JOIN note_tags nt ON nt.tag_id = t.id WHERE nt.note_id = ?;`,
+          [n.id]
+        );
+        const noteTagNames = tagRows.map((t) => t.name);
+
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, ?, 'note', ?, 'insert', ?);`,
+          [
+            createBackupSyncLogId(),
+            n.userId,
+            n.syncRev,
+            n.id,
+            JSON.stringify({
+              id: n.id,
+              title: n.title,
+              folderId: n.folderId,
+              folderPath: n.folderPath,
+              blocks: true,
+              tags: noteTagNames,
+              restoredFromBackup: true,
+              timestamp: nowIso,
+            }),
+          ]
+        );
+      }
+
+      for (const tk of restoredTasks) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, ?, 'task', ?, 'insert', ?);`,
+          [
+            createBackupSyncLogId(),
+            tk.userId,
+            tk.syncRev,
+            tk.id,
+            JSON.stringify({
+              id: tk.id,
+              title: tk.title,
+              noteId: tk.noteId,
+              restoredFromBackup: true,
+              timestamp: nowIso,
+            }),
+          ]
+        );
+      }
+
+      for (const rel of restoredRelations) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'relation', ?, 'insert', ?);`,
+          [
+            createBackupSyncLogId(),
+            rel.userId,
+            rel.id,
+            JSON.stringify({
+              id: rel.id,
+              sourceId: rel.sourceId,
+              targetId: rel.targetId,
+              relationType: rel.relationType,
+              restoredFromBackup: true,
+              timestamp: nowIso,
+            }),
+          ]
+        );
+      }
+
+      if (importedSecurity) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'workspace_security', 'default', 'update', ?);`,
+          [
+            createBackupSyncLogId(),
+            resolvedActiveUid,
+            JSON.stringify({ restoredFromBackup: true, timestamp: nowIso }),
+          ]
+        );
+      }
+
+      // On Clean Replace, emit delete tombstones for pre-existing entities absent from the restored backup
+      if (strategy === 'replace') {
+        const restoredFolderIdSet = new Set(restoredFolders.map((f) => f.id));
+        const restoredNoteIdSet = new Set(restoredNotes.map((n) => n.id));
+        const restoredTaskIdSet = new Set(restoredTasks.map((tk) => tk.id));
+        const restoredRelIdSet = new Set(restoredRelations.map((rel) => rel.id));
+
+        for (const oldRelId of preExistingRelationIds) {
+          if (restoredRelIdSet.has(oldRelId)) continue;
+          await dbClient.run(
+            `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+             VALUES (?, ?, 1, 'relation', ?, 'delete', ?);`,
+            [createBackupSyncLogId(), resolvedActiveUid, oldRelId, JSON.stringify({ id: oldRelId, replacedByBackup: true })]
+          );
+        }
+
+        for (const oldTaskId of preExistingTaskIds) {
+          if (restoredTaskIdSet.has(oldTaskId)) continue;
+          await dbClient.run(
+            `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+             VALUES (?, ?, 1, 'task', ?, 'delete', ?);`,
+            [createBackupSyncLogId(), resolvedActiveUid, oldTaskId, JSON.stringify({ id: oldTaskId, replacedByBackup: true })]
+          );
+        }
+
+        for (const oldNoteId of preExistingNoteIds) {
+          if (restoredNoteIdSet.has(oldNoteId)) continue;
+          await dbClient.run(
+            `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+             VALUES (?, ?, 1, 'note', ?, 'delete', ?);`,
+            [createBackupSyncLogId(), resolvedActiveUid, oldNoteId, JSON.stringify({ id: oldNoteId, replacedByBackup: true })]
+          );
+        }
+
+        for (const oldFolderId of preExistingFolderIds) {
+          if (restoredFolderIdSet.has(oldFolderId)) continue;
+          // Intentionally omit deletedPath so SyncEngine uses rpc_delete_entity('folder', id) without cascading over restored notes
+          await dbClient.run(
+            `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+             VALUES (?, ?, 1, 'folder', ?, 'delete', ?);`,
+            [createBackupSyncLogId(), resolvedActiveUid, oldFolderId, JSON.stringify({ id: oldFolderId, replacedByBackup: true })]
+          );
+        }
+      }
+    });
+
+    // If authenticated & Drive connected, backfill any restored local/data media URIs before cloud push
+    if (
+      hasLocalUploadableMedia &&
+      resolvedActiveUid !== 'user-default' &&
+      syncEngine.isCloudSyncEnabled()
+    ) {
+      await googleDriveVaultService.backfillOfflineMediaToDrive(resolvedActiveUid).catch((err) => {
+        console.warn('[WorkspaceBackupService] Deferred media backfill after restore:', err);
+      });
+    }
+
+    // Trigger debounced Cloud Sync push (strictly auth-gated inside SyncEngine)
+    syncEngine.schedulePush();
 
     return {
       notesRestored,

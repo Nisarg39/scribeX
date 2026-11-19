@@ -888,9 +888,9 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setNotifications(fetchedNotifs);
       setUnreadNotificationsCount(notifCounts.unread);
       setNotificationCounts(notifCounts);
-      if (Array.isArray(savedSearchHistory) && savedSearchHistory.length > 0) {
-        setRecentSearches(savedSearchHistory.map((item) => item.queryText));
-      }
+      setRecentSearches(
+        Array.isArray(savedSearchHistory) ? savedSearchHistory.map((item) => item.queryText) : []
+      );
 
       // Extract unique tags from notes + tag repository
       const noteTags = combinedNotes.flatMap((n) => n.tags || []);
@@ -987,8 +987,40 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     bootstrapWorkspace();
 
     const unsubscribeSync = syncEngine.subscribe((delta) => {
+      if (delta.entityType === 'folder') {
+        const p = delta.deltaPayload || {};
+        if (p.action === 'cascade_path') {
+          const oldPath = String(p.old_path || p.oldPath || '').trim().replace(/^\/+|\/+$/g, '');
+          const newPath = String(p.new_path || p.newPath || '').trim().replace(/^\/+|\/+$/g, '');
+          if (oldPath && newPath && oldPath !== newPath) {
+            setQueryRequestState((prev) => {
+              if (!prev.folderPath) return prev;
+              const cur = prev.folderPath.trim().replace(/^\/+|\/+$/g, '');
+              if (cur === oldPath) return { ...prev, folderPath: newPath };
+              if (cur.startsWith(`${oldPath}/`)) {
+                return { ...prev, folderPath: `${newPath}${cur.slice(oldPath.length)}` };
+              }
+              return prev;
+            });
+          }
+        } else if (delta.changeType === 'delete') {
+          const deletedPath = String(p.deleted_path || p.deletedPath || '').trim().replace(/^\/+|\/+$/g, '');
+          if (deletedPath) {
+            setQueryRequestState((prev) => {
+              if (!prev.folderPath) return prev;
+              const cur = prev.folderPath.trim().replace(/^\/+|\/+$/g, '');
+              if (cur === deletedPath || cur.startsWith(`${deletedPath}/`)) {
+                return { ...prev, folderPath: null };
+              }
+              return prev;
+            });
+          }
+        }
+      }
       if (delta.entityType === 'note' && delta.changeType === 'delete') {
         setNotes((prev) => prev.filter((n) => n.id !== delta.entityId));
+        setTasks((prev) => prev.filter((t) => t.noteId !== delta.entityId));
+        refreshFromDB();
         return;
       }
       refreshFromDB();
@@ -1389,24 +1421,26 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   const moveNoteToFolder = async (noteId: string, folderPath: string, folderId?: string) => {
+    const resolvedFolderId = folderId ?? null;
     setNotes((prev) =>
-      prev.map((n) => (n.id === noteId ? { ...n, folderPath, folderId } : n))
+      prev.map((n) => (n.id === noteId ? { ...n, folderPath, folderId: folderId || undefined } : n))
     );
     try {
-      await notesRepo.updateNote(noteId, { folderPath, folderId });
+      await notesRepo.updateNote(noteId, { folderPath, folderId: resolvedFolderId });
     } catch (err) {
       console.warn('Failed to move note folder:', err);
     }
   };
 
   const setNoteTags = async (noteId: string, newTags: string[]) => {
-    const cleanTags = newTags.map((t) => t.trim().replace(/^#/, '')).filter(Boolean);
+    const cleanTags = newTags.map((t) => t.trim().replace(/^#+/, '')).filter(Boolean);
     setNotes((prev) =>
       prev.map((n) => (n.id === noteId ? { ...n, tags: cleanTags } : n))
     );
     try {
       await notesRepo.updateNote(noteId, { tags: cleanTags });
-      setTags((prev) => Array.from(new Set([...prev, ...cleanTags])));
+      const latestTags = await tagsRepo.listTags().catch(() => []);
+      setTags(latestTags.map((t) => t.name).filter(Boolean));
     } catch (err) {
       console.warn('Failed to set note tags:', err);
     }

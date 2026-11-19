@@ -540,6 +540,9 @@ export async function reconcileOfflineNotesWithCloud(
                 status: merged.status,
                 reminder_at: merged.reminder_at,
                 ai_context_excluded: merged.ai_context_excluded,
+                tags: merged.tags,
+                ...(resolvedFolderId === null ? { clearFolderId: true } : {}),
+                ...(!merged.reminder_at ? { clearReminderAt: true } : {}),
               }),
             ]
           );

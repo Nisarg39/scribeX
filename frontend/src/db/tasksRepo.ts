@@ -32,7 +32,7 @@ export class TasksRepository {
 
   public async createTask(dto: CreateTaskDTO): Promise<TaskItem> {
     const taskId = dto.id || `task-${Date.now()}`;
-    const userId = dto.userId || 'user-default';
+    const userId = dto.userId || syncEngine.getActiveUserId();
     const cleanTitle = dto.title.trim();
     const priority = dto.priority || 'none';
     const dueDate = dto.dueDate || 'Today';
@@ -124,7 +124,10 @@ export class TasksRepository {
     return nextVal;
   }
 
-  public async updateTask(id: string, updates: Partial<TaskItem>): Promise<TaskItem> {
+  public async updateTask(
+    id: string,
+    updates: Partial<Omit<TaskItem, 'reminderAt'>> & { reminderAt?: string | null }
+  ): Promise<TaskItem> {
     const existing = await this.getTaskById(id);
     if (!existing) throw new Error(`Task not found with id: ${id}`);
 
@@ -175,7 +178,7 @@ export class TasksRepository {
   }
 
   public async updateTaskReminder(id: string, reminderAt: string | null): Promise<TaskItem> {
-    return this.updateTask(id, { reminderAt: reminderAt ?? undefined });
+    return this.updateTask(id, { reminderAt });
   }
 
   public async deleteTask(id: string): Promise<void> {

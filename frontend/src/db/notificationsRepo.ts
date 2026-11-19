@@ -4,6 +4,7 @@
  */
 
 import { dbClient } from './client';
+import { syncEngine } from '../services/sync/syncEngine';
 import {
   DBInAppNotification,
   InAppNotificationItem,
@@ -39,14 +40,25 @@ export class NotificationsRepository {
 
   public async createNotification(dto: CreateInAppNotificationDTO): Promise<InAppNotificationItem> {
     const id = dto.id || `notif-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const userId = dto.userId || 'user-default';
+    const userId = dto.userId || syncEngine.getActiveUserId();
 
-    // If an active notification already exists for this reminder/target, update it or replace it
+    // If an active notification already exists for this reminder/target, delete it locally AND queue remote delete deltas
     if (dto.targetId && dto.targetType) {
+      const replacedRows = await dbClient.query<{ id: string; user_id: string }>(
+        `SELECT id, user_id FROM in_app_notifications WHERE target_type = ? AND target_id = ? AND id != ?;`,
+        [dto.targetType, dto.targetId, id]
+      );
       await dbClient.run(
         `DELETE FROM in_app_notifications WHERE target_type = ? AND target_id = ?;`,
         [dto.targetType, dto.targetId]
       );
+      for (const oldRow of replacedRows) {
+        await dbClient.run(
+          `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+           VALUES (?, ?, 1, 'in_app_notification', ?, 'delete', ?);`,
+          [createLogId(), oldRow.user_id || userId, oldRow.id, JSON.stringify({ isCleared: true, replacedBy: id })]
+        );
+      }
     }
 
     const insertSql = `
@@ -57,18 +69,40 @@ export class NotificationsRepository {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 0, NULL, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
     `;
 
-    await dbClient.run(insertSql, [
-      id,
-      userId,
-      dto.reminderId || null,
-      dto.targetType,
-      dto.targetId,
-      dto.noteId || null,
-      dto.title,
-      dto.body,
-      dto.triggerAt,
-      dto.recurrenceRule || null,
-    ]);
+    let persistedTargetType: NotificationTargetType = dto.targetType;
+    try {
+      await dbClient.run(insertSql, [
+        id,
+        userId,
+        dto.reminderId || null,
+        persistedTargetType,
+        dto.targetId,
+        dto.noteId || null,
+        dto.title,
+        dto.body,
+        dto.triggerAt,
+        dto.recurrenceRule || null,
+      ]);
+    } catch (insertErr: any) {
+      // Legacy on-device SQLite DBs created before schema expansion only allow ('task', 'note', 'system')
+      if (!['task', 'note', 'system'].includes(persistedTargetType)) {
+        persistedTargetType = 'system';
+        await dbClient.run(insertSql, [
+          id,
+          userId,
+          dto.reminderId || null,
+          persistedTargetType,
+          dto.targetId,
+          dto.noteId || null,
+          dto.title,
+          dto.body,
+          dto.triggerAt,
+          dto.recurrenceRule || null,
+        ]);
+      } else {
+        throw insertErr;
+      }
+    }
 
     // Append to sync_changelog for Phase 2 dual-engine cloud sync
     await dbClient.run(
@@ -80,7 +114,7 @@ export class NotificationsRepository {
         id,
         JSON.stringify({
           id,
-          targetType: dto.targetType,
+          targetType: persistedTargetType,
           targetId: dto.targetId,
           noteId: dto.noteId,
           title: dto.title,
@@ -90,12 +124,14 @@ export class NotificationsRepository {
         }),
       ]
     );
+    syncEngine.schedulePush();
 
     const created = await this.getNotificationById(id);
     return created!;
   }
 
   public async recordFiredNotification(dto: {
+    userId?: string;
     reminderId?: string;
     targetType: NotificationTargetType;
     targetId: string;
@@ -106,6 +142,7 @@ export class NotificationsRepository {
     recurrenceRule?: string;
   }): Promise<InAppNotificationItem> {
     return this.createNotification({
+      userId: dto.userId,
       reminderId: dto.reminderId,
       targetType: dto.targetType,
       targetId: dto.targetId,
@@ -150,7 +187,7 @@ export class NotificationsRepository {
   }
 
   public async listNotifications(
-    userId: string = 'user-default',
+    userId: string = syncEngine.getActiveUserId(),
     filter?: {
       isRead?: boolean;
       isCleared?: boolean;
@@ -182,7 +219,10 @@ export class NotificationsRepository {
     return rows.map((r) => this.mapToNotificationItem(r));
   }
 
-  public async getUnreadCount(userId: string = 'user-default', asOfDate?: string): Promise<number> {
+  public async getUnreadCount(
+    userId: string = syncEngine.getActiveUserId(),
+    asOfDate?: string
+  ): Promise<number> {
     const asOf = asOfDate || new Date().toISOString();
     const row = await dbClient.queryFirst<{ count: number }>(
       `SELECT COUNT(*) as count FROM in_app_notifications WHERE user_id = ? AND is_read = 0 AND is_cleared = 0 AND trigger_at <= ?;`,
@@ -191,7 +231,10 @@ export class NotificationsRepository {
     return row ? row.count : 0;
   }
 
-  public async getNotificationCounts(userId: string = 'user-default', asOfDate?: string): Promise<NotificationCounts> {
+  public async getNotificationCounts(
+    userId: string = syncEngine.getActiveUserId(),
+    asOfDate?: string
+  ): Promise<NotificationCounts> {
     const asOf = asOfDate || new Date().toISOString();
     const row = await dbClient.queryFirst<{
       allCount: number;
@@ -232,11 +275,12 @@ export class NotificationsRepository {
        VALUES (?, ?, 1, 'in_app_notification', ?, 'update', ?);`,
       [createLogId(), notif.userId, id, JSON.stringify({ isRead, readAt })]
     );
+    syncEngine.schedulePush();
 
     return this.getNotificationById(id);
   }
 
-  public async markAllAsRead(userId: string = 'user-default'): Promise<void> {
+  public async markAllAsRead(userId: string = syncEngine.getActiveUserId()): Promise<void> {
     const readAt = new Date().toISOString();
     await dbClient.run(
       `UPDATE in_app_notifications SET is_read = 1, read_at = ?, updated_at = CURRENT_TIMESTAMP 
@@ -249,6 +293,7 @@ export class NotificationsRepository {
        VALUES (?, ?, 1, 'in_app_notification', ?, 'update', ?);`,
       [createLogId(), userId, 'all', JSON.stringify({ isRead: true, readAt })]
     );
+    syncEngine.schedulePush();
   }
 
   public async clearNotification(id: string): Promise<void> {
@@ -265,21 +310,44 @@ export class NotificationsRepository {
        VALUES (?, ?, 1, 'in_app_notification', ?, 'delete', ?);`,
       [createLogId(), notif.userId, id, JSON.stringify({ isCleared: true })]
     );
+    syncEngine.schedulePush();
   }
 
-  public async clearAll(userId: string = 'user-default'): Promise<void> {
+  public async clearAll(userId: string = syncEngine.getActiveUserId()): Promise<void> {
+    const clearedAt = new Date().toISOString();
     await dbClient.run(
       `UPDATE in_app_notifications SET is_cleared = 1, cleared_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP 
        WHERE user_id = ? AND is_cleared = 0;`,
       [userId]
     );
+
+    await dbClient.run(
+      `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+       VALUES (?, ?, 1, 'in_app_notification', 'all', 'delete', ?);`,
+      [createLogId(), userId, JSON.stringify({ action: 'clear_all', isCleared: true, clearedAt })]
+    );
+    syncEngine.schedulePush();
   }
 
   public async deleteNotificationByTarget(targetType: NotificationTargetType, targetId: string): Promise<void> {
+    const existing = await dbClient.query<{ id: string; user_id: string }>(
+      `SELECT id, user_id FROM in_app_notifications WHERE target_type = ? AND target_id = ?;`,
+      [targetType, targetId]
+    );
     await dbClient.run(
       `DELETE FROM in_app_notifications WHERE target_type = ? AND target_id = ?;`,
       [targetType, targetId]
     );
+    for (const row of existing) {
+      await dbClient.run(
+        `INSERT OR REPLACE INTO sync_changelog (id, user_id, sync_rev, entity_type, entity_id, change_type, delta_payload)
+         VALUES (?, ?, 1, 'in_app_notification', ?, 'delete', ?);`,
+        [createLogId(), row.user_id || syncEngine.getActiveUserId(), row.id, JSON.stringify({ isCleared: true })]
+      );
+    }
+    if (existing.length > 0) {
+      syncEngine.schedulePush();
+    }
   }
 }
 
