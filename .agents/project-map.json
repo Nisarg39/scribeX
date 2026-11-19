@@ -91,6 +91,7 @@
     "backendAndDatabase": {
       "supabaseClient": "frontend/src/services/supabase/supabaseClient.ts",
       "googleDriveVaultService": "frontend/src/services/drive/googleDriveVaultService.ts",
+      "noteMergeReconciler": "frontend/src/services/sync/noteMergeReconciler.ts",
       "syncEngine": "frontend/src/services/sync/syncEngine.ts",
       "syncTypes": "frontend/src/services/sync/syncTypes.ts",
       "leanCacheManager": "frontend/src/db/leanCacheManager.ts",
@@ -132,6 +133,7 @@
     "phase2SyncAndRpcTest": "node scripts/test_phase2_sync_and_rpc.mjs",
     "leanCacheTest": "node scripts/test_lean_cache_and_pagination.mjs",
     "googleDriveVaultTest": "node scripts/test_google_drive_vault.mjs",
+    "offlineCloudMergeTest": "node scripts/test_offline_cloud_note_merge.mjs",
     "allSuites": "npm --prefix frontend run test:all"
   }
 }

@@ -18,6 +18,10 @@ import { NoteItem } from '../../types/note';
 import { notificationService } from '../notifications/NotificationService';
 import { supabase, isSupabaseConfigured } from '../supabase/supabaseClient';
 import {
+  reconcileOfflineNotesWithCloud,
+  type CloudReconciliationSummary,
+} from './noteMergeReconciler';
+import {
   PaginatedNotesQuery,
   SyncDelta,
   SyncEngineConfig,
@@ -321,11 +325,30 @@ export class SyncEngine {
     return true;
   }
 
+  private async rekeyLocalNoteId(oldId: string, newId: string): Promise<void> {
+    if (!oldId || !newId || oldId === newId) return;
+    await dbClient.withTransaction(async () => {
+      await dbClient.run(`UPDATE notes SET id = ? WHERE id = ?;`, [newId, oldId]);
+      await dbClient.run(`UPDATE note_tags SET note_id = ? WHERE note_id = ?;`, [newId, oldId]);
+      await dbClient.run(`UPDATE tasks SET note_id = ? WHERE note_id = ?;`, [newId, oldId]);
+      await dbClient.run(`UPDATE reminders SET note_id = ? WHERE note_id = ?;`, [newId, oldId]);
+      await dbClient.run(
+        `UPDATE reminders SET target_id = ? WHERE target_type = 'note' AND target_id = ?;`,
+        [newId, oldId]
+      );
+      await dbClient.run(
+        `UPDATE sync_changelog SET entity_id = ? WHERE entity_type = 'note' AND entity_id = ?;`,
+        [newId, oldId]
+      );
+    });
+  }
+
   private async pushCreateNote(
     note: DBNote,
     parsedBlocks: any[],
     tags: string[],
-    overrideFolderId?: string | null
+    overrideFolderId?: string | null,
+    didRemintId: boolean = false
   ): Promise<void> {
     const targetFolderId = overrideFolderId !== undefined ? overrideFolderId : note.folder_id;
     const { data, error } = await supabase.rpc('rpc_create_note', {
@@ -350,6 +373,19 @@ export class SyncEngine {
       p_ai_context_excluded: Boolean(note.ai_context_excluded),
       p_caller_platform: this.deviceSessionId,
     });
+
+    const isCrossTenantPkCollision =
+      !didRemintId &&
+      ((!error && !data) || (error && (error.code === '23505' || error.message?.includes('duplicate key'))));
+
+    if (isCrossTenantPkCollision) {
+      const remintedId = `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      await this.rekeyLocalNoteId(note.id, remintedId);
+      const remintedNote: DBNote = { ...note, id: remintedId };
+      await this.pushCreateNote(remintedNote, parsedBlocks, tags, overrideFolderId, true);
+      return;
+    }
+
     if (error) {
       const isFolderFk =
         overrideFolderId === undefined &&
@@ -362,7 +398,8 @@ export class SyncEngine {
           note,
           parsedBlocks,
           tags,
-          folderSynced ? note.folder_id : null
+          folderSynced ? note.folder_id : null,
+          didRemintId
         );
         return;
       }
@@ -631,6 +668,18 @@ export class SyncEngine {
 
   public isAuthenticatedSession(): boolean {
     return !this.isSyncGateBlocked();
+  }
+
+  /**
+   * Reconciles pending offline/guest notes against existing cloud notes BEFORE flushing:
+   * - Matching note.id in cloud -> merges non-destructively (blocks by block.id + tag union)
+   * - Unmatched note.id -> prepares clean brand-new note insert with folder path remapping
+   */
+  public async reconcileLocalVaultWithCloud(): Promise<CloudReconciliationSummary> {
+    if (!isSupabaseConfigured() || this.isSyncGateBlocked()) {
+      return { mergedCount: 0, newCount: 0, skippedNoOpCount: 0 };
+    }
+    return reconcileOfflineNotesWithCloud(this.config.userId);
   }
 
   /**

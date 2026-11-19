@@ -46,10 +46,11 @@ Remaining Tasks to fix
 37 - [x] Pre-Seeded Interactive 'Welcome to ScribeX' Starter Note: On first launch when the database is empty, automatically seed a beautifully formatted starter note demonstrating the 42 input blocks, slash commands (/), pastel color tokens, KaTeX math formulas, interactive checklists, sample callouts, and offline reminder tips so first-time users can immediately explore the canvas without facing a blank screen. (COMPLETED)
 38 - [x] fix the biometrics option configuration for android and ios only . currently there is only one toggle called Biometric Unlock Preference which just turns on and off but there is no default biometric lock that the phone has is being configured
 39 - [x] the export chat option from whatsapp is not showing the scribeX app as an option in the app share sheet for mobile platforms
-40 - [] make the signin process with login with google such that the user the google drive connection becomes mandatory and until that is done the sync process wont start
-41 - []  the media files do not start uploading when user logs in and has media files to auto sync until the user edits the note . 
-42 - [] make the system such that google drive is always connected and user needs not to keep on manually connecting all the time due to token expiry 
+40 - [x] make the signin process with login with google such that the user the google drive connection becomes mandatory and until that is done the sync process wont start
+41 - [x]  the media files do not start uploading when user logs in and has media files to auto sync until the user edits the note . 
+42 - [x] make the system such that google drive is always connected and user needs not to keep on manually connecting all the time due to token expiry 
 43 - [] Check whether all actions are synced with database
+44 - [] manage the case where the user has added notes without login and then logs in but has an existing account where the notes are there so in that case the notes should be merged based on the note id if it exists or else it should be added as a new note.
 
 
 Long term Ideas (Mapped to Official Delivery Phases in docs/Master_Tasks_Tracker.md & docs/Unified_Backend_and_AI_Master_Specification.md)

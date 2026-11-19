@@ -1,63 +1,66 @@
-# ScribeX Implementation Plan — Permanent Google Drive Connection (Silent Refresh Token Architecture)
+# ScribeX Implementation Plan — ID-Based Offline-to-Existing-Account Note Merge & Reconciliation
 
 > **Status:** Awaiting User Approval
 > **Branch:** `feat/backend-integration`
-> **Supabase Project Ref:** `gbpyfhrcofwsfklzweqo`
 
 ## Architecture & Goal
 
-Eliminate 1-hour Google Drive access-token expiry disconnects by persisting each user's Google OAuth `refresh_token` encrypted server-side in Supabase and silently minting fresh 1-hour Drive access tokens via a Supabase Edge Function whenever the cached token nears expiry or returns `401`.
-
-### End-to-End Flow
-1. **Capture & Store Once (`action: 'store'`):** On Google Sign-In (`access_type: 'offline'`, `prompt: 'consent'`, `scopes: 'https://www.googleapis.com/auth/drive.file'`), after `verifyDriveAccess()` confirms `drive.file` scope, `googleDriveVaultService` sends `session.provider_refresh_token` to the `google-drive-token` Supabase Edge Function, which encrypts it with AES-256-GCM (`DRIVE_TOKEN_ENCRYPTION_KEY`) and stores it in `public.google_drive_connections` (locked down with RLS + zero client table grants).
-2. **Silent Auto-Refresh (`action: 'refresh'`):** Whenever `getDriveAccountState(userId)` sees no cached token, an expired token, or a token within 3 minutes of expiry (or any Drive API call hits `401`), it deduplicates and silently calls `google-drive-token` (`action: 'refresh'`). The Edge Function decrypts the user's `refresh_token`, exchanges it at `https://oauth2.googleapis.com/token` using `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET` (from Supabase Secrets), and returns a fresh 1-hour access token.
-3. **Explicit Disconnect / Google Revocation (`action: 'revoke'`):** Clicking **Disconnect** in Settings calls `action: 'revoke'` to delete the stored refresh token so Drive stays intentionally disconnected. If Google returns `invalid_grant` (user revoked ScribeX in Google Account settings), the Edge Function deletes the dead row and returns `{ revoked: true }`, cleanly pausing Cloud Sync and prompting the user to reconnect.
+Ensure that when a user creates or edits notes in offline/guest mode and then signs into an **existing Google account** that already has cloud notes in Supabase, **every local note is reconciled against the existing cloud vault BEFORE pushing**:
+- **If `note.id` already exists in the cloud account:** perform a deterministic, non-destructive **ID-based merge** (merging `blocks_json` by `block.id`, unioning tags, resolving scalar metadata by latest `updated_at` / non-empty fallback, skipping no-op writes for untouched seed notes) and push the merged result via `rpc_update_note`.
+- **If `note.id` does not exist in the cloud account:** keep it as a **brand-new note** (with folder path/ID reconciliation and cross-tenant PK collision re-minting if another user owns a deterministic seed ID like `note-welcome-01`) and insert it cleanly via `rpc_create_note`.
+- **Preserve all other pre-existing cloud notes:** pull workspace metadata and Page 1 cloud notes so the workspace displays both the existing cloud notes and the newly merged/added offline notes together.
 
 ## Implementation Steps & Files
 
-1. **Postgres Migration (Encrypted Refresh Token Vault)**
-   - **[NEW]** `supabase/migrations/003_google_drive_refresh_tokens.sql`:
-     - Creates `public.google_drive_connections (user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE, drive_email TEXT NOT NULL, drive_display_name TEXT, encrypted_refresh_token TEXT NOT NULL, vault_folder_id TEXT, created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW())`.
-     - Enables RLS and runs `REVOKE ALL ON public.google_drive_connections FROM anon, authenticated;` so only the Edge Function (`service_role`) can read/write refresh tokens.
-2. **Supabase Edge Function (`google-drive-token`)**
-   - **[NEW]** `supabase/functions/google-drive-token/index.ts`:
-     - Authenticates every request via the caller's Supabase JWT (`supabase.auth.getUser()`).
-     - Implements AES-256-GCM encrypt/decrypt using Web Crypto API + `DRIVE_TOKEN_ENCRYPTION_KEY`.
-     - Handles `store`, `refresh` (calling `https://oauth2.googleapis.com/token` with `GOOGLE_CLIENT_ID` & `GOOGLE_CLIENT_SECRET`, handling `invalid_grant`), and `revoke` with full CORS headers.
-3. **Client Silent Refresh Integration**
-   - **[MODIFY]** `frontend/src/services/drive/googleDriveVaultService.ts`:
-     - Capture `session.provider_refresh_token` in `syncDriveTokenFromSupabaseSession(session)` and call `storeRefreshTokenInBackend(...)`.
-     - Add deduplicated `refreshAccessTokenFromBackend(userId)` calling `supabase.functions.invoke('google-drive-token', { body: { action: 'refresh' } })`.
-     - Update `getDriveAccountState(userId)` to silently refresh when missing, expired, or within 3 minutes of expiry instead of immediately clearing state.
-     - Add automatic 1-time silent refresh + retry on `401` across Drive API operations (`uploadNoteMediaAttachments`, `hydrateNoteMediaToTempCache`, `deleteDriveAssetById`) before disconnecting.
-     - Update `disconnectDriveAccount(userId)` to also revoke the server-stored refresh token (`action: 'revoke'`).
-   - **[MODIFY]** `frontend/src/context/AuthContext.tsx`:
-     - Pass `session.provider_refresh_token` cleanly through `handleAuthenticatedSession` and add a lightweight proactive foreground refresh check (e.g., on `AppState` `'active'` / web `visibilitychange`) so Drive stays seamlessly connected across long idle sessions.
-4. **Live Supabase Deployment & Secrets**
-   - Apply `003_google_drive_refresh_tokens.sql` to live Supabase (`gbpyfhrcofwsfklzweqo`).
-   - Deploy `supabase/functions/google-drive-token` via `supabase functions deploy google-drive-token --project-ref gbpyfhrcofwsfklzweqo`.
-   - Configure `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `DRIVE_TOKEN_ENCRYPTION_KEY` via `supabase secrets set` (user runs 1 command locally or supplies secrets securely).
-5. **Tests & Project Map**
-   - **[MODIFY]** `scripts/test_google_drive_vault.mjs`: Add static contracts and silent-refresh / `invalid_grant` simulation tests.
-   - **[MODIFY]** `.agents/project-map.json`: Index `003_google_drive_refresh_tokens.sql` and `supabase/functions/google-drive-token/index.ts`.
+1. **Deterministic Note Merge & Reconciliation Module**
+   - **[NEW]** `frontend/src/services/sync/noteMergeReconciler.ts`:
+     - Export pure helper `mergeLocalAndCloudNote(localNote, cloudNote)`:
+       - Merges `blocks_json` by `block.id`: preserves cloud block ordering, resolves same-`block.id` differences using newer `updated_at` (never clobbering newer cloud edits with stale untouched guest seed blocks), and appends any offline-only `block.id`s (including newly added text or media blocks).
+       - Re-serializes `content_markdown` via `serializeBlocksToMarkdown(mergedBlocks)`.
+       - Merges tags as a deduplicated union (`localTags ∪ cloudTags`).
+       - Resolves `title`, `color_token`, `folder_id`/`folder_path`, `status`, `reminder_at`, `is_locked`/`lock_*`, and `ai_context_excluded` deterministically via latest `updated_at` (with logical OR for `is_favorite`/`is_pinned` if local was starred/pinned offline).
+       - Returns `{ mergedNote, mergedBlocks, mergedTags, hasChangesVsCloud }` so identical notes skip redundant writes.
+     - Export `reconcileOfflineNotesWithCloud(userId)`:
+       - Inspects all pending local notes (`sync_changelog` entries with `entity_type = 'note'` and `change_type IN ('insert', 'update')`) plus any local non-dehydrated notes for `userId`.
+       - Fetches matching cloud notes (`supabase.from('notes').select('*').eq('user_id', userId).in('id', candidateIds)`), their tags (`note_tags` + `tags`), and existing cloud folders (`folders`) in one batched round-trip.
+       - Re-maps local notes referencing a duplicate offline folder path (e.g. local `'General'`) to the existing cloud folder's `id` so no duplicate folders or FK failures occur.
+       - **Case 1 (`note.id` exists in cloud):** Runs `mergeLocalAndCloudNote`, updates local SQLite `notes` + `note_tags`, and rewrites the note's `sync_changelog` row to `change_type = 'update'` with the merged payload (or deletes the changelog row if `hasChangesVsCloud === false`).
+       - **Case 2 (`note.id` does not exist in cloud):** Ensures a clean `insert` entry exists in `sync_changelog` so it is added as a brand-new note.
+2. **SyncEngine Reconciliation Hook & Cross-Tenant PK Collision Guard**
+   - **[MODIFY]** `frontend/src/services/sync/syncEngine.ts`:
+     - Expose `public async reconcileLocalVaultWithCloud(): Promise<{ mergedCount: number; newCount: number; skippedNoOpCount: number }>` delegating to `reconcileOfflineNotesWithCloud(this.config.userId)` (gated by `!this.isSyncGateBlocked()`).
+     - In `pushCreateNote()`: if `rpc_create_note` returns `null` (which happens when a deterministic seed ID such as `note-welcome-01` is already owned by a *different* user in global Postgres `notes.id`), automatically re-mint a unique ID (`note-${Date.now()}-${rand}`), re-key local `notes` / `note_tags` / `tasks` / `reminders` / `sync_changelog`, and retry `rpc_create_note` cleanly as a new note.
+3. **Store Bootstrap Ordering (`useNotesStore.tsx`)**
+   - **[MODIFY]** `frontend/src/state/useNotesStore.tsx`:
+     - When `isCloudSyncReady` unlocks in `bootstrapWorkspace()`, run the exact safe pipeline order:
+       1. `googleDriveVaultService.backfillOfflineMediaToDrive(userId)` (upload offline local media to `gdrive://<id>` first so merged blocks carry cloud Drive URIs)
+       2. `syncEngine.reconcileLocalVaultWithCloud()` (merge matching cloud `note.id`s + keep unmatched notes as new inserts)
+       3. `syncEngine.flushNow()` (push merged updates and brand-new notes to Supabase)
+       4. `syncEngine.pullWorkspaceMetadataFromCloud()` & `fetchPaginatedNotesFromCloud()` (hydrate all remaining pre-existing cloud notes/folders/tasks/reminders into the workspace)
+4. **Automated Tests & Project Intelligence**
+   - **[NEW]** `scripts/test_offline_cloud_note_merge.mjs`:
+     - Tests pure `mergeLocalAndCloudNote` logic: matching `note.id` merges blocks by `block.id`, appends offline-only blocks & `gdrive://` image blocks without losing cloud blocks, unions tags, avoids clobbering edited cloud notes with untouched starter seed notes, and adds unmatched `note.id`s as brand-new notes.
+     - Verifies static contracts across `noteMergeReconciler.ts`, `syncEngine.ts`, and `useNotesStore.tsx`.
+   - **[MODIFY]** `.agents/project-map.json`: Index `noteMergeReconciler.ts` and `test_offline_cloud_note_merge.mjs`.
 
 ## Verification Gates
 - `cd frontend && npx tsc --noEmit`
-- `node scripts/test_google_drive_vault.mjs`
+- `node scripts/test_offline_cloud_note_merge.mjs`
 - `node scripts/test_guest_vault_migration.mjs`
 - `node scripts/test_phase2_sync_and_rpc.mjs`
-- Live Supabase schema & Edge Function deployment check (`supabase db query` + `supabase functions list`).
+- `node scripts/test_google_drive_vault.mjs`
+- `node scripts/test_lean_cache_and_pagination.mjs`
 
 ## Recommended Execution
 
 | Command | Fit Assessment |
 | :--- | :--- |
-| **`/plan`** (or **`approve`**) | **Best fit.** Adds a new Postgres migration, a new Deno Edge Function with AES-256-GCM token encryption, and live Supabase secret/deployment steps — using `/plan` gives you a reviewable security & code-diff artifact before touching live Supabase, or reply **`approve`** to build and deploy directly. |
-| `/boost` | Optional if you want deeper threat-model review on token encryption/CORS, though the Edge Function surface is small (~160 lines). |
-| `/swarm` / `/teamwork` | Overkill — only 4–5 tightly coupled files (SQL migration -> Edge Function -> Drive service -> AuthContext -> tests). |
-| `/grill-me` | Unnecessary — architecture is already standard and agreed upon. |
-| `/goal` | Unnecessary — bounded single-session implementation. |
-| `/run-workflow` | Not needed — sequential dependency chain, not a multi-file fan-out. |
+| **`/plan`** (or **`approve`**) | **Best fit.** This modifies the login sync pipeline (`backfill -> reconcile -> flush -> pull`) and introduces a merge algorithm for conflicting note IDs — `/plan` lets you inspect the exact merge rules and code diffs before coding, or reply **`approve`** to execute directly in one focused pass. |
+| `/boost` | Optional if you want extra edge-case scrutiny on conflict resolution (e.g., locked notes or deleted-in-cloud tombstones), though the ID-based merge contract is cleanly bounded. |
+| `/swarm` / `/teamwork` | Overkill — only 3 source files (`noteMergeReconciler.ts`, `syncEngine.ts`, `useNotesStore.tsx`) + 1 test file. |
+| `/grill-me` | Unnecessary unless you want custom conflict UX (e.g., side-by-side manual conflict picker instead of automatic ID-based block merge). |
+| `/goal` | Unnecessary — fast, bounded single-session task with deterministic Node tests. |
+| `/run-workflow` | Not needed — sequential dependency chain, not a parallel fan-out. |
 | `/compact` | Not needed right now. |
 
-**Recommendation:** Type **`/plan`** to review the detailed code & security diff artifact first (recommended since this touches a new Supabase migration + Edge Function + secrets), or reply **`approve`** to proceed directly with implementation.
+**Recommendation:** Give the user necessary command to implement this feature according to the antigravity slash commands that is listed

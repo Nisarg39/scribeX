@@ -948,6 +948,11 @@ export const NotesProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
           if (!isActive) return;
 
+          await syncEngine.reconcileLocalVaultWithCloud().catch((err) => {
+            console.warn('Pre-flush cloud note reconciliation deferred cleanly:', err);
+          });
+          if (!isActive) return;
+
           await syncEngine.flushNow().catch((err) => {
             console.warn('Initial Outbox flush deferred (offline or retryable):', err);
           });
