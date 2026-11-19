@@ -601,7 +601,53 @@ export class SyncEngine {
               error.message?.toLowerCase().includes('note not found');
             const isFolderFk =
               error.code === '23503' || error.message?.includes('notes_folder_id_fkey');
-            if (isNotFound || isFolderFk) {
+            if (isFolderFk) {
+              const folderSynced = note.folder_id
+                ? await this.ensureFolderSyncedToSupabase(note.folder_id)
+                : false;
+              const retryRes = await supabase.rpc('rpc_update_note', {
+                p_note_id: note.id,
+                p_title: note.title,
+                p_content_markdown: payloadHasBlocks ? note.content_markdown : null,
+                p_blocks_json: payloadHasBlocks ? parsedBlocks : null,
+                p_tags: Array.isArray(delta.deltaPayload?.tags) ? tags : null,
+                p_folder_id: folderSynced ? note.folder_id : null,
+                p_folder_path: note.folder_path,
+                p_color_token: note.color_token,
+                p_is_favorite: Boolean(note.is_favorite),
+                p_is_pinned: Boolean(note.is_pinned),
+                p_status: note.status,
+                p_reminder_at: note.reminder_at,
+                p_is_locked: Boolean(note.is_locked),
+                p_lock_type: note.lock_type || null,
+                p_lock_credential_kind: note.lock_credential_kind || null,
+                p_lock_hash: note.lock_hash || null,
+                p_lock_salt: note.lock_salt || null,
+                p_lock_hint: note.lock_hint || null,
+                p_ai_context_excluded: Boolean(note.ai_context_excluded),
+                p_clear_folder_id: clearFolderId || !folderSynced,
+                p_clear_reminder_at: clearReminderAt,
+                p_caller_platform: this.deviceSessionId,
+              });
+              if (!retryRes.error) {
+                if (retryRes.data?.sync_rev) {
+                  await dbClient.run(`UPDATE notes SET sync_rev = ? WHERE id = ?;`, [
+                    retryRes.data.sync_rev,
+                    note.id,
+                  ]);
+                }
+                return;
+              }
+              const retryNotFound =
+                retryRes.error.code === 'P0001' ||
+                retryRes.error.message?.toLowerCase().includes('note not found');
+              if (retryNotFound) {
+                await this.pushCreateNote(note, parsedBlocks, tags, folderSynced ? note.folder_id : null);
+                return;
+              }
+              throw new Error(retryRes.error.message);
+            }
+            if (isNotFound) {
               await this.pushCreateNote(note, parsedBlocks, tags);
               return;
             }
@@ -1521,6 +1567,8 @@ export class SyncEngine {
       const hasTitle = hasKey('title');
       const hasFolderId = hasKey('folder_id');
       const hasFolderPath = hasKey('folder_path');
+      const hasContentMarkdown = hasKey('content_markdown');
+      const hasBlocksJson = hasKey('blocks_json');
       const hasColorToken = hasKey('color_token');
       const hasIsFavorite = hasKey('is_favorite');
       const hasIsPinned = hasKey('is_pinned');
@@ -1546,8 +1594,8 @@ export class SyncEngine {
           title = CASE WHEN ? = 1 THEN excluded.title ELSE notes.title END,
           folder_id = CASE WHEN ? = 1 THEN excluded.folder_id ELSE notes.folder_id END,
           folder_path = CASE WHEN ? = 1 THEN excluded.folder_path ELSE notes.folder_path END,
-          content_markdown = CASE WHEN excluded.content_markdown != '' THEN excluded.content_markdown ELSE notes.content_markdown END,
-          blocks_json = CASE WHEN excluded.blocks_json != '[]' THEN excluded.blocks_json ELSE notes.blocks_json END,
+          content_markdown = CASE WHEN ? = 1 THEN excluded.content_markdown ELSE notes.content_markdown END,
+          blocks_json = CASE WHEN ? = 1 THEN excluded.blocks_json ELSE notes.blocks_json END,
           color_token = CASE WHEN ? = 1 THEN excluded.color_token ELSE notes.color_token END,
           is_favorite = CASE WHEN ? = 1 THEN excluded.is_favorite ELSE notes.is_favorite END,
           is_pinned = CASE WHEN ? = 1 THEN excluded.is_pinned ELSE notes.is_pinned END,
@@ -1588,6 +1636,8 @@ export class SyncEngine {
           hasTitle,
           hasFolderId,
           hasFolderPath,
+          hasContentMarkdown,
+          hasBlocksJson,
           hasColorToken,
           hasIsFavorite,
           hasIsPinned,

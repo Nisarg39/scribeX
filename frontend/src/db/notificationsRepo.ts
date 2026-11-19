@@ -186,6 +186,27 @@ export class NotificationsRepository {
     return row ? this.mapToNotificationItem(row) : null;
   }
 
+  public async hasNotificationForTargetTrigger(
+    targetType: string,
+    targetId: string,
+    triggerAt: string,
+    userId: string = syncEngine.getActiveUserId()
+  ): Promise<boolean> {
+    if (!targetType || !targetId) return false;
+    const targetMs = Date.parse(triggerAt);
+    const rows = await dbClient.query<{ trigger_at: string }>(
+      `SELECT trigger_at FROM in_app_notifications
+       WHERE target_type = ? AND target_id = ? AND user_id = ?;`,
+      [targetType, targetId, userId]
+    );
+    if (!rows || rows.length === 0) return false;
+    if (!Number.isFinite(targetMs)) return true;
+    return rows.some((r) => {
+      const rowMs = Date.parse(r.trigger_at);
+      return Number.isFinite(rowMs) ? Math.abs(rowMs - targetMs) < 60_000 : r.trigger_at === triggerAt;
+    });
+  }
+
   public async listNotifications(
     userId: string = syncEngine.getActiveUserId(),
     filter?: {

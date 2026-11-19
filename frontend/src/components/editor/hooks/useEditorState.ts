@@ -253,52 +253,60 @@ export const useEditorState = ({
         tagsRef.current = remoteTags;
       }
 
-      if (p.blocks_json) {
+      if (p.blocks_json !== undefined) {
         try {
           const incomingBlocks: ComposableBlock[] =
             typeof p.blocks_json === 'string' ? JSON.parse(p.blocks_json) : p.blocks_json;
-          if (Array.isArray(incomingBlocks) && incomingBlocks.length > 0) {
-            const focusedId = activeBlockIdRef.current;
-            const currentById = new Map(blocksRef.current.map((b) => [b.id, b]));
-            const merged = incomingBlocks.map((remoteBlock) => {
-              // Preserve the block actively being typed by the user on this device
-              if (focusedId && remoteBlock.id === focusedId && currentById.has(focusedId)) {
-                return currentById.get(focusedId)!;
-              }
-              return remoteBlock;
-            });
-            const coalesced = coalesceChecklistBlocks(merged);
-            blocksRef.current = coalesced;
-            setBlocks(coalesced);
+          if (Array.isArray(incomingBlocks)) {
+            if (incomingBlocks.length === 0) {
+              const emptyFallback: ComposableBlock[] = [
+                { id: `b-${Date.now()}-1`, type: 'paragraph', content: '' },
+              ];
+              blocksRef.current = emptyFallback;
+              setBlocks(emptyFallback);
+            } else {
+              const focusedId = activeBlockIdRef.current;
+              const currentById = new Map(blocksRef.current.map((b) => [b.id, b]));
+              const merged = incomingBlocks.map((remoteBlock) => {
+                // Preserve the block actively being typed by the user on this device
+                if (focusedId && remoteBlock.id === focusedId && currentById.has(focusedId)) {
+                  return currentById.get(focusedId)!;
+                }
+                return remoteBlock;
+              });
+              const coalesced = coalesceChecklistBlocks(merged);
+              blocksRef.current = coalesced;
+              setBlocks(coalesced);
 
-            if (
-              isAuthenticated &&
-              !isGuest &&
-              userId &&
-              coalesced.some((b) => extractMediaUriFromBlock(b)?.startsWith(GDRIVE_PREFIX))
-            ) {
-              googleDriveVaultService
-                .hydrateNoteMediaToTempCache(noteIdRef.current, coalesced, userId)
-                .then((hydratedBlocks) => {
-                  const hydratedById = new Map(hydratedBlocks.map((hb) => [hb.id, hb]));
-                  const refreshed = blocksRef.current.map((cur) => {
-                    const hb = hydratedById.get(cur.id);
-                    const curUri = extractMediaUriFromBlock(cur);
-                    const nextUri = hb ? extractMediaUriFromBlock(hb) : null;
-                    if (
-                      hb &&
-                      curUri?.startsWith(GDRIVE_PREFIX) &&
-                      nextUri &&
-                      !nextUri.startsWith(GDRIVE_PREFIX)
-                    ) {
-                      return applyMediaUriToBlock(cur, nextUri);
-                    }
-                    return cur;
-                  });
-                  blocksRef.current = refreshed;
-                  setBlocks(refreshed);
-                })
-                .catch(() => {});
+              if (
+                isAuthenticated &&
+                !isGuest &&
+                userId &&
+                coalesced.some((b) => extractMediaUriFromBlock(b)?.startsWith(GDRIVE_PREFIX))
+              ) {
+                googleDriveVaultService
+                  .hydrateNoteMediaToTempCache(noteIdRef.current, coalesced, userId)
+                  .then((hydratedBlocks) => {
+                    const hydratedById = new Map(hydratedBlocks.map((hb) => [hb.id, hb]));
+                    const refreshed = blocksRef.current.map((cur) => {
+                      const hb = hydratedById.get(cur.id);
+                      const curUri = extractMediaUriFromBlock(cur);
+                      const nextUri = hb ? extractMediaUriFromBlock(hb) : null;
+                      if (
+                        hb &&
+                        curUri?.startsWith(GDRIVE_PREFIX) &&
+                        nextUri &&
+                        !nextUri.startsWith(GDRIVE_PREFIX)
+                      ) {
+                        return applyMediaUriToBlock(cur, nextUri);
+                      }
+                      return cur;
+                    });
+                    blocksRef.current = refreshed;
+                    setBlocks(refreshed);
+                  })
+                  .catch(() => {});
+              }
             }
           }
         } catch {
@@ -821,6 +829,8 @@ export const useEditorState = ({
         before: { blocks: currentBlocks },
         after: { blocks: emptyBlock },
       });
+      blocksRef.current = emptyBlock;
+      activeBlockIdRef.current = emptyBlock[0].id;
       setBlocks(emptyBlock);
       setActiveBlockId(emptyBlock[0].id);
       persistChanges(titleRef.current, colorTokenRef.current, emptyBlock);
@@ -835,8 +845,10 @@ export const useEditorState = ({
       before: { blocks: currentBlocks },
       after: { blocks: nextBlocks },
     });
+    blocksRef.current = nextBlocks;
     setBlocks(nextBlocks);
     if (activeBlockId === blockId) {
+      activeBlockIdRef.current = null;
       setActiveBlockId(null);
     }
     persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);

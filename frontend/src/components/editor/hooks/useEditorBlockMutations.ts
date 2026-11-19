@@ -144,8 +144,10 @@ export function useEditorBlockMutations({
       after: { blocks: nextBlocks },
     });
 
+    blocksRef.current = nextBlocks;
     setBlocks(nextBlocks);
     const lastBlock = instantiatedBlocks[instantiatedBlocks.length - 1];
+    activeBlockIdRef.current = lastBlock.id;
     setActiveBlockId(lastBlock.id);
     setFocusTarget({
       blockId: lastBlock.id,
@@ -187,6 +189,8 @@ export function useEditorBlockMutations({
       after: { blocks: nextBlocks },
     });
 
+    blocksRef.current = nextBlocks;
+    activeBlockIdRef.current = newBlockId;
     setBlocks(nextBlocks);
     setActiveBlockId(newBlockId);
     persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
@@ -238,6 +242,8 @@ export function useEditorBlockMutations({
         after: { blocks: nextBlocks },
       });
 
+      blocksRef.current = nextBlocks;
+      activeBlockIdRef.current = prevBlock.id;
       setBlocks(nextBlocks);
       setActiveBlockId(prevBlock.id);
       persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);
@@ -262,6 +268,8 @@ export function useEditorBlockMutations({
         after: { blocks: nextBlocks },
       });
 
+      blocksRef.current = nextBlocks;
+      activeBlockIdRef.current = prevBlock.id;
       setBlocks(nextBlocks);
       setActiveBlockId(prevBlock.id);
       persistChanges(titleRef.current, colorTokenRef.current, nextBlocks);

@@ -12,6 +12,8 @@
       "entry": "frontend/app/index.tsx",
       "onboarding": "frontend/app/onboarding.tsx",
       "signin": "frontend/app/signin.tsx",
+      "authCallback": "frontend/app/auth/callback.tsx",
+      "driveCallback": "frontend/app/drive/callback.tsx",
       "home": "frontend/app/home.tsx",
       "noteEditor": "frontend/app/note/[id].tsx"
     },
@@ -107,6 +109,7 @@
       "googleDriveRefreshTokensSql": "supabase/migrations/003_google_drive_refresh_tokens.sql",
       "multiDeviceSyncParitySql": "supabase/migrations/004_multi_device_sync_parity.sql",
       "syncEdgeCaseHardeningSql": "supabase/migrations/005_sync_edge_case_hardening.sql",
+      "dedupRemindersNotificationsSql": "supabase/migrations/006_deduplicate_reminders_and_notifications.sql",
       "googleDriveTokenEdgeFunction": "supabase/functions/google-drive-token/index.ts",
       "sqliteSchema": "frontend/src/db/schema.ts",
       "sqliteNativeClient": "frontend/src/db/client.native.ts",

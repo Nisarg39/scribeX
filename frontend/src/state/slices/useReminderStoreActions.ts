@@ -91,7 +91,18 @@ export function useReminderStoreActions({
       const activeReminders = await remindersRepo.listActiveReminders().catch(() => []);
       const now = Date.now();
 
+      // Deduplicate active reminders by (targetType, targetId) so duplicate rows never ping-pong unread notifications
+      const dedupedByTarget = new Map<string, ReminderRecord>();
       for (const rem of activeReminders) {
+        if (!rem.triggerAt) continue;
+        const key = `${rem.targetType}:${rem.targetId}`;
+        const prev = dedupedByTarget.get(key);
+        if (!prev || String(rem.updatedAt || '') > String(prev.updatedAt || '')) {
+          dedupedByTarget.set(key, rem);
+        }
+      }
+
+      for (const rem of dedupedByTarget.values()) {
         if (!rem.triggerAt) continue;
         const isTask = rem.targetType === 'task';
         const taskItem = isTask ? tasks.find((t) => t.id === rem.targetId) : undefined;
@@ -118,8 +129,16 @@ export function useReminderStoreActions({
             const todayOccurrence = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate(), targetH, targetM, 0, 0);
             if (todayOccurrence.getTime() <= now) {
               const occurrenceKey = `notif-${rem.id}-${nowDate.toISOString().slice(0, 10)}`;
-              const existing = await notificationsRepo.getNotificationById(occurrenceKey);
-              if (!existing) {
+              const occurrenceIso = todayOccurrence.toISOString();
+              const [existing, alreadyRecorded] = await Promise.all([
+                notificationsRepo.getNotificationById(occurrenceKey),
+                notificationsRepo.hasNotificationForTargetTrigger(
+                  rem.targetType,
+                  rem.targetId,
+                  occurrenceIso
+                ),
+              ]);
+              if (!existing && !alreadyRecorded) {
                 await notificationsRepo.createNotification({
                   id: occurrenceKey,
                   reminderId: rem.id,
@@ -128,7 +147,7 @@ export function useReminderStoreActions({
                   noteId: rem.noteId,
                   title: notifTitle,
                   body: notifBody,
-                  triggerAt: todayOccurrence.toISOString(),
+                  triggerAt: occurrenceIso,
                   recurrenceRule: JSON.stringify(parsed.repeatRule),
                 });
               }
@@ -138,8 +157,15 @@ export function useReminderStoreActions({
           const triggerTime = new Date(rem.triggerAt).getTime();
           if (triggerTime <= now) {
             const firedId = `notif-${rem.id}`;
-            const existing = await notificationsRepo.getNotificationById(firedId);
-            if (!existing) {
+            const [existing, alreadyRecorded] = await Promise.all([
+              notificationsRepo.getNotificationById(firedId),
+              notificationsRepo.hasNotificationForTargetTrigger(
+                rem.targetType,
+                rem.targetId,
+                rem.triggerAt
+              ),
+            ]);
+            if (!existing && !alreadyRecorded) {
               await notificationsRepo.createNotification({
                 id: firedId,
                 reminderId: rem.id,
