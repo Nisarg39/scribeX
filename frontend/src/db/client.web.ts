@@ -359,7 +359,7 @@ export class WebDatabaseClient {
     const starterBlocksJson = JSON.stringify(WELCOME_STARTER_BLOCKS).replace(/'/g, "''");
 
     db.run(`
-      INSERT INTO notes (
+      INSERT OR IGNORE INTO notes (
         id, user_id, folder_path, title, content_markdown, blocks_json, color_token, is_favorite, is_pinned, created_at, updated_at
       ) VALUES 
       (
@@ -400,7 +400,7 @@ export class WebDatabaseClient {
     `);
 
     db.run(`
-      INSERT INTO tasks (
+      INSERT OR IGNORE INTO tasks (
         id, user_id, note_id, note_title, note_color_token, block_id, title, is_completed, priority, due_date
       ) VALUES 
       (
@@ -420,15 +420,15 @@ export class WebDatabaseClient {
         'Configure SQLite WAL mode for sub-5ms latency', 1, 'high', 'Today'
       ),
       (
-        'task-2', 'user-default', 'note-1', 'Sprint Checklist', 'lime', 
+        'task-2', 'user-default', 'note-1', 'Sprint Checklist', 'lime', 'b1-3',
         'Implement two-part Notes & Tasks floating dock', 0, 'urgent', 'Today'
       ),
       (
-        'task-3', 'user-default', 'note-2', 'Universal Engine', 'apricot', 
+        'task-3', 'user-default', 'note-2', 'Universal Engine', 'apricot', NULL,
         'Review 42 composable input block AST definitions', 0, 'medium', 'Tomorrow'
       ),
       (
-        'task-4', 'user-default', NULL, NULL, NULL, 
+        'task-4', 'user-default', NULL, NULL, NULL, NULL,
         'Test local offline storage across desktop and mobile browsers', 0, 'low', 'Oct 30'
       );
     `);
