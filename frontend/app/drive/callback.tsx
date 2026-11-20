@@ -1,22 +1,42 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../src/context';
 import { useTheme } from '../../src/theme';
 import { NoteColors } from '../../src/theme/tokens';
 
+try {
+  WebBrowser.maybeCompleteAuthSession();
+} catch {
+  // Ignore when unavailable in non-browser runners
+}
+
 export default function DriveCallbackScreen() {
   const router = useRouter();
   const { isDark } = useTheme();
-  const { isLoading, isDriveChecking, isCloudSyncReady } = useAuth();
+  const { isLoading, isDriveChecking, isCloudSyncReady, refreshDriveState } = useAuth();
+  const [isRefreshing, setIsRefreshing] = useState(true);
 
   useEffect(() => {
-    if (isLoading || isDriveChecking) return;
+    let active = true;
+    void refreshDriveState()
+      .catch(() => {})
+      .finally(() => {
+        if (active) setIsRefreshing(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [refreshDriveState]);
+
+  useEffect(() => {
+    if (isLoading || isDriveChecking || isRefreshing) return;
     const timer = setTimeout(() => {
       router.replace(isCloudSyncReady ? '/home' : '/signin');
     }, 150);
     return () => clearTimeout(timer);
-  }, [isLoading, isDriveChecking, isCloudSyncReady, router]);
+  }, [isLoading, isDriveChecking, isRefreshing, isCloudSyncReady, router]);
 
   return (
     <View

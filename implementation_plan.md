@@ -1,33 +1,33 @@
-# ScribeX Implementation Plan — Switch Git Account to `Nisarg39`
+# ScribeX Implementation Plan — Fix Android Crash in Diagram & Whiteboard Block (`DiagramBlock.tsx`)
 
 > **Status:** Awaiting User Approval  
-> **Scope:** Local Git configuration and macOS Keychain credentials for `github.com` (no repository source files modified)
+> **Branch:** `feat/backend-integration`
 
-## Current State Observed
+## Root Cause Analysis
 
-- **Remote (`origin`):** `https://github.com/Nisarg39/scribeX.git` (already points to `Nisarg39/scribeX`).
-- **Git Author Identity:** `user.name = Nisarg Shah`, `user.email = nisarg@scriptlanes.com` (recent commits are authored with this identity).
-- **Credential Helper:** `osxkeychain` (`/opt/homebrew/etc/gitconfig`), currently storing `username=89008298` for `https://github.com`.
+When adding or rendering a `diagram` ("Diagram & Whiteboard") block on Android, [DiagramBlock.tsx](frontend/src/components/editor/blocks/DiagramBlock.tsx) uses `react-native-svg` `15.15.4` features that are only safe on Web and crash on Android:
+1. **`<Marker orient="auto-start-reverse">` + `markerEnd="url(#arrow)"`** (lines 328–340, 363): `DiagramBlock.tsx` is the only component in the codebase using `<Marker>`. `auto-start-reverse` / `RNSVGMarker` throws a native exception in `react-native-svg` on Android.
+2. **`strokeDasharray="4,3"`** (line 362): Comma-separated string instead of numeric array `[4, 3]`.
+3. **`<Svg width="100%" height="100%">`** (lines 323–327) inside `<ScrollView horizontal>` without `style={{ flexGrow: 0, flexShrink: 0 }}` (line 314).
 
-## Proposed Steps
+## Proposed Changes
 
-1. **Update Repo-Local Git Author Identity:**
-   - Set `git config --local user.name "Nisarg39"` (or preferred display name) and `git config --local user.email "<nisarg39-email>"` (or `Nisarg39@users.noreply.github.com` if you prefer GitHub noreply) so new commits are attributed to `Nisarg39`.
-2. **Clear Cached `github.com` Keychain Credentials & Re-authenticate as `Nisarg39`:**
-   - Erase the existing `github.com` entry from `osxkeychain` via `git credential-osxkeychain erase` (`protocol=https`, `host=github.com`).
-   - Either:
-     - **Option A (HTTPS + PAT):** Run `git ls-remote origin` or `git credential-osxkeychain store` so you can authenticate with `username=Nisarg39` and a `Nisarg39` Personal Access Token, **or**
-     - **Option B (SSH):** Switch `origin` to `git@github.com:Nisarg39/scribeX.git` if your SSH key is already registered on `Nisarg39`.
-3. **Verify:**
-   - Run `git config --local --list` to confirm `user.name` and `user.email`.
-   - Run `git ls-remote origin` (read-only) to confirm authentication succeeds as `Nisarg39` without pushing.
+1. **[frontend/src/components/editor/blocks/DiagramBlock.tsx](frontend/src/components/editor/blocks/DiagramBlock.tsx):**
+   - Remove `<Defs>`, `<Marker>`, and `markerEnd="url(#arrow)"`; render each edge's arrowhead directly as a `<Path>` triangle at `(endX, endY)` (handling both left-to-right and right-to-left directions).
+   - Change `strokeDasharray="4,3"` to `strokeDasharray={[4, 3]}`.
+   - Pass explicit numeric `width={canvasWidth}` and `height={nodeLayout.totalHeight}` to `<Svg>` (where `canvasWidth = Math.max(nodeLayout.totalWidth, 500)`).
+   - Add `style={{ flexGrow: 0, flexShrink: 0 }}` to `<ScrollView horizontal>` per React Native Flex Safety rules.
+2. **Verify & Rebuild:**
+   - Run `cd frontend && npx tsc --noEmit`.
+   - Run `npm --prefix frontend run audit:all` (editor blocks & AST audit).
+   - Rebuild `frontend/android/app/build/outputs/apk/release/app-release.apk` via `./gradlew assembleRelease`.
 
 ## Recommended Execution
 
 | Command | Fit | Reason |
 | :--- | :--- | :--- |
-| `/plan` | **Best Fit** | Simple, deterministic 3-step local Git config and credential update; needs quick confirmation of your `Nisarg39` email and auth method (HTTPS PAT vs. SSH) before running. |
-| `/grill-me` | Overkill | Only two small choices (commit email and HTTPS vs. SSH). |
-| `/swarm`, `/teamwork`, `/run-workflow` | Not Needed | Single-machine shell configuration with no parallelizable code tasks. |
-| `/boost`, `/goal` | Not Needed | Trivial configuration change; no deep research or long-running loop required. |
-| `/compact` | Not Needed | Conversation just started. |
+| `/plan` | **Best Fit** | Single-file native SVG crash fix in `DiagramBlock.tsx` + typecheck/block audit + release APK rebuild. |
+| `/grill-me` | Not Needed | Root cause is isolated to `DiagramBlock.tsx`. |
+| `/swarm`, `/teamwork`, `/run-workflow` | Not Needed | Single component fix. |
+| `/boost`, `/goal` | Not Needed | Bounded bugfix. |
+| `/compact` | Not Needed | Context is manageable. |

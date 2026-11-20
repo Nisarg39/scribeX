@@ -37,27 +37,57 @@
       "intentFilters": [
         {
           "action": "SEND",
-          "category": ["DEFAULT"],
+          "category": [
+            "DEFAULT"
+          ],
           "data": [
-            { "mimeType": "*/*" },
-            { "mimeType": "text/*" },
-            { "mimeType": "image/*" },
-            { "mimeType": "video/*" },
-            { "mimeType": "audio/*" },
-            { "mimeType": "application/pdf" },
-            { "mimeType": "application/zip" },
-            { "mimeType": "application/octet-stream" },
-            { "mimeType": "application/x-zip-compressed" }
+            {
+              "mimeType": "*/*"
+            },
+            {
+              "mimeType": "text/*"
+            },
+            {
+              "mimeType": "image/*"
+            },
+            {
+              "mimeType": "video/*"
+            },
+            {
+              "mimeType": "audio/*"
+            },
+            {
+              "mimeType": "application/pdf"
+            },
+            {
+              "mimeType": "application/zip"
+            },
+            {
+              "mimeType": "application/octet-stream"
+            },
+            {
+              "mimeType": "application/x-zip-compressed"
+            }
           ]
         },
         {
           "action": "SEND_MULTIPLE",
-          "category": ["DEFAULT"],
+          "category": [
+            "DEFAULT"
+          ],
           "data": [
-            { "mimeType": "*/*" },
-            { "mimeType": "image/*" },
-            { "mimeType": "video/*" },
-            { "mimeType": "audio/*" }
+            {
+              "mimeType": "*/*"
+            },
+            {
+              "mimeType": "image/*"
+            },
+            {
+              "mimeType": "video/*"
+            },
+            {
+              "mimeType": "audio/*"
+            }
           ]
         }
       ]
@@ -152,7 +182,8 @@
       "expo-sqlite",
       "expo-sharing",
       "expo-audio",
-      "./plugins/withScribeXShare"
+      "./plugins/withScribeXShare",
+      "expo-web-browser"
     ]
   }
 }

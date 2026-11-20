@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView } from 'react-native';
-import Svg, { Rect, Circle, Line, Text as SvgText, Path, Defs, Marker } from 'react-native-svg';
+import Svg, { Rect, Circle, Line, Text as SvgText, Path } from 'react-native-svg';
 import { useTheme } from '../../../theme';
 import { 
   GitCommit, 
@@ -309,36 +309,29 @@ export const DiagramBlock: React.FC<DiagramBlockProps> = ({
         </View>
 
         {/* VIEW 1: Visual Interactive SVG Diagram Canvas */}
-        {viewMode === 'visual' && (
+        {viewMode === 'visual' && (() => {
+          const canvasWidth = Math.max(nodeLayout.totalWidth, 500);
+          return (
           <View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={true} className="w-full">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={true}
+              style={{ flexGrow: 0, flexShrink: 0 }}
+              className="w-full"
+            >
               <View
                 style={{
-                  width: Math.max(nodeLayout.totalWidth, 500),
+                  width: canvasWidth,
                   height: nodeLayout.totalHeight,
                   backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.03)',
                 }}
                 className="rounded-xl border border-light-border dark:border-white/10 relative overflow-hidden"
               >
                 <Svg
-                  width="100%"
-                  height="100%"
-                  viewBox={`0 0 ${Math.max(nodeLayout.totalWidth, 500)} ${nodeLayout.totalHeight}`}
+                  width={canvasWidth}
+                  height={nodeLayout.totalHeight}
+                  viewBox={`0 0 ${canvasWidth} ${nodeLayout.totalHeight}`}
                 >
-                  <Defs>
-                    <Marker
-                      id="arrow"
-                      viewBox="0 0 10 10"
-                      refX="8"
-                      refY="5"
-                      markerWidth="6"
-                      markerHeight="6"
-                      orient="auto-start-reverse"
-                    >
-                      <Path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#06B6D4" />
-                    </Marker>
-                  </Defs>
-
                   {/* Connecting Connector Edges */}
                   {edges.map((edge, idx) => {
                     const fromPos = nodeLayout.positions[edge.from];
@@ -349,19 +342,21 @@ export const DiagramBlock: React.FC<DiagramBlockProps> = ({
                     const startY = fromPos.y + fromPos.height / 2;
                     const endX = toPos.x;
                     const endY = toPos.y + toPos.height / 2;
+                    const arrowDir = endX >= startX ? 1 : -1;
+                    const arrowPath = `M ${endX - 7 * arrowDir} ${endY - 4} L ${endX} ${endY} L ${endX - 7 * arrowDir} ${endY + 4} Z`;
 
                     return (
                       <React.Fragment key={idx}>
                         <Line
                           x1={startX}
                           y1={startY}
-                          x2={endX}
+                          x2={endX - 4 * arrowDir}
                           y2={endY}
                           stroke="#06B6D4"
-                          strokeWidth="2"
-                          strokeDasharray="4,3"
-                          markerEnd="url(#arrow)"
+                          strokeWidth={2}
+                          strokeDasharray={[4, 3]}
                         />
+                        <Path d={arrowPath} fill="#06B6D4" />
                         {Boolean(edge.label) && (
                           <SvgText
                             x={(startX + endX) / 2}
@@ -453,7 +448,8 @@ export const DiagramBlock: React.FC<DiagramBlockProps> = ({
               </View>
             </View>
           </View>
-        )}
+          );
+        })()}
 
         {/* VIEW 2: Raw Mermaid Code Editor */}
         {viewMode === 'code' && (

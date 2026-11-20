@@ -102,6 +102,8 @@ function extractUserFromSession(session: Session | null): AuthUser | null {
 function parseOAuthCallbackParams(url: string): {
   accessToken?: string;
   refreshToken?: string;
+  providerToken?: string;
+  providerRefreshToken?: string;
   code?: string;
   errorDescription?: string;
 } {
@@ -124,6 +126,8 @@ function parseOAuthCallbackParams(url: string): {
     return {
       accessToken: params.get('access_token') || undefined,
       refreshToken: params.get('refresh_token') || undefined,
+      providerToken: params.get('provider_token') || undefined,
+      providerRefreshToken: params.get('provider_refresh_token') || undefined,
       code: params.get('code') || undefined,
       errorDescription: params.get('error_description') || params.get('error') || undefined,
     };
@@ -391,15 +395,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return false;
       }
 
-      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-      if (result.type !== 'success' || !result.url) {
-        // User cancelled or dismissed browser
+      let capturedDeepLinkUrl: string | null = null;
+      const linkingSub = Linking.addEventListener('url', (event) => {
+        if (event?.url && (event.url.includes('access_token=') || event.url.includes('code=') || event.url.includes('error='))) {
+          capturedDeepLinkUrl = event.url;
+        }
+      });
+
+      let result: WebBrowser.WebBrowserAuthSessionResult;
+      try {
+        result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+        if ((result.type !== 'success' || !result.url) && !capturedDeepLinkUrl) {
+          // Give Android singleTask Intent delivery a brief window after Custom Tab dismissal
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+      } finally {
+        linkingSub.remove();
+      }
+
+      const callbackUrl =
+        result.type === 'success' && result.url ? result.url : capturedDeepLinkUrl;
+
+      if (!callbackUrl) {
+        // User cancelled or dismissed browser without completing OAuth
         return false;
       }
 
-      const { accessToken, refreshToken, code, errorDescription } = parseOAuthCallbackParams(
-        result.url
-      );
+      const {
+        accessToken,
+        refreshToken,
+        providerToken,
+        providerRefreshToken,
+        code,
+        errorDescription,
+      } = parseOAuthCallbackParams(callbackUrl);
 
       if (errorDescription) {
         setAuthError(decodeURIComponent(errorDescription.replace(/\+/g, ' ')));
@@ -415,7 +444,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setAuthError(sessionError?.message || 'Failed to establish Google session.');
           return false;
         }
-        await handleAuthenticatedSession(sessionData.session);
+        const enrichedSession: Session = {
+          ...sessionData.session,
+          ...(providerToken ? { provider_token: providerToken } : {}),
+          ...(providerRefreshToken ? { provider_refresh_token: providerRefreshToken } : {}),
+        };
+        await handleAuthenticatedSession(enrichedSession);
         return true;
       }
 
@@ -426,7 +460,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setAuthError(exchangeError?.message || 'Failed to complete Google OAuth exchange.');
           return false;
         }
-        await handleAuthenticatedSession(exchangeData.session);
+        const enrichedSession: Session = {
+          ...exchangeData.session,
+          ...(providerToken ? { provider_token: providerToken } : {}),
+          ...(providerRefreshToken ? { provider_refresh_token: providerRefreshToken } : {}),
+        };
+        await handleAuthenticatedSession(enrichedSession);
         return true;
       }
 

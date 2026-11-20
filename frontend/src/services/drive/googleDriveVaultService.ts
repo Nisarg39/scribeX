@@ -601,6 +601,36 @@ class GoogleDriveVaultService {
     this.emitDriveState(userId, null);
   }
 
+  private async openAuthSessionWithDeepLinkFallback(
+    authUrl: string,
+    redirectUri: string
+  ): Promise<string | null> {
+    let capturedDeepLinkUrl: string | null = null;
+    const linkingSub = Linking.addEventListener('url', (event) => {
+      if (
+        event?.url &&
+        (event.url.includes('access_token=') ||
+          event.url.includes('code=') ||
+          event.url.includes('error='))
+      ) {
+        capturedDeepLinkUrl = event.url;
+      }
+    });
+
+    try {
+      const res = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+      if (res.type === 'success' && res.url) {
+        return res.url;
+      }
+      if (!capturedDeepLinkUrl && Platform.OS !== 'web') {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      return capturedDeepLinkUrl;
+    } finally {
+      linkingSub.remove();
+    }
+  }
+
   /**
    * Opens Google Account Picker (`prompt=select_account consent`) with `drive.file` scope
    * so the user can choose either their ScribeX Google account or any separate Google Drive account.
@@ -633,12 +663,12 @@ class GoogleDriveVaultService {
             include_granted_scopes: 'true',
           }).toString();
 
-        const res = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
-        if (res.type !== 'success' || !res.url) {
+        const callbackUrl = await this.openAuthSessionWithDeepLinkFallback(authUrl, redirectUri);
+        if (!callbackUrl) {
           return { ok: false, error: 'Google Drive account selection was cancelled.' };
         }
 
-        const params = parseOAuthParams(res.url);
+        const params = parseOAuthParams(callbackUrl);
         if (!params.access_token) {
           return {
             ok: false,
@@ -705,9 +735,15 @@ class GoogleDriveVaultService {
       }
 
       if (Platform.OS !== 'web' && data?.url) {
-        const res = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-        if (res.type === 'success' && res.url) {
-          const p = parseOAuthParams(res.url);
+        const callbackUrl = await this.openAuthSessionWithDeepLinkFallback(data.url, redirectTo);
+        if (callbackUrl) {
+          const p = parseOAuthParams(callbackUrl);
+          if (p.error_description || p.error) {
+            return {
+              ok: false,
+              error: decodeURIComponent((p.error_description || p.error).replace(/\+/g, ' ')),
+            };
+          }
           let activeSession: any = null;
           if (p.access_token && p.refresh_token) {
             const { data: setRes } = await supabase.auth.setSession({
@@ -718,6 +754,13 @@ class GoogleDriveVaultService {
           } else if (p.code) {
             const { data: exchRes } = await supabase.auth.exchangeCodeForSession(p.code);
             activeSession = exchRes?.session || null;
+          }
+          if (activeSession) {
+            activeSession = {
+              ...activeSession,
+              ...(p.provider_token ? { provider_token: p.provider_token } : {}),
+              ...(p.provider_refresh_token ? { provider_refresh_token: p.provider_refresh_token } : {}),
+            };
           }
           const linked = activeSession
             ? await this.syncDriveTokenFromSupabaseSession(activeSession)
